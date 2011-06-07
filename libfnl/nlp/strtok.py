@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 .. py:module:: strtok
    :synopsis: A string tokenizer for any Unicode text.
@@ -11,8 +10,7 @@ from unicodedata import category
 
 __author__ = "Florian Leitner"
 __version__ = "1.0"
-__all__ = ('Token', 'Tokenize', 'TokenizeAlphanumeric', 'Separate', 'Tag',
-           'Category', 'STOP_CHARS')
+__all__ = ( 'Token', 'Tokenize', 'TokenizeAlphanumeric', 'Separate', 'Tag', 'Category', 'STOP_CHARS' )
 
 
 Token = namedtuple("Token", "string tag cats")
@@ -96,10 +94,6 @@ Greek, Devanagari, Syriac, Hebrew, Armenian, Tibetan, Myanmar, Ethiopic.
 left out.
 """
 
-##########################
-# TOKENIZATION FUNCTIONS #
-##########################
-
 def Separate(string:str) -> iter:
     """
     A simplistic tokenizer that just splits strings on separators (categories
@@ -120,6 +114,7 @@ def Separate(string:str) -> iter:
             end = e
         else:
             if cats: yield Token(string[start:end], not tag, bytes(cats))
+            #noinspection PyArgumentList
             tag, cats, start, end = Tag.isSeparator(t), bytearray(), s, e
 
         cats.append(c)
@@ -134,6 +129,7 @@ def Tokenize(string:str, case_tags:bool=False) -> iter:
 
     All characters give raise to single-char tokens, except for those that are
     tagged LETTERS, DIGITS, SPACES, or BREAKS.
+
     If *case tags* are used, the LETTERS tag is furthermore divided into the
     possible groups LOWERCASED, UPPERCASED, CAPITALIZED, CAMELCASED,
     MIXEDCASED, or the token stays unaltered tagged as LETTERS.
@@ -146,6 +142,7 @@ def Tokenize(string:str, case_tags:bool=False) -> iter:
                 if case_tags: tag = RetagCases(tag, cats)
                 yield Token(string[start:end], tag, bytes(cats))
 
+            #noinspection PyArgumentList
             tag, cats, start, end = t, bytearray(), s, e
         else:
             end = e
@@ -153,7 +150,7 @@ def Tokenize(string:str, case_tags:bool=False) -> iter:
         cats.append(c)
 
     if cats:
-        if case_tags: tag = RetagCases(tag, cats, case_tags)
+        if case_tags: tag = RetagCases(tag, cats)
         yield Token(string[start:end], tag, bytes(cats))
 
 def TokenizeAlphanumeric(string:str, case_tags:bool=False) -> iter:
@@ -168,13 +165,14 @@ def TokenizeAlphanumeric(string:str, case_tags:bool=False) -> iter:
         if YieldNewToken(t, tag):
             if tag is not None:
                 if Tag.isAlnum(t) and Tag.isAlnum(tag):
-                    end = e
-                    tag = Tag.ALPHANUMERIC
+                    end, tag = e, Tag.ALPHANUMERIC
                 else:
                     if case_tags: tag = RetagCases(tag, cats)
                     yield Token(string[start:end], tag, bytes(cats))
+                    #noinspection PyArgumentList
                     tag, cats, start, end = t, bytearray(), s, e
             else:
+                #noinspection PyArgumentList
                 tag, cats, start, end = t, bytearray(), s, e
         else:
             end = e
@@ -185,10 +183,6 @@ def TokenizeAlphanumeric(string:str, case_tags:bool=False) -> iter:
         if case_tags: tag = RetagCases(tag, cats)
         yield Token(string[start:end], tag, bytes(cats))
 
-
-#####################
-# TAGS & CATEGORIES #
-#####################
 
 class Category:
     """
@@ -267,17 +261,17 @@ class Category:
     Zs = ord('s')
     "``s`` - space separator"
 
-    CONTROLS = (Cc, Cf, Cn, Co, Cs)
-    LETTERS = (Lu, LG, Lt, Ll, Lg, LC, Lm, Lo)
-    UPPERCASE_LETTERS = (Lu, LG, Lt)
-    LOWERCASE_LETTERS = (Ll, Lg)
-    OTHER_LETTERS = (LC, Lm, Lo)
-    NUMERIC = (Nd, Nl, No)
-    NUMBERS = (Nd, Nl)
-    MARKS = (Cf, Mc, Me, Mn)
-    PUNCTUATION = (Pc, Pd, Pe, Pf, Pi, Po, Ps)
-    SYMBOLS = (Sc, Sk, Sm, So)
-    SEPARATORS = (Zl, Zp, Zs)
+    CONTROLS = ( Cc, Cf, Cn, Co, Cs )
+    LETTERS = ( Lu, LG, Lt, Ll, Lg, LC, Lm, Lo )
+    UPPERCASE_LETTERS = ( Lu, LG, Lt )
+    LOWERCASE_LETTERS = ( Ll, Lg )
+    OTHER_LETTERS = ( LC, Lm, Lo )
+    NUMERIC = ( Nd, Nl, No )
+    NUMBERS = ( Nd, Nl )
+    MARKS = ( Mc, Me, Mn )
+    PUNCTUATION = ( Pc, Pd, Pe, Pf, Pi, Po, Ps )
+    SYMBOLS = ( Sc, Sk, Sm, So )
+    SEPARATORS = ( Zl, Zp, Zs )
 
     @classmethod
     def isControl(cls, cat:bytes) -> bool:
@@ -368,17 +362,20 @@ class Category:
         return cats.decode('ASCII')
 
 
-REMAPPED_CHARACTERS = {Category.Cc: {"\n\f\r\u0085\u008D": Category.Zl,
-                                     "\t\v": Category.Zs,
-                                     "\u0091\u0092": Category.Co}, # Privates
-                       Category.Po: {"#&@\uFE5F\uFE60\uFE6B\uFF03\uFF06\uFF20":
-                                     Category.So,
-                                     "%\u0609\u060A\u066A\u2030"
-                                     "\u2031\uFE6A\uFF05":
-                                     Category.Sm},
-                       # Quotation markers:
-                       Category.Ps: {"\u201A\u201E\u301D": Category.Pi},
-                       Category.Pe: {"\u301E\u301F": Category.Pf}}
+REMAPPED_CHARACTERS = {
+    Category.Cc: {
+        "\n\f\r\u0085\u008D": Category.Zl,
+        "\t\v": Category.Zs,
+        "\u0091\u0092": Category.Co # Privates
+    },
+    Category.Po: {
+        "#&@\uFE5F\uFE60\uFE6B\uFF03\uFF06\uFF20": Category.So,
+        "%\u0609\u060A\u066A\u2030\u2031\uFE6A\uFF05": Category.Sm
+    },
+    # Quotation markers:
+    Category.Ps: { "\u201A\u201E\u301D": Category.Pi },
+    Category.Pe: { "\u301E\u301F": Category.Pf }
+}
 "Remapped Unicode characters: {cat: {chars: cat}}."
 
 
@@ -597,21 +594,21 @@ def CasetagLetters(cats:bytearray) -> int:
     if cats[0] in Category.LOWERCASE_LETTERS:
         if any(cat in cats for cat in Category.UPPERCASE_LETTERS):
             return Tag.MIXEDCASED
-        else:
-            return Tag.LOWERCASED
+
+        return Tag.LOWERCASED
     elif cats[0] in Category.UPPERCASE_LETTERS:
         if any(cat in cats for cat in Category.LOWERCASE_LETTERS):
             if any(cat in cats[1:] for cat in Category.UPPERCASE_LETTERS):
                 return Tag.CAMELCASED
-            else:
-                return Tag.CAPITALIZED
-        else:
-            return Tag.UPPERCASED
+
+            return Tag.CAPITALIZED
+
+        return Tag.UPPERCASED
     elif cats[0] == Category.Lo:
         return Tag.LETTERS
     elif cats[0] == Category.Lm:
         if len(cats) > 1: return CasetagLetters(cats[1:])
-        else:             return Tag.LETTERS
+        return Tag.LETTERS
     else:
         raise RuntimeError("no provisions for cats %s" % 
                            cats.decode("ASCII"))

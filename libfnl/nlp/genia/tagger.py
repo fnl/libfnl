@@ -32,10 +32,8 @@ class GeniaTagger(object):
         args = [binary] if tokenize else [binary, '-nt']
         self.L.debug("starting '%s'" % ' '.join(args))
         self.L.debug("in directory '%s'", morphdic_dir)
-        self.proc = Popen(args, bufsize=0, cwd=morphdic_dir,
-                          stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        debug_msgs = Thread(target=GeniaTagger._logStderr,
-                            args=(self.L, self.proc.stderr))
+        self.proc = Popen(args, cwd=morphdic_dir, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        debug_msgs = Thread(target=GeniaTagger._logStderr, args=(self.L, self.proc.stderr))
         debug_msgs.start()
 
     @staticmethod
@@ -98,12 +96,14 @@ class Token(tuple):
 
     _fields = ('word', 'stem', 'pos', 'chunk', 'entity')
 
+    #noinspection PyInitNewSignature
     def __new__(cls, word, stem, pos, chunk, entity):
         return tuple.__new__(cls, (word, stem, pos, chunk, entity))
 
     def __repr__(self):
         return 'Token(word=%r, stem=%r, pos=%r, chunk=%r, entity=%r)' % self
 
+    #noinspection PyInitNewSignature,PyMethodOverriding
     def __getnewargs__(self):
         return tuple(self)
 
@@ -132,7 +132,7 @@ class Token(tuple):
         """
         Return a new :py:class:`.tagger.Token` replacing specified fields with new values.
         """
-        result = self._make(map(
+        result = self.make(map(
             kwds.pop, ('word', 'stem', 'pos', 'chunk', 'entity'), self
         ))
 

@@ -1,12 +1,13 @@
-# -*- coding: utf-8 -*-
-# import unittest
+#/usr/bin/env python3
 
-from .tagger import GeniaTagger, Token
+from unittest import main, TestCase
+
+from libfnl.nlp.genia.tagger import GeniaTagger, Token
 
 GENIATAGGER_BINARY = '/Users/fleitner/work/lib/c/geniatagger-3.0.1/geniatagger'
 MORPHDIC_DIR = '/Users/fleitner/work/lib/c/geniatagger-3.0.1'
 
-class GeniaTaggerTest(unittest.TestCase):
+class GeniaTaggerTests(TestCase):
 
     def setUp(self):
         self.tagger = GeniaTagger(GENIATAGGER_BINARY, MORPHDIC_DIR)
@@ -37,6 +38,4 @@ class GeniaTaggerTest(unittest.TestCase):
             for idx, token in enumerate(iter(self.tagger)):
                 self.assertTupleEqual(token, self.tokens[idx])
 
-if __name__ == '__main__':
-    # import sys; sys.argv = ['', 'Test.testName']
-    unittest.main()
+if __name__ == '__main__': main()

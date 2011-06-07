@@ -1,10 +1,8 @@
-# -*- coding: utf-8 -*-
-import unittest
-
-from libfnl.nlp.strtok import *
-from unicodedata import category
+from libfnl.nlp.strtok import Tokenize, TokenizeAlphanumeric, CasetagAlphanumeric, CasetagLetters, Tag, Category, CodepointIter, GetCharCategoryValue, GetTagValue, YieldNewToken, REMAPPED_CHARACTERS, STOP_CHARS
 from random import randint
 from time import time
+from unicodedata import category
+from unittest import main, TestCase
 
 ALL_TAGS = (
     Tag.ALNUM_DIGIT, Tag.ALNUM_LOWER, Tag.ALNUM_NUMERAL, Tag.ALNUM_OTHER, Tag.ALNUM_UPPER, Tag.ALPHANUMERIC,
@@ -23,7 +21,7 @@ SINGLE_CHAR_TAGS = (t for t in ALL_TAGS if t not in MULTICHAR_TAGS)
 GREEK_CHARS = ("".join(chr(x) for x in range(0x370, 0x3FF)) + 
                "".join(chr(x) for x in range(0x1F00, 0x1FFF)))
 
-class YieldNewTokenTests(unittest.TestCase):
+class YieldNewTokenTests(TestCase):
 
     def testUnequalTags(self):
         for t1 in ALL_TAGS:
@@ -42,7 +40,7 @@ class YieldNewTokenTests(unittest.TestCase):
             self.assertEqual(YieldNewToken(tag, tag), False,
                              "%s does not return False" % Tag.toStr(tag))
 
-class GetCharCategoryTests(unittest.TestCase):
+class GetCharCategoryTests(TestCase):
 
     def testNonRemappedCharacters(self):
         remapped_chars = ""
@@ -80,7 +78,7 @@ class GetCharCategoryTests(unittest.TestCase):
                                  "char '%s' (0x%x) has cat=%i; received=%i" % 
                                  (c, ord(c), cat, result))
 
-class GetTagValueTests(unittest.TestCase):
+class GetTagValueTests(TestCase):
 
     def testStopCharacters(self):
         for char in STOP_CHARS:
@@ -89,7 +87,7 @@ class GetTagValueTests(unittest.TestCase):
                              "'%s' (0x%x) is %s, not STOP" % 
                              (char, ord(char), Tag.toStr(tag)))
 
-class CodepointIterTests(unittest.TestCase):
+class CodepointIterTests(TestCase):
 
     def testRegularString(self):
         expected = ((0, 1, Category.Ll, Tag.LETTERS),
@@ -115,7 +113,7 @@ class CodepointIterTests(unittest.TestCase):
         for idx, result in enumerate(CodepointIter("a\uD800\uDC00\n")):
             self.assertTupleEqual(expected[idx], result)
 
-class CasetagTests(unittest.TestCase):
+class CasetagTests(TestCase):
 
     def testAlnumCategory(self):
         self.assertEqual(CasetagAlphanumeric(b"ll1"), Tag.ALNUM_LOWER)
@@ -138,7 +136,7 @@ class CasetagTests(unittest.TestCase):
     def testBadLetterCategory(self):
         self.assertRaises(RuntimeError, CasetagLetters, b"xll11")
 
-class CategoryTests(unittest.TestCase):
+class CategoryTests(TestCase):
 
     def assertCategoryTests(self, cats, IsCatMethod):
         tests = 0
@@ -176,12 +174,12 @@ class CategoryTests(unittest.TestCase):
         self.assertCategoryTests(Category.SEPARATORS,
                                  Category.isSeparator)
 
-class TagTests(unittest.TestCase):
+class TagTests(TestCase):
 
     def testToStr(self):
         self.assertEqual(Tag.toStr(Tag.BREAKS), "BREAKS")
 
-class TokenizeTests(unittest.TestCase):
+class TokenizeTests(TestCase):
 
     def testRegularExampleString(self):
         example = "\u0001\u00ADx\u02B0\u01BB\u01C5X111[$]?"
@@ -191,6 +189,9 @@ class TokenizeTests(unittest.TestCase):
             self.assertEqual(cats[idx], token.cats)
 
     def testAlnumExampleString(self):
+        """
+
+        """
         example = "A defAult Sentence, with SoMe “20%” Bl1a-1blA αrecⅣ!"
         cats_b = b"UslllUlllsUlllllll.sllllsUlUls<11+>sUl1l-1llUsglll2."
         tok_list = ["A", " ", "defAult", " ", "Sentence", ",", " ", "with",
@@ -220,6 +221,7 @@ class TokenizeTests(unittest.TestCase):
                     Tag.STOP]
         tokens = list(TokenizeAlphanumeric(example, case_tags=True))
         self.assertEqual(len(tokens), len(tok_list))
+        #noinspection PyArgumentList
         cats = bytearray()
         for i, t in enumerate(tokens):
             self.assertEqual(t.string, tok_list[i],
@@ -242,7 +244,8 @@ class TokenizeTests(unittest.TestCase):
             self.assertEqual(Tag.ALNUM_DIGIT, token.tag)
 
     def testTokenizing100kRandomCharsTakesLessThanOneSec(self):
-        string = "".join(chr(randint(1, 0xCFFE)) for dummy in range(100000))
+        #noinspection PyUnusedLocal
+        string = "".join(chr(randint(1, 0xCFFE)) for i in range(100000))
         start = time()
         # Note that case tagging has no significant influence on the speed.
         tokens = len(tuple(Tokenize(string)))
@@ -257,4 +260,4 @@ if __name__ == '__main__':
         string = "".join(chr(randint(1, 0xCFFE)) for dummy in range(100000))
         print("generated %i tokens" % len(tuple(Tokenize(string))))
     else:
-        unittest.main()
+        main()
