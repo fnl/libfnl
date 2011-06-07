@@ -5,7 +5,8 @@ from unicodedata import category
 from unittest import main, TestCase
 
 ALL_TAGS = (
-    Tag.ALNUM_DIGIT, Tag.ALNUM_LOWER, Tag.ALNUM_NUMERAL, Tag.ALNUM_OTHER, Tag.ALNUM_UPPER, Tag.ALPHANUMERIC,
+    Tag.ALNUM_DIGIT, Tag.ALNUM_LOWER, Tag.ALNUM_NUMERAL, Tag.ALNUM_OTHER, Tag.ALNUM_UPPER,
+    Tag.ALPHANUMERIC,
     Tag.BAD, Tag.BREAKS,
     Tag.CAMELCASED, Tag.CAPITALIZED, Tag.CONTROL,
     Tag.DIGITS,
