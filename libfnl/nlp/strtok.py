@@ -15,7 +15,7 @@ __all__ = ( 'Token', 'Tokenize', 'TokenizeAlphanumeric', 'Separate', 'Tag', 'Cat
 
 Token = namedtuple("Token", "string tag cats")
 """
-A named tuple, consisting of the string, tag, and (modified) Unicode
+A named tuple consisting of the string, tag, and (modified) Unicode
 categories of each code-point in the string (thereby at the same time encoding
 the "true" character length of the string).
 
@@ -90,8 +90,8 @@ An assembly of the more specific sentence stop markers found in Unicode in
 one of the following languages: Latin, Arabic, Chinese, Japanese, Korean,
 Greek, Devanagari, Syriac, Hebrew, Armenian, Tibetan, Myanmar, Ethiopic.
 
-"Potential" sentence terminals, such as semicolon, colon, or ellipsis, are
-left out.
+Potential sentence terminals, such as semicolon, colon, or ellipsis, are
+not included.
 """
 
 def Separate(string:str) -> iter:
@@ -186,11 +186,22 @@ def TokenizeAlphanumeric(string:str, case_tags:bool=False) -> iter:
 
 class Category:
     """
-    Integer values the of Unicode categories that also map to ASCII
-    characters.
+    Integer values for the Unicode categories that correspond to ASCII
+    characters for visualization of the category bytes of a token.
 
-    In other words, a Category value is always in the [0..127] range.
+    In other words, a category value is always in the [0..127] range.
     """
+
+#    The test for a category value belonging to a certain class can also be
+#    used on the `chr` representation of the category byte::
+#
+#        >>> cats = b'lll' # three lower-case chars
+#        >>> as_string = Category.toStr(cats)
+#        >>> Category.isLowercase(cats[0])
+#        True
+#        >>> Category.isLowercase(as_string[0])
+#        True
+    
 
     Cs = ord('*')
     "``*`` - surrogate character (encoding error)"
@@ -266,91 +277,91 @@ class Category:
     UPPERCASE_LETTERS = ( Lu, LG, Lt )
     LOWERCASE_LETTERS = ( Ll, Lg )
     OTHER_LETTERS = ( LC, Lm, Lo )
-    NUMERIC = ( Nd, Nl, No )
-    NUMBERS = ( Nd, Nl )
+    NUMBERS = ( Nd, Nl, No )
+    NUMERIC = ( Nd, Nl )
     MARKS = ( Mc, Me, Mn )
     PUNCTUATION = ( Pc, Pd, Pe, Pf, Pi, Po, Ps )
     SYMBOLS = ( Sc, Sk, Sm, So )
     SEPARATORS = ( Zl, Zp, Zs )
 
     @classmethod
-    def isControl(cls, cat:bytes) -> bool:
+    def isControl(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any control character category (C?).
+        ``True`` if the *cat* is any control character category (C?).
         """
-        return ord(cat) in cls.CONTROLS
+        return cat in cls.CONTROLS
 
     @classmethod
-    def isLetter(cls, cat:bytes) -> bool:
+    def isLetter(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any letter category (L?).
+        ``True`` if the *cat* is any letter category (L?).
         """
-        return ord(cat) in cls.LETTERS
+        return cat in cls.LETTERS
 
     @classmethod
-    def isUppercase(cls, cat:bytes) -> bool:
+    def isUppercase(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any upper-case letter category
+        ``True`` if the *cat* is any upper-case letter category
         (LG, Lt, Lu).
         """
-        return ord(cat) in cls.UPPERCASE_LETTERS
+        return cat in cls.UPPERCASE_LETTERS
 
     @classmethod
-    def isLowercase(cls, cat:bytes) -> bool:
+    def isLowercase(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any lower-case letter category (Lg, Ll).
+        ``True`` if the *cat* is any lower-case letter category (Lg, Ll).
         """
-        return ord(cat) in cls.LOWERCASE_LETTERS
+        return cat in cls.LOWERCASE_LETTERS
 
     @classmethod
-    def isOtherLetter(cls, cat:bytes) -> bool:
+    def isOtherLetter(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any non-upper- or -lower-case letter
+        ``True`` if the *cat* is any non-upper- or -lower-case letter
         (LC, Lm, Lo).
         """
-        return ord(cat) in cls.UPPERCASE_LETTERS
+        return cat in cls.UPPERCASE_LETTERS
 
     @classmethod
-    def isNumeric(cls, cat:bytes) -> bool:
+    def isNumber(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any numeric character category (N?).
+        ``True`` if the *cat* is any number category (N?).
         """
-        return ord(cat) in cls.NUMERIC
+        return cat in cls.NUMBERS
 
     @classmethod
-    def isNumber(cls, cat:bytes) -> bool:
+    def isNumeric(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any numeric character category (Nd, Nl).
+        ``True`` if the *cat* is any numeric value (Nd, Nl).
         """
-        return ord(cat) in cls.NUMBERS
+        return cat in cls.NUMERIC
 
     @classmethod
-    def isMark(cls, cat:bytes) -> bool:
+    def isMark(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any mark category (Cf, M?).
+        ``True`` if the *cat* is any mark category (Cf, M?).
         """
-        return ord(cat) in cls.MARKS
+        return cat in cls.MARKS
 
     @classmethod
-    def isPunctuation(cls, cat:bytes) -> bool:
+    def isPunctuation(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any punctuation category (P?).
+        ``True`` if the *cat* is any punctuation category (P?).
         """
-        return ord(cat) in cls.PUNCTUATION
+        return cat in cls.PUNCTUATION
 
     @classmethod
-    def isSymbol(cls, cat:bytes) -> bool:
+    def isSymbol(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any symbol character category (S?).
+        ``True`` if the *cat* is any symbol character category (S?).
         """
-        return ord(cat) in cls.SYMBOLS
+        return cat in cls.SYMBOLS
 
     @classmethod
-    def isSeparator(cls, cat:bytes) -> bool:
+    def isSeparator(cls, cat:int) -> bool:
         """
-        ``True`` if the *cat* byte is any separator category (Z?).
+        ``True`` if the *cat* is any separator category (Z?).
         """
-        return ord(cat) in cls.SEPARATORS
+        return cat in cls.SEPARATORS
 
     @staticmethod
     def toStr(cats:bytes) -> str:
@@ -587,6 +598,8 @@ def CasetagLetters(cats:bytearray) -> int:
     If the first character is a modifier letter (Lm), the process is repeated
     with the next character until a non-Lm character is found, or LETTERS is
     returned if no other character is present.
+
+    :raises: RuntimeError If the head category in *cats* is none of the above.
     """
     # Note: it is not possible to use the Category.is...() classmethods,
     # because they expect bytes input, but at this level we are still working
@@ -627,7 +640,7 @@ def CasetagAlphanumeric(cats:bytearray) -> int:
 
     If the first character is a modifier letter (Lm), the process is repeated
     with the next character until a non-Lm character is found. The category
-    LC is not handled.
+    LC is not handled (and raises an error).
 
     :raises: RuntimeError If no matching category can be found.
     """
@@ -672,10 +685,10 @@ def CodepointIter(string:str) -> iter:
 
 def GetCharCategoryValue(character:chr) -> int:
     """
-    Return the (remapped) category value of a *character* and its *ordinal*.
+    Return the (remapped) Unicode category value of a *character*.
 
-    :raises: TypeError If the character is neither a single surrogate nor can
-                       be mapped by :py:func:`unicodedata.category`
+    :raises: TypeError If the *character* can not be mapped by
+                       :py:func:`unicodedata.category`
     """
     cat = getattr(Category, category(character))
 
@@ -690,10 +703,9 @@ def GetCharCategoryValue(character:chr) -> int:
 
 def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
     """
-    Return the (remapped) category value of a *surrogate pair* and its
-    *ordinal*.
+    Return the (remapped) category value of a *surrogate pair*.
 
-    :raises: TypeError If the surrogate pair cannot be mapped by
+    :raises: TypeError If the *surrogate pair* can not be mapped by
                        :py:func:`unicodedata.category`
     """
     cat = getattr(Category, category(surrogate_pair))
@@ -715,12 +727,18 @@ def GetTagValue(character:str, category:int) -> int:
 
 def IsGreek(char:chr) -> bool:
     """
-    Return ``True`` if the *char* is on the Greek codepages.
+    Return ``True`` if the *char* is on one of the Greek code-pages.
     """
     return "\u0370" <= char < "\u03FF" or "\u1F00" <= char < "\u1FFF"
 
 
 def RemapCategory(char:str, cat:int) -> int:
+    """
+    Return the remapped category for any character that is described in the
+    REMAPPED_CHARACTERS dictionary.
+
+    :raises: KeyError If *cat* isn't in the REMAPPED_CHARACTERS dictionary.
+    """
     for character_group in REMAPPED_CHARACTERS[cat]:
         if char in character_group:
             cat = REMAPPED_CHARACTERS[cat][character_group]
@@ -731,9 +749,9 @@ def RemapCategory(char:str, cat:int) -> int:
 
 def RetagCases(tag:int, cats:bytearray) -> int:
     """
-    Return a new tag if *case tags* is ``True``, using CasetagLetters() if
-    the *tag* is LETTERS and CasetagAlphanumeric if it is ALPHANUMERIC;
-    Otherwise just return the *tag*.
+    Return a new tag using :py:func:`.CasetagLetters` if the *tag* is LETTERS
+    and :py:func:`.CasetagAlphanumeric` if it is ALPHANUMERIC; Otherwise just
+    return the *tag*.
     """
     if   tag == Tag.LETTERS:      tag = CasetagLetters(cats)
     elif tag == Tag.ALPHANUMERIC: tag = CasetagAlphanumeric(cats)
@@ -742,7 +760,7 @@ def RetagCases(tag:int, cats:bytearray) -> int:
 
 def YieldNewToken(next_tag:int, last_tag:int) -> bool:
     """
-    Return ``True`` if the tags mismatch or the new tag is neither a word,
-    numeric, break, or whitespace.
+    Return ``True`` if the tags mismatch or the new tag is neither LETTERS,
+    DIGITS, BREAKS, or SPACES.
     """
     return last_tag != next_tag or not Tag.isMultichar(next_tag)
