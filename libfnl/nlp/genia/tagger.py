@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 .. py:module:: tagger
    :synopsis: A subprocess wrapper for the GENIA Tagger.
@@ -10,6 +9,7 @@ This module works with both Python 3000 and Python 2.4+.
 
 import logging
 from operator import itemgetter
+import os
 from subprocess import Popen, PIPE
 from threading import Thread
 
@@ -29,12 +29,21 @@ class GeniaTagger(object):
         :param tokenize: If ``False``, geniatagger is run without
                          tokenization (ie., with the ``-nt`` flag).
         """
+        if os.path.isabs(binary): GeniaTagger._checkPath(binary, os.X_OK)
+        GeniaTagger._checkPath(morphdic_dir, os.R_OK)
         args = [binary] if tokenize else [binary, '-nt']
         self.L.debug("starting '%s'" % ' '.join(args))
         self.L.debug("in directory '%s'", morphdic_dir)
-        self.proc = Popen(args, cwd=morphdic_dir, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        debug_msgs = Thread(target=GeniaTagger._logStderr, args=(self.L, self.proc.stderr))
+        self._proc = Popen(args, cwd=morphdic_dir,
+                          stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        debug_msgs = Thread(target=GeniaTagger._logStderr,
+                            args=(self.L, self._proc.stderr))
         debug_msgs.start()
+
+    @staticmethod
+    def _checkPath(path, acc_code):
+        assert os.path.exists(path) and os.access(path, acc_code), \
+        "invalid path %s" % path
 
     @staticmethod
     def _logStderr(logger, stderr):
@@ -45,19 +54,19 @@ class GeniaTagger(object):
 
     def __del__(self):
         self.L.debug("terminating")
-        self.proc.terminate()
+        if hasattr(self, "_proc"): self._proc.terminate()
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        status = self.proc.poll()
+        status = self._proc.poll()
 
         if status is not None:
             raise RuntimeError("geniatagger exited with %i" % status * -1)
 
         self.L.debug('reading token')
-        line = self.proc.stdout.readline()
+        line = self._proc.stdout.readline()
         self.L.debug('fetched token')
         line = line.decode().strip()
         if not line: raise StopIteration
@@ -73,9 +82,9 @@ class GeniaTagger(object):
         Send a single *sentence* (w/o newline) to the tagger.
         """
         self.L.debug('sending sentence: "%s"', sentence)
-        self.proc.stdin.write(sentence.encode())
-        self.proc.stdin.write(b"\n")
-        self.proc.stdin.flush()
+        self._proc.stdin.write(sentence.encode())
+        self._proc.stdin.write(b"\n")
+        self._proc.stdin.flush()
 
 
 class Token(tuple):

@@ -38,4 +38,8 @@ class GeniaTaggerTests(TestCase):
             for idx, token in enumerate(iter(self.tagger)):
                 self.assertTupleEqual(token, self.tokens[idx])
 
+    def testBadPath(self):
+        self.assertRaises(AssertionError, GeniaTagger, "/fail", "whatever")
+        self.assertRaises(AssertionError, GeniaTagger, "whatever", "/fail")
+
 if __name__ == '__main__': main()
