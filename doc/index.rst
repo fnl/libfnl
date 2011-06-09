@@ -14,6 +14,7 @@ Contents:
 
    nlp
    nlp/genia
+   stat
 
 Indices and tables
 ==================
