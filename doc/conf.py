@@ -247,3 +247,7 @@ texinfo_documents = [
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {'http://docs.python.org/': None}
+
+# -- Options for autodoc ------
+
+autoclass_content = "both"
