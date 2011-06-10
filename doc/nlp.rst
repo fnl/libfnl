@@ -4,6 +4,42 @@ nlp -- Natural Language Processing
 
 .. automodule:: libfnl.nlp
 
+=================================
+doc -- Text-Annotation Data Types
+=================================
+
+.. automodule:: libfnl.nlp.text
+
+This NLP packages uses offset annotations on text to manage the tagging of text spans. To make this simple, Python's `bytes` and `str` implementations are extended with functions to add, retrieve, and delete annotations on these two data types. In addition, the API provides a method on each type to convert to the other without loosing or mangling the (offset) annotations.
+
+Managing documents and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text documents: one for the binary representation (encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any annotations (called **tags**) made on the text. Thereby, offset-based annotations made in one specific encoding can even be easily transformed to the Unicode view where it is easy to work with them in Python, and even back into a completely different encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about either offsets or encoding. Furthermore, a few minimum requirements for tags on the text are enforced:
+
+#. All tags are identified by their (string) **namespace** and **key**, and have some (string) **value**.
+#. Only one tag and, hence, value for each namespace and key may exist.
+#. A key ``K`` is a tuple of integers, of length 1, 2, or 2\ ``m`` (for any ``m > 1``).
+#. The key encodes the offsets this tag annotates; A single value key annotates an exact position in the text, a two-value key a given span, and a 2m-value key a multiple (consecutive) text segments.
+#. The key ``K`` of length ``n`` annotating text ``T`` must pass the following conditions (where ``len`` is the Python `len` function applied to the text's content):
+
+  *    K\ :sub:`1` >= 0 ∧
+  *    K\ :sub:`n` <= len(T) ∧
+  *    K\ :sub:`i` < K\ :sub:`j` ∀ i =: {1, ..., n-1}, j =: i + 1
+
+6. By transforming between binary and Unicode, any illegal offsets result in UnicodeErrors.
+
+For example, if an offset value in a key points between to surrogate characters or into the byte-sequence that forms a character in the encoded binary version. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
+
+However, both views share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
+
+.. autoclass:: libfnl.nlp.text.AnnotatedContent
+   :members: addTag, delTag, getTags, getValue, iterNamespaces, iterTags, tags
+
+.. autoclass:: libfnl.nlp.text.Binary
+   :members:
+
+.. autoclass:: libfnl.nlp.text.Unicode
+   :members:
+
+
 =============================
 strtok -- String Tokenization
 =============================
@@ -18,7 +54,7 @@ A token is either the longest sequence of characters in the input string belongi
 
         Token(string="exAmpLe", tag=Tag.MIXEDCASE, cats=b"llUllUl")
 
-When the *case tags* flag is set, tokens containing letters (as well as digits and numerals for alphanumeric tokenization) get the correct case tag (CAMELCASED, CAPITALIZED, LOWERCASED, MIXEDCASED, UPPERCASED, as well as ALNUM_{DIGIT, LOWER, NUMERAL, OTHER, UPPER} for alphanumeric tokens) assigned. As a sidenote, this tokenizer reproduces the entire string, it does not mysteriously drop characters such as whitespaces or any other "black magick".
+When the *case tags* flag is set, tokens containing letters (as well as digits and numerals for alphanumeric tokenization) get the correct case tag (CAMELCASED, CAPITALIZED, LOWERCASED, MIXEDCASED, UPPERCASED, as well as ALNUM\_{DIGIT, LOWER, NUMERAL, OTHER, UPPER} for alphanumeric tokens) assigned. As a sidenote, this tokenizer reproduces the entire string, it does not mysteriously drop characters such as whitespaces or any other "black magick".
 
 .. autofunction:: libfnl.nlp.strtok.Tokenize
 
