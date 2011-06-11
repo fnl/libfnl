@@ -10,7 +10,7 @@ from hashlib import sha256
 class AnnotatedContent:
     """
     Abstract manager class for tagging content, implemented by both
-    :py:class:`.Binary` and :py:class:`.Unicode`.
+    :class:`.Binary` and :class:`.Unicode`.
     """
 
     def __init__(self):
@@ -19,7 +19,7 @@ class AnnotatedContent:
     def __len__(self):
         raise NotImplementedError("abstract")
 
-    def addTag(self, namespace:str, value:str, *key:tuple([int])):
+    def addTag(self, namespace:str, value:object, *key:tuple([int])):
         """
         Add a new tag.
 
@@ -34,11 +34,11 @@ class AnnotatedContent:
         :raises AssertionError: If the key is malformed.
         """
         # try to fetch the namespace or create a new one
-        if namespace not in self._tags:
+        if namespace in self._tags:
+            tags = self._tags[namespace]
+        else:
             tags = dict()
             self._tags[namespace] = tags
-        else:
-            tags = self._tags[namespace]
 
         # check key is not duplicate and well-formed
         assert key not in tags, \
@@ -54,6 +54,26 @@ class AnnotatedContent:
         # all ok, set the value
         tags[key] = value
 
+    def addTagUnsafe(self, namespace:str, value:object, *key:tuple([int])):
+        """
+        Add a new tag, but without any checks. Use at your own discretion!
+
+        :param namespace: The namespace this tag belongs to.
+        :param value: The value of the tag, e.g. the PoS name, chunk type...
+        :param key: The position of this tag; either a single offset value
+                    for tags pointing to just one location in the content,
+                    or paired integers in increasing order indicating the
+                    offsets (start, end) of one or more spans.
+        """
+        # try to fetch the namespace or create a new one
+        if namespace in self._tags:
+            tags = self._tags[namespace]
+        else:
+            tags = dict()
+            self._tags[namespace] = tags
+
+        tags[key] = value
+
     def delTag(self, namespace:str, *key:tuple([int])):
         """
         Delete the tag in *namespace* with the given *key*.
@@ -66,13 +86,13 @@ class AnnotatedContent:
         if not self._tags[namespace]:
             del self._tags[namespace]
 
-    def getTags(self, namespace:str) -> dict({tuple([int]): str}):
+    def getTags(self, namespace:str) -> dict({tuple([int]): object}):
         """
         Get a dictionary of all tags in that *namespace*.
         """
         return dict(self._tags[namespace])
 
-    def getValue(self, namespace:str, *key:tuple([int])) -> str:
+    def getValue(self, namespace:str, *key:tuple([int])) -> object:
         """
         Get the exact value of a tag in *namespace* identified by *key*.
         """
@@ -84,7 +104,7 @@ class AnnotatedContent:
         """
         return self._tags.keys()
 
-    def iterTags(self, namespace:str) -> iter([(tuple([int]), str)]):
+    def iterTags(self, namespace:str) -> iter([(tuple([int]), object)]):
         """
         Return an iterator of all tags in *namespace*, returning the tags
         in order of the key's start (lowest first), end (last offset in key,
@@ -104,10 +124,10 @@ class AnnotatedContent:
         keys = sorted(tags.keys(), key=lambda k: (k[0], k[-1] * -1, k))
         for k in keys: yield k, tags[k]
 
-    def tags(self) -> list([(tuple([int]), str, str)]):
+    def tags(self) -> list([(tuple([int]), str, object)]):
         """
         Return a list of all tags on this instance, ordered just as with
-        `iterTags`, but over all namespaces.
+        `iterTags`, but with the keys from all namespaces.
 
         :return: A list of (key, namespace, value) tuples.
         """
@@ -124,24 +144,30 @@ class AnnotatedContent:
 
 class Binary(bytes, AnnotatedContent):
     """
-    A specialized :py:func:`bytes` class for binary text (ie., encoded)
-    and implementing :py:class:`.AnnotatedContent`.
+    A specialized `bytes` class for binary (ie., encoded) text
+    and implementing :class:`.AnnotatedContent`.
+
+    Contrary to regular `bytes` objects, it also stores the encoding of
+    itself, plus the annotation tags.
     """
 
     def __new__(cls, *args):
-        # get rid of the encoding argument giving hickups to bytes...
         if isinstance(args[0], str):
             return super(Binary, cls).__new__(cls, *args)
         else:
+            # get rid of the encoding argument to bytes...
             return super(Binary, cls).__new__(cls, args[0])
 
 
     def __init__(self, *args):
         """
-        To create a new Binary, pass it the text as `bytes` and a `str`
+        To instantiate a Binary, pass it the text as `bytes` and a `str`
         with the encoding of the text, or pass the text as `str`, again with
         a target encoding, and possibly the error parameter for the encoding
-        operation (see `bytes`).
+        operation. Ie., in the former case (via a `bytes` text) add the
+        encoding as a parameter, in the latter case (via `str`) it is the
+        same procedure as for a regular `bytes` object. See
+        :func:`bytearray` for details about creating `bytes`.
         """
         AnnotatedContent.__init__(self)
         self._digest = None
@@ -174,8 +200,10 @@ class Binary(bytes, AnnotatedContent):
 
     def toUnicode(self, errors:str="strict") -> AnnotatedContent:
         """
-        Return the :py:class:`.Unicode` view of this document, with
+        Return the :class:`.Unicode` view of this document, with
         any tag keys mapped to the offsets in the decoded Unicode.
+
+        :raises UnicodeDecodeError: If any tag key is illegal.
         """
         string = self.decode(self._encoding, errors)
         text = Unicode(string)
@@ -199,14 +227,14 @@ class Binary(bytes, AnnotatedContent):
 
 class Unicode(str, AnnotatedContent):
     """
-    A specialized :py:func:`str` class for text as Unicode (ie., decoded)
-    and implementing :py:class:`.AnnotatedContent`.
+    A specialized :func:`str` class for text as Unicode (ie., decoded)
+    and implementing :class:`.AnnotatedContent`.
     """
 
     #noinspection PyUnusedLocal
     def __init__(self, *args):
         """
-        Create just as any `str` object.
+        Instantiate just as any `str` object.
         """
         AnnotatedContent.__init__(self)
 
@@ -226,8 +254,10 @@ class Unicode(str, AnnotatedContent):
 
     def toBinary(self, encoding:str, errors:str="strict") -> Binary:
         """
-        Return the raw :py:class:`.Binary` view of the text, with
+        Return the raw :class:`.Binary` view of the text, with
         any tag keys mapped to the offsets in the encoded `bytes`.
+
+        :raises UnicodeEncodeError: If any tag key is illegal.
         """
         doc = Binary(self.encode(encoding), encoding)
 

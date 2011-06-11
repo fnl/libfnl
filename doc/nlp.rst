@@ -26,7 +26,7 @@ Managing documents and their annotations can be a hassle if there is no abstract
 
 6. By transforming between binary and Unicode, any illegal offsets result in UnicodeErrors.
 
-For example, if an offset value in a key points between to surrogate characters or into the byte-sequence that forms a character in the encoded binary version. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
+For example, if an offset value in a key points between two surrogate characters or into the byte-sequence that forms a character in the encoded binary version, this would be considered an illegal offset value and raises a :py:exc:`UnicodeError`. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
 
 However, both views share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
 
@@ -46,28 +46,46 @@ strtok -- String Tokenization
 
 .. automodule:: libfnl.nlp.strtok
 
-The tokenization functions return generators for :py:class:`.strtok.Token` instances created from the input string. The tokenization of Unicode text is based on a logical grouping of Unicode characters by their categories into a tag. Tokens can be entire strings of characters belonging to the same category in cases where the characters are all one of letters, digits, whitespaces (incl. tabs), or breaks (incl. newlines and paragraph breaks); Characters belonging to other categories always result in single code-point tokens. The only exception is for alphanumeric tokenization, where numerals (normally treated as single code-point tokens) are joined to letters and digits. Therefore, each Token has one :py:class:`.Tag` and each code-point in the Token has a :py:class:`.Category`.
+The tokenizers' `tag()` methods automatically tag :class:`.text.Unicode` instances created from some string. The tokenization of Unicode text is based on a logical grouping of Unicode characters via their categories into a tag. A token is either the longest sequence of characters in the input string belonging to the same :py:class:`.Category` group (for letters, digits, numerals, and separators - but depending on the chosen tokenizer), or a single character (for all other groups). For the standard :class:`.WordTokenizer`, tokens are entire strings of characters belonging to the same category in cases where the characters are all one of letters, digits, numerals, and separators (whitespaces incl. tabs, and breaks incl. newlines and paragraph separators); Characters belonging to other categories always result in single code-point tokens. For alphanumeric tokenization (:class:`.AlnumTokenizer`), the letters, digits, and numerals are joined to a single token. Finally, a simple :class:`.Separator` tokenizer is provided to split text between characters in separator categories and all other classes.
 
-Tags are supersets of categories, with the exception of :py:attr:`.Tag.STOP`, with is a subset of :py:attr:`.Category.Po`, and is only assigned to code-points that represent sentence stop glyphs in some of the more common languages of the world. The categories are those found in Unicode, but with minor fixes for a few bad category assignments found in the official Unicode category mapping. Regarding "fixed categories", most notably, greek characters have been separated out of the Ll and Lu categories (lowercase, uppercase characters, respectively) into their own Lg, LG categories. This is of interest due to the fact that in many scientific texts the use of greek letters gives tokens containing them a very special meaning. A few control characters have been moved (linebreaks, tabs, privates), and a few symbols and punctuation marks have been reassigned to their "correct" categories.
+In addition to the default Unicode categories, a category :attr:`.Category.Ts` is provided, for "terminal separator", where "Stop characters" such as fullstop, exclamation mark, or question mark are separated from the default `Po` (punctuation other) category. Another "added category" are the greek characters, that have been separated out of the `Ll` and `Lu` group (lowercase and uppercase characters, respectively) into their own `Lg`, `LG` categories. This is of interest due to the fact that in many scientific texts the use of greek letters gives tokens containing them a very special meaning. A few control characters have been moved (linebreaks, tabs, privates), and a few symbols and punctuation marks have been reassigned to their "correct" categories. In addition, a number of characters have been remapped to other categories where the Unicode standard seems wrong, yet in fact are simply unchanged assignments because of backwards compatibility. For example, the Linefeed character is in the control character (`Cc`) group, instead of the line separator (`Zl`) category. Such inconsistencies have been fixed here, at least for the Basic Multilingual Plane (``U+0000`` - ``U+FFFF``).
 
-A token is either the longest sequence of characters in the input string belonging to the same :py:class:`.Tag` group (for letters, digits, numerals, breaks, and whitespaces), or a single character thereof (all others). A :py:attr:`.Token.tag` is a representation of the token's Unicode categories as a single integer value. The categories of all code-points in the token are represented by a bytes object (:py:attr:`.Token.cats`, in ASCII encoding), but these categories are modifications to the official Unicode groupings. The `Token.cats` is a bytes object encoding the various character categories found in the token (all mapping to the same tag) that can be represented as an ASCII string or an integer array and has the same length as the string itself has code-points. Therefore, the tag (integer) and the cats (bytes object) attributes of a Token together form a perfect feature vector for any supervised training or can even be used by manual rule-sets. Here is the Token for the string "exAmpLe", when tokenizing with *case tags*::
+While tokenizing, the tokenizer adds tags to the :class:`.Unicode` text. Each tag is made with the namespace provided during instantiation of the tokenizer (using :data:`.strtok.NAMESPACE` as default value), the start and end offsets of the token, and a `str` value that encodes the categories encountered in that tag. If surrogate pairs are found inside the token, each such pair (given it is valid, obviously), receives just one category assignment, which is a single ASCII character per category. Therefore, this value can be understood as encoding the **morphology** of the token and can be made use of later on in a variety of ways.
 
-        Token(string="exAmpLe", tag=Tag.MIXEDCASE, cats=b"llUllUl")
+As a sidenote, these tokenizers all tag the entire string, they do not mysteriously drop characters such as whitespaces or any other "black magick".
 
-When the *case tags* flag is set, tokens containing letters (as well as digits and numerals for alphanumeric tokenization) get the correct case tag (CAMELCASED, CAPITALIZED, LOWERCASED, MIXEDCASED, UPPERCASED, as well as ALNUM\_{DIGIT, LOWER, NUMERAL, OTHER, UPPER} for alphanumeric tokens) assigned. As a sidenote, this tokenizer reproduces the entire string, it does not mysteriously drop characters such as whitespaces or any other "black magick".
+Here is a straight-forward usage example::
 
-.. autofunction:: libfnl.nlp.strtok.Tokenize
+    >>> from libfnl.nlp.text import Unicode
+    >>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
+    >>> text = Unicode("A simple example sentence.")
+    >>> tok = WordTokenizer()
+    >>> tok.tag(text)
+    >>> for offset, value in text.iterTags(NAMESPACE):
+    ...     print(offset, value, sep='\t')
+    ...
+    (0, 1)	A
+    (1, 2)	M
+    (2, 8)	DDDDDD
+    (8, 9)	M
+    (9, 16)	DDDDDDD
+    (16, 17)	M
+    (17, 25)	DDDDDDDD
+    (25, 26)	o
 
-.. autofunction:: libfnl.nlp.strtok.TokenizeAlphanumeric
 
-.. autofunction:: libfnl.nlp.strtok.Separate
+.. autoclass:: libfnl.nlp.strtok.Tokenizer
+    :members:
 
-.. autoclass:: libfnl.nlp.strtok.Token
+.. autoclass:: libfnl.nlp.strtok.AlnumTokenizer
 
-.. autoclass:: libfnl.nlp.strtok.Tag
-   :members:
+.. autoclass:: libfnl.nlp.strtok.WordTokenizer
+
+.. autoclass:: libfnl.nlp.strtok.Separator
 
 .. autoclass:: libfnl.nlp.strtok.Category
    :members:
+
+.. autodata:: libfnl.nlp.strtok.NAMESPACE
 
 .. autodata:: libfnl.nlp.strtok.STOP_CHARS

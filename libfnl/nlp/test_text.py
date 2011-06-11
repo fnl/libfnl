@@ -1,8 +1,6 @@
 from hashlib import sha256
 from libfnl.nlp.text import Binary, Unicode, AnnotatedContent
 from unittest import main, TestCase
-#noinspection PyUnresolvedReferences
-import mock
 
 __author__ = 'Florian Leitner'
 
@@ -14,48 +12,6 @@ class AnnotatedContentTests(TestCase):
 
     def testCreateUnnamedDoc(self):
         self.assertEqual(self.doc._tags, {})
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTag(self, m):
-        m.return_value = 4
-        self.doc.addTag("ns", "val", 1)
-        self.assertDictEqual(self.doc._tags, {"ns": {(1,): "val"}})
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTagWithMultipleOffsets(self, m):
-        m.return_value = 4
-        self.doc.addTag("ns", "val", 1, 2, 3, 4)
-        self.assertDictEqual(self.doc._tags, {"ns": {(1,2,3,4): "val"}})
-
-    def assertAddRaisesAssertionError(self, *args):
-        self.assertRaises(AssertionError, self.doc.addTag, *args)
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddDuplicateTag(self, m):
-        m.return_value = 4
-        self.doc.addTag("ns", "val", 1)
-        self.assertAddRaisesAssertionError("ns", "val", 1)
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTagAfterLenOfContent(self, m):
-        m.return_value = 4
-        self.assertAddRaisesAssertionError("ns", "val", 5)
-        self.assertAddRaisesAssertionError("ns", "val", 0, 5)
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTagWithEndBeforeStart(self, m):
-        m.return_value = 4
-        self.assertAddRaisesAssertionError("ns", "val", 2, 1)
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTagWithNegativeStart(self, m):
-        m.return_value = 4
-        self.assertAddRaisesAssertionError("ns", "val", -2)
-
-    @mock.patch.object(AnnotatedContent, '__len__')
-    def testAddTagWithBadOffsets(self, m):
-        m.return_value = 4
-        self.assertAddRaisesAssertionError("ns", "val", 0, 1, 2)
 
     def testDelOnlyTag(self):
         self.doc._tags = {"ns": {(1,): "val"}}
@@ -124,12 +80,43 @@ class AnnotatedContentTests(TestCase):
 class BinaryTests(TestCase):
 
     def setUp(self):
-        self.binary = Binary("test".encode("latin1"), "latin1")
+        self.binary = Binary("test", "latin1")
 
     def testCreateBinary(self):
         self.assertEqual(self.binary.encoding, "latin1")
         self.assertEqual(self.binary._digest, None)
         self.assertEqual(self.binary._str_alignment, dict())
+
+    def testLen(self):
+        self.assertEqual(len(self.binary), 4)
+
+    def testAddTag(self):
+        self.binary.addTag("ns", "val", 1)
+        self.assertDictEqual(self.binary._tags, {"ns": {(1,): "val"}})
+
+    def testAddTagWithMultipleOffsets(self):
+        self.binary.addTag("ns", "val", 1, 2, 3, 4)
+        self.assertDictEqual(self.binary._tags, {"ns": {(1,2,3,4): "val"}})
+
+    def assertAddRaisesAssertionError(self, *args):
+        self.assertRaises(AssertionError, self.binary.addTag, *args)
+
+    def testAddDuplicateTag(self):
+        self.binary.addTag("ns", "val", 1)
+        self.assertAddRaisesAssertionError("ns", "val", 1)
+
+    def testAddTagAfterLenOfContent(self):
+        self.assertAddRaisesAssertionError("ns", "val", 5)
+        self.assertAddRaisesAssertionError("ns", "val", 0, 5)
+
+    def testAddTagWithEndBeforeStart(self):
+        self.assertAddRaisesAssertionError("ns", "val", 2, 1)
+
+    def testAddTagWithNegativeStart(self):
+        self.assertAddRaisesAssertionError("ns", "val", -2)
+
+    def testAddTagWithBadOffsets(self):
+        self.assertAddRaisesAssertionError("ns", "val", 0, 1, 2)
 
     def testDigest(self):
         self.assertEqual(self.binary.digest,
@@ -150,7 +137,7 @@ class BinaryTests(TestCase):
                              "utf-8")
         # bytes    \xc3\xa4\xc4\xb5\xce\x95\xf0\x90\x80\x80a
         # binary   0   1   2   3   4   5   6   7   8   9   0 len(11)
-        # unicode  ä       ĵ       Epsilon \uD800  \uDC0   a
+        # unicode  ä       ĵ       Epsilon \uD800  \uDC00  a
         # text     0       1       2       3       4*surr  5 len(6)
         self.binary._tags = {
             "ns1": {
@@ -169,6 +156,37 @@ class TextTests(TestCase):
 
     def setUp(self):
         self.text = Unicode("test")
+
+    def testLen(self):
+        self.assertEqual(len(self.text), 4)
+
+    def testAddTag(self):
+        self.text.addTag("ns", "val", 1)
+        self.assertDictEqual(self.text._tags, {"ns": {(1,): "val"}})
+
+    def testAddTagWithMultipleOffsets(self):
+        self.text.addTag("ns", "val", 1, 2, 3, 4)
+        self.assertDictEqual(self.text._tags, {"ns": {(1,2,3,4): "val"}})
+
+    def assertAddRaisesAssertionError(self, *args):
+        self.assertRaises(AssertionError, self.text.addTag, *args)
+
+    def testAddDuplicateTag(self):
+        self.text.addTag("ns", "val", 1)
+        self.assertAddRaisesAssertionError("ns", "val", 1)
+
+    def testAddTagAfterLenOfContent(self):
+        self.assertAddRaisesAssertionError("ns", "val", 5)
+        self.assertAddRaisesAssertionError("ns", "val", 0, 5)
+
+    def testAddTagWithEndBeforeStart(self):
+        self.assertAddRaisesAssertionError("ns", "val", 2, 1)
+
+    def testAddTagWithNegativeStart(self):
+        self.assertAddRaisesAssertionError("ns", "val", -2)
+
+    def testAddTagWithBadOffsets(self):
+        self.assertAddRaisesAssertionError("ns", "val", 0, 1, 2)
 
     def testGetMultispan(self):
         self.assertSequenceEqual(

@@ -3,8 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to libfnl's documentation!
-==================================
+libfnl
+======
+
+An API and collection of command line script mainly for working with text and
+associated statistical functions.
 
 Contents:
 

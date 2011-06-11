@@ -5,35 +5,18 @@
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 """
 
-from collections import namedtuple
+from io import StringIO
+from types import FunctionType
+from libfnl.nlp.text import Unicode
 from unicodedata import category
 
 __author__ = "Florian Leitner"
 __version__ = "1.0"
-__all__ = ( 'Token', 'Tokenize', 'TokenizeAlphanumeric', 'Separate', 'Tag', 'Category', 'STOP_CHARS' )
 
-
-Token = namedtuple("Token", "string tag cats")
+NAMESPACE = "morphology"
 """
-A named tuple consisting of the string, tag, and (modified) Unicode
-categories of each code-point in the string (thereby at the same time encoding
-the "true" character length of the string).
-
-.. py:attribute:: string
-
-   The actual string this token represents, as a `str`.
-
-.. py:attribute:: tag
-
-   The tag value of this token, as an `int` value (or `bool` for
-   :py:func:`.Separate`).
-
-.. py:attribute:: cats
-
-   The (modified) Unicode category of each code-point in the string, as
-   ASCII-encode-able `bytes`.
+The default namespace string for the tags added to a text by the tokenizers.
 """
-
 
 STOP_CHARS = {
     "\u0021", # EXCLAMATION MARK
@@ -89,306 +72,471 @@ STOP_CHARS = {
 An assembly of the more specific sentence stop markers found in Unicode in
 one of the following languages: Latin, Arabic, Chinese, Japanese, Korean,
 Greek, Devanagari, Syriac, Hebrew, Armenian, Tibetan, Myanmar, Ethiopic.
+These characters are assigned the :attr:`.Category.Ts`.
 
 Potential sentence terminals, such as semicolon, colon, or ellipsis, are
 not included.
 """
 
-def Separate(string:str) -> iter:
+
+class Tokenizer:
     """
-    A simplistic tokenizer that just splits strings on separators (categories
-    Z?, white-spaces and breaks); Instead of regular tags, the
-    :py:attr:`.Token.tag` value is ``False`` for yielded separator tokens and
-    ``True`` otherwise.
-
-    This tokenizer is more powerful than just ``string.split()`` or a RegEx
-    tokenizer using ``\s+``, as there are far more separator characters in
-    Unicode than either of these two approaches will recognize; And the
-    official Unicode Z? categories do not cover all possible separator
-    characters.
+    Abstract tokenizer implementing the actual procedure.
     """
-    tag, cats, start, end = None, None, 0, 0
 
-    for s, e, c, t in CodepointIter(string):
-        if Tag.isSeparator(t) == tag:
-            end = e
-        else:
-            if cats: yield Token(string[start:end], not tag, bytes(cats))
-            #noinspection PyArgumentList
-            tag, cats, start, end = Tag.isSeparator(t), bytearray(), s, e
+    def __init__(self, namespace:str=NAMESPACE):
+        """
+        The *namespace* is the string used for the tags created on the text.
+        """
+        self.namespace = namespace
 
-        cats.append(c)
+    def tag(self, text:Unicode):
+        """
+        Tag the given *text* with tokens.
 
-    if cats: yield Token(string[start:end], tag, bytes(cats))
+        .. warning::
 
+            Any existing tags on the *text* that are in the same
+            namespace as the tokenizer is set to will be deleted.
+        """
+        assert len(text), "empty text"
+        text._tags[self.namespace] = dict() # using unsafe!
+        start = 0
+        cats = StringIO()
+        State = lambda c: False
 
-def Tokenize(string:str, case_tags:bool=False) -> iter:
-    """
-    A Unicode character-based tokenizer, yielding :py:class:`.strtok.Token`
-    instances from the input *string*.
-
-    All characters give raise to single-char tokens, except for those that are
-    tagged LETTERS, DIGITS, SPACES, or BREAKS.
-
-    If *case tags* are used, the LETTERS tag is furthermore divided into the
-    possible groups LOWERCASED, UPPERCASED, CAPITALIZED, CAMELCASED,
-    MIXEDCASED, or the token stays unaltered tagged as LETTERS.
-    """
-    tag, cats, start, end = None, None, 0, 0
-
-    for s, e, c, t in CodepointIter(string):
-        if YieldNewToken(t, tag):
-            if cats:
-                if case_tags: tag = RetagCases(tag, cats)
-                yield Token(string[start:end], tag, bytes(cats))
-
-            #noinspection PyArgumentList
-            tag, cats, start, end = t, bytearray(), s, e
-        else:
-            end = e
-
-        cats.append(c)
-
-    if cats:
-        if case_tags: tag = RetagCases(tag, cats)
-        yield Token(string[start:end], tag, bytes(cats))
-
-def TokenizeAlphanumeric(string:str, case_tags:bool=False) -> iter:
-    """
-    As :py:func:`.Tokenize`, but in addition joins any consecutive sequences
-    of LETTERS (L?), DIGITS (Nd), and NUMERAL (Nl) tokens to either an
-    ALPHANUMERIC (if *case tags* is ``False``) or one of the ALNUM_* tags.
-    """
-    tag, cats, start, end = None, None, 0, 0
-
-    for s, e, c, t in CodepointIter(string):
-        if YieldNewToken(t, tag):
-            if tag is not None:
-                if Tag.isAlnum(t) and Tag.isAlnum(tag):
-                    end, tag = e, Tag.ALPHANUMERIC
-                else:
-                    if case_tags: tag = RetagCases(tag, cats)
-                    yield Token(string[start:end], tag, bytes(cats))
-                    #noinspection PyArgumentList
-                    tag, cats, start, end = t, bytearray(), s, e
+        for end, cat in CharIter(text):
+            if State(cat):
+                cats.write(chr(cat))
             else:
-                #noinspection PyArgumentList
-                tag, cats, start, end = t, bytearray(), s, e
+                if end: text.addTagUnsafe(self.namespace, cats.getvalue(),
+                                          start, end)
+                start = end
+                cats = StringIO()
+                cats.write(chr(cat))
+                State = self._findState(cat)
+
+        if cats: text.addTagUnsafe(self.namespace, cats.getvalue(),
+                                   start, len(text))
+
+    def _findState(self, cat:int) -> FunctionType:
+        """
+        Abstract method that should define the state of the iteration
+        thorough a string and thereby the token boundaries.
+
+        The implementing method should return the appropriate function that
+        evaluates to ``True`` if the same category (or category group) is
+        sent to it.
+        """
+        raise NotImplementedError("abstract")
+
+
+class Separator(Tokenizer):
+    """
+    A tokenizer that only separates `Z?` category character (line- and
+    paragraph-breaks, as well as spaces) from all others.
+    """
+
+    def _findState(self, cat:int) -> FunctionType:
+        if Category.isSeparator(cat):
+            return Category.isSeparator
         else:
-            end = e
+            return Category.notSeparator
 
-        cats.append(c)
 
-    if cats:
-        if case_tags: tag = RetagCases(tag, cats)
-        yield Token(string[start:end], tag, bytes(cats))
+class WordTokenizer(Tokenizer):
+    """
+    A tokenizer that creates single character tokens for all non-letter,
+    -digit, -numeral, and -separator character, while it joins the others
+    as long as the next character is of that same category, too.
+    """
+
+    def _findState(self, cat:int) -> FunctionType:
+        if not Category.isWord(cat):
+            return lambda cat: False
+        elif Category.isLetter(cat):
+            return Category.isLetter
+        elif Category.isSeparator(cat):
+            return Category.isSeparator
+        elif Category.isDigit(cat):
+            return Category.isDigit
+        elif Category.isNumeral(cat):
+            return Category.isNumeral
+        else:
+            raise RuntimeError("no tests for cat='%s'" % chr(cat))
+
+
+class AlnumTokenizer(Tokenizer):
+    """
+    A tokenizer that creates single character tokens for all non-separator
+    and -alphanumeric characters, and joins the latter two as long as the
+    next character is of that same category, too.
+    """
+
+    def _findState(self, cat:int) -> FunctionType:
+        if not Category.isWord(cat):
+            return lambda cat: False
+        elif Category.isAlnum(cat):
+            return Category.isAlnum
+        elif Category.isSeparator(cat):
+            return Category.isSeparator
+        else:
+            raise RuntimeError("no tests for cat='%s'" % chr(cat))
 
 
 class Category:
     """
-    Integer values for the Unicode categories that correspond to ASCII
-    characters for visualization of the category bytes of a token.
+    Integer values for the Unicode categories that correspond to single ASCII
+    characters. In other words, a category value always will be in the
+    [1..127] range.
 
-    In other words, a category value is always in the [0..127] range.
+    Three additional categories are added that are not found in UniCode:
+    :attr:`.Lg`, :attr:`.LG`, and :attr:`.Ts`.
+
     """
 
-#    The test for a category value belonging to a certain class can also be
-#    used on the `chr` representation of the category byte::
-#
-#        >>> cats = b'lll' # three lower-case chars
-#        >>> as_string = Category.toStr(cats)
-#        >>> Category.isLowercase(cats[0])
-#        True
-#        >>> Category.isLowercase(as_string[0])
-#        True
-    
+    # 65 - 90 (A-Z)
+    Lu = ord('A')
+    "``A`` - upper-case letter"
+    LG = ord('B')
+    "``B`` - upper-case Greek character"
+    Lt = ord('C')
+    "``C`` - title-case letter only (Greek and East European glyphs)"
+    Ll = ord('D')
+    "``D`` - lower-case character"
+    Lg = ord('E')
+    "``E`` - lower-case Greek character"
+    LC = ord('F')
+    "``F`` - case character (no characters in this category)"
+    Lm = ord('G')
+    "``G`` - character modifier"
+    Lo = ord('H')
+    "``H`` - letter, other (symbols without a case)"
+    Nd = ord('I')
+    "``I`` - digit number"
+    Nl = ord('J')
+    "``J`` - letter number (Roman, Greek, etc. - aka. numerals)"
+    Zl = ord('K')
+    "``K`` - line separator; breaks"
+    Zp = ord('L')
+    "``L`` - paragraph separator"
+    Zs = ord('M')
+    "``M`` - space separator"
+    No = ord('N')
+    "``N`` - other number (superscript, symbol-like numbers, etc.)"
 
-    Cs = ord('*')
-    "``*`` - surrogate character (encoding error)"
+    # 97 - 122 (a-z)
+    Mc = ord('a')
+    "``a`` - combining space mark (East European glyphs, musical symbols)"
+    Me = ord('b')
+    "``b`` - combining, enclosing mark (Cyrillic number signs, etc.)"
+    Mn = ord('c')
+    "``c`` - non-spacing, combining mark (accent, tilde, actue, etc.)"
+    Pc = ord('d')
+    "``d`` - connector punctuation"
+    Pd = ord('e')
+    "``e`` - dash punctuation"
+    Pe = ord('f')
+    "``f`` - punctuation end (brackets, etc., sans two quotation marks)"
+    Pf = ord('g')
+    "``g`` - final quotation mark (like ``»``; ``>`` itself is in Sm)"
+    Pi = ord("h")
+    "``h`` - initial quotation mark (like ``«``; ``<`` itself is in Sm)"
+    Po = ord('i')
+    """``i`` - other punctuation (,, \*, ", ', /, :, ;, etc.), but
+    excluding the sentence :data:`.STOP_CHARS` that are in :attr:`Ts`, and
+    sans characters that should be in other (@, #, &) or math (%) symbols."""
+    Ps = ord('j')
+    "``j`` - punctuation start (brackets, etc., sans three quotation marks)"
+    Sc = ord('k')
+    "``k`` - currency symbol"
+    Sk = ord('l')
+    "``l`` - modifier symbol"
+    Sm = ord('m')
+    "``m`` - math symbol"
+    So = ord('n')
+    "``n`` - other symbol (``|`` itself is in Sm)"
+    Ts = ord('o')
+    """``o`` - sentence terminals (., !, ?, etc.), a special category reserved
+    specifically for the :data:`.STOP_CHARS`."""
+
+    # 91 - 96
+    Cs = ord('_')
+    "``_`` - surrogate character (encoding error)"
     Cc = ord('^')
     "``^`` - control character (sans separators (Z?) and two Co chars)"
-    Cf = ord('%')
-    "``%`` - formatting character"
-    Cn = ord('?')
-    "``?`` - not assigned (no characters in this category)"
-    Co = ord('!')
-    "``!`` - other, private use"
-    LC = ord('C')
-    "``C`` - case character (no characters in this category)"
-    Lg = ord('g')
-    "``g`` - lower-case Greek character"
-    LG = ord('G')
-    "``G`` - upper-case Greek character"
-    Ll = ord('l')
-    "``l`` - lower-case character"
-    Lm = ord('m')
-    "``m`` - character modifier"
-    Lo = ord('L')
-    "``L`` - letter, other (symbols without a case)"
-    Lt = ord('T')
-    "``T`` - title-case letter only (Greek and East European glyphs)"
-    Lu = ord('U')
-    "``U`` - upper-case letter"
-    Mc = ord(';')
-    "``;`` - combining space mark (East European glyphs, musical symbols)"
-    Me = ord(':')
-    "``:`` - combining, enclosing mark (Cyrillic number signs, etc.)"
-    Mn = ord('~')
-    "``~`` - non-spacing, combining mark (accent, tilde, actue, etc.)"
-    Nd = ord('1')
-    "``1`` - digit number"
-    Nl = ord('2')
-    "``2`` - letter number (Roman, Greek, etc. - aka. numerals)"
-    No = ord('#')
-    "``#`` - other number (superscript, symbol-like numbers, etc.)"
-    Pc = ord('_')
-    "``_`` - connector punctuation"
-    Pd = ord('-')
-    "``-`` - dash punctuation"
-    Pe = ord(')')
-    "``)`` - punctuation end (brackets, etc., sans two quotation marks)"
-    Pf = ord('>')
-    "``>`` - final quotation mark (like ``»``; ``>`` itself is in Sm)"
-    Pi = ord("<")
-    "``<`` - initial quotation mark (like ``«``; ``<`` itself is in Sm)"
-    Po = ord('.')
-    """``.`` - other punctuation (!, ?, ., ,, *, ", ', /, :, ;, etc.), i.e.,
-    including the sentence :py:data:`.STOP_CHARS`, but sans characters that
-    should be in other (@, #, &) or math (%) symbols."""
-    Ps = ord('(')
-    "``(`` - punctuation start (brackets, etc., sans three quotation marks)"
-    Sc = ord('$')
-    "``$`` - currency symbol"
-    Sk = ord('`')
-    "````` - modifier symbol"
-    Sm = ord('+')
-    "``+`` - math symbol"
-    So = ord('|')
-    "``|`` - other symbol (``|`` itself is in Sm)"
-    Zl = ord('b')
-    "``b`` - line separator; breaks"
-    Zp = ord('p')
-    "``p`` - paragraph separator"
-    Zs = ord('s')
-    "``s`` - space separator"
+    Cf = ord('`')
+    "````` - formatting character"
+    Cn = ord(']')
+    "``]`` - not assigned (no characters in this category)"
+    Co = ord('[')
+    "``[`` - other, private use"
 
-    CONTROLS = ( Cc, Cf, Cn, Co, Cs )
-    LETTERS = ( Lu, LG, Lt, Ll, Lg, LC, Lm, Lo )
-    UPPERCASE_LETTERS = ( Lu, LG, Lt )
-    LOWERCASE_LETTERS = ( Ll, Lg )
-    OTHER_LETTERS = ( LC, Lm, Lo )
-    NUMBERS = ( Nd, Nl, No )
-    NUMERIC = ( Nd, Nl )
-    MARKS = ( Mc, Me, Mn )
-    PUNCTUATION = ( Pc, Pd, Pe, Pf, Pi, Po, Ps )
-    SYMBOLS = ( Sc, Sk, Sm, So )
-    SEPARATORS = ( Zl, Zp, Zs )
+    CONTROLS = { Cc, Cf, Cn, Co, Cs }
+    WORD = { Lu, Ll, LG, Lg, Lt, LC, Lm, Lo, Nd, Nl, Zl, Zp, Zs }
+    ALNUM = { Lu, Ll, Nd, Nl, LG, Lg, Lt, LC, Lm, Lo }
+    LETTERS = { Lu, LG, Lt, Ll, Lg, LC, Lm, Lo }
+    UPPERCASE_LETTERS = { Lu, LG, Lt }
+    LOWERCASE_LETTERS = { Ll, Lg }
+    OTHER_LETTERS = { LC, Lm, Lo }
+    NUMBERS = { Nd, Nl, No }
+    NUMERIC = { Nd, Nl }
+    MARKS = { Mc, Me, Mn }
+    PUNCTUATION = { Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts }
+    SYMBOLS = { Sc, Sk, Sm, So }
+    SEPARATORS = { Zl, Zp, Zs }
 
     @classmethod
     def isControl(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any control character category (C?).
-        """
-        return cat in cls.CONTROLS
+        # ``True`` if the *cat* is any control character category (C?).
+        #return cat in cls.CONTROLS
+        return 90 < cat < 97
+
+    @classmethod
+    def isWord(cls, cat:int) -> bool:
+        # ``True`` if the *cat* is any letter, digit, numeral, or separator
+        # category (L?, Nd, Nl, Z?).
+        #return cat in cls.WORD
+        return cat < 78
+
+    @classmethod
+    def isAlnum(cls, cat:int) -> bool:
+        #``True`` if the *cat* is any letter, digit, or numeral category
+        # (L?, Nd, Nl).
+        #return cat in cls.ALNUM
+        return cat < 75
 
     @classmethod
     def isLetter(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any letter category (L?).
-        """
-        return cat in cls.LETTERS
+        # ``True`` if the *cat* is any letter category (L?).
+        #return cat in cls.LETTERS
+        return cat < 73
 
     @classmethod
     def isUppercase(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any upper-case letter category
-        (LG, Lt, Lu).
-        """
+        # ``True`` if the *cat* is any upper-case letter category
+        # (LG, Lt, Lu).
         return cat in cls.UPPERCASE_LETTERS
 
     @classmethod
     def isLowercase(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any lower-case letter category (Lg, Ll).
-        """
+        # ``True`` if the *cat* is any lower-case letter category (Lg, Ll).
         return cat in cls.LOWERCASE_LETTERS
 
     @classmethod
     def isOtherLetter(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any non-upper- or -lower-case letter
-        (LC, Lm, Lo).
-        """
-        return cat in cls.UPPERCASE_LETTERS
+        # ``True`` if the *cat* is any non-upper- or -lower-case letter
+        # (LC, Lm, Lo).
+        return cat in cls.OTHER_LETTERS
 
     @classmethod
     def isNumber(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any number category (N?).
-        """
+        # ``True`` if the *cat* is any number category (N?).
         return cat in cls.NUMBERS
 
     @classmethod
     def isNumeric(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any numeric value (Nd, Nl).
-        """
+        # ``True`` if the *cat* is any numeric value (Nd, Nl).
         return cat in cls.NUMERIC
 
     @classmethod
+    def isDigit(cls, cat:int) -> bool:
+        # ``True`` if the *cat* is digit (Nd).
+        return cat == Category.Nd
+
+    @classmethod
+    def isNumeral(cls, cat:int) -> bool:
+        # ``True`` if the *cat* is numeral (Nl).
+        return cat == Category.Nl
+
+    @classmethod
     def isMark(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any mark category (Cf, M?).
-        """
+        # ``True`` if the *cat* is any mark category (Cf, M?).
         return cat in cls.MARKS
 
     @classmethod
     def isPunctuation(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any punctuation category (P?).
-        """
+        # ``True`` if the *cat* is any punctuation category (P?).
         return cat in cls.PUNCTUATION
 
     @classmethod
     def isSymbol(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any symbol character category (S?).
-        """
+        # ``True`` if the *cat* is any symbol character category (S?).
         return cat in cls.SYMBOLS
 
     @classmethod
     def isSeparator(cls, cat:int) -> bool:
-        """
-        ``True`` if the *cat* is any separator category (Z?).
-        """
+        # ``True`` if the *cat* is any separator category (Z?).
         return cat in cls.SEPARATORS
 
-    @staticmethod
-    def toStr(cats:bytes) -> str:
-        """
-        Convert one or more category bytes to their one-character string
-        representation (i.e., not the Unicode category codes, but the 7bit
-        ASCII characters used here).
-        """
-        return cats.decode('ASCII')
+    @classmethod
+    def notSeparator(cls, cat:int) -> bool:
+        # ``True`` if the *cat* is not any separator category (Z?).
+        return cat not in cls.SEPARATORS
+
+
+def CharIter(text:str) -> iter([(int, int)]):
+    """
+    Yields (offset, category) pairs for any *text* string, one per (real -
+    wrt. the surrogate range) character in the *text*.
+    """
+    pos = 0
+    strlen = len(text)
+
+    while pos < strlen:
+        cat = GetCharCategoryValue(text[pos])
+        char_len = 1
+
+        if cat == Category.Cs and pos + 1 < strlen:
+            try:
+                cat = GetSurrogateCategoryValue(text[pos:pos + 2])
+                char_len = 2
+            except TypeError:
+                pass
+
+        yield pos, cat
+        pos += char_len
+
+
+def GetCharCategoryValue(character:chr) -> int:
+    """
+    Return the (remapped) Unicode category value of a *character*.
+
+    :raises: TypeError If the *character* can not be mapped by
+                       :func:`unicodedata.category`
+    """
+    cat = getattr(Category, category(character))
+
+    if cat in (Category.Ll, Category.Lu) and IsGreek(character):
+        if cat == Category.Ll: cat = Category.Lg
+        else:                  cat = Category.LG
+    elif cat in REMAPPED_CHARACTERS and character in REMAPPED_CHARACTERS[cat]:
+        cat = REMAPPED_CHARACTERS[cat][character]
+
+    return cat
+
+
+def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
+    """
+    Return the (remapped) category value of a *surrogate pair*.
+
+    :raises: TypeError If the *surrogate pair* can not be mapped by
+                       :func:`unicodedata.category`
+    """
+    cat = getattr(Category, category(surrogate_pair))
+
+    if cat in REMAPPED_CHARACTERS and \
+       surrogate_pair in REMAPPED_CHARACTERS[cat]:
+        cat = REMAPPED_CHARACTERS[cat][surrogate_pair]
+
+    return cat
+
+
+def IsGreek(char:chr) -> bool:
+    """
+    Return ``True`` if the *char* is on one of the Greek code-pages.
+    """
+    return "\u0370" <= char < "\u03FF" or "\u1F00" <= char < "\u1FFF"
 
 
 REMAPPED_CHARACTERS = {
     Category.Cc: {
-        "\n\f\r\u0085\u008D": Category.Zl,
-        "\t\v": Category.Zs,
-        "\u0091\u0092": Category.Co # Privates
+        "\n": Category.Zl,
+        "\f": Category.Zl,
+        "\r": Category.Zl,
+        "\u0085": Category.Zl, # NEXT LINE
+        "\u008D": Category.Zl, # REVERSE LINE FEED
+        "\t": Category.Zs,
+        "\v": Category.Zs,
+        "\u0091": Category.Co, # Private
+        "\u0092": Category.Co, # Private
     },
     Category.Po: {
-        "#&@\uFE5F\uFE60\uFE6B\uFF03\uFF06\uFF20": Category.So,
-        "%\u0609\u060A\u066A\u2030\u2031\uFE6A\uFF05": Category.Sm
+        "#": Category.So,
+        "&": Category.So,
+        "@": Category.So,
+        # Variants of #, &, @
+        "\uFE5F": Category.So,
+        "\uFE60": Category.So,
+        "\uFE6B": Category.So,
+        "\uFF03": Category.So,
+        "\uFF06": Category.So,
+        "\uFF20": Category.So,
+        "%": Category.Sm,
+        # Variants of %
+        "\u0609": Category.Sm,
+        "\u060A": Category.Sm,
+        "\u066A": Category.Sm,
+        "\u2030": Category.Sm,
+        "\u2031": Category.Sm,
+        "\uFE6A": Category.Sm,
+        "\uFF05": Category.Sm,
+        # STOP_CHARS
+        "\u0021": Category.Ts, # EXCLAMATION MARK
+        "\u002E": Category.Ts, # FULL STOP
+        "\u003F": Category.Ts, # QUESTION MARK
+        "\u037E": Category.Ts, # GREEK QUESTION MARK
+        "\u055C": Category.Ts, # ARMENIAN EXCLAMATION MARK
+        "\u055E": Category.Ts, # ARMENIAN QUESTION MAR
+        "\u0589": Category.Ts, # ARMENIAN FULL STOP
+        "\u05C3": Category.Ts, # HEBREW PUNCTUATION SOF PASUQ
+        "\u061F": Category.Ts, # ARABIC QUESTION MARK
+        "\u06D4": Category.Ts, # ARABIC FULL STOP
+        "\u0700": Category.Ts, # SYRIAC END OF PARAGRAPH
+        "\u0701": Category.Ts, # SYRIAC SUPRALINEAR FULL STOP
+        "\u0702": Category.Ts, # SYRIAC SUBLINEAR FULL STOP
+        "\u0964": Category.Ts, # DEVANAGARI DANDA
+        "\u0965": Category.Ts, # DEVANAGARI DOUBLE DANDA
+        "\u0F08": Category.Ts, # TIBETAN MARK SBRUL SHAD
+        "\u0F0D": Category.Ts, # TIBETAN MARK SHAD
+        "\u0F0E": Category.Ts, # TIBETAN MARK NYIS SHAD
+        "\u0F0F": Category.Ts, # TIBETAN MARK TSHEG SHAD
+        "\u0F10": Category.Ts, # TIBETAN MARK NYIS TSHEG SHAD
+        "\u0F11": Category.Ts, # TIBETAN MARK RIN CHEN SPUNGS SHAD
+        "\u0F12": Category.Ts, # TIBETAN MARK RGYA GRAM SHAD
+        "\u104A": Category.Ts, # MYANMAR SIGN LITTLE SECTION
+        "\u104B": Category.Ts, # MYANMAR SIGN SECTION
+        "\u1362": Category.Ts, # ETHIOPIC FULL STOP
+        "\u1367": Category.Ts, # ETHIOPIC QUESTION MARK
+        "\u1368": Category.Ts, # ETHIOPIC PARAGRAPH SEPARATOR
+        "\u166E": Category.Ts, # CANADIAN SYLLABICS FULL STOP
+        "\u1803": Category.Ts, # MONGOLIAN FULL STOP
+        "\u1809": Category.Ts, # MONGOLIAN MANCHU FULL STOP
+        "\u1944": Category.Ts, # LIMBU EXCLAMATION MARK
+        "\u1945": Category.Ts, # LIMBU QUESTION MARK
+        "\u203C": Category.Ts, # DOUBLE EXCLAMATION MARK
+        "\u203D": Category.Ts, # INTERROBANG (? + ! combined)
+        "\u2047": Category.Ts, # DOUBLE QUESTION MARK
+        "\u2048": Category.Ts, # QUESTION EXCLAMATION MARK
+        "\u2049": Category.Ts, # EXCLAMATION QUESTION MARK
+        "\u3002": Category.Ts, # IDEOGRAPHIC FULL STOP
+        "\uFE12": Category.Ts, # PRESENTATION FORM FOR VERTICAL IDEOGRAPHIC FULL STOP
+        "\uFE15": Category.Ts, # PRESENTATION FORM FOR VERTICAL EXCLAMATION MARK
+        "\uFE16": Category.Ts, # PRESENTATION FORM FOR VERTICAL QUESTION MARK
+        "\uFE52": Category.Ts, # SMALL FULL STOP
+        "\uFE56": Category.Ts, # SMALL QUESTION MARK
+        "\uFE57": Category.Ts, # SMALL EXCLAMATION MARK
+        "\uFF01": Category.Ts, # FULLWIDTH EXCLAMATION MARK
+        "\uFF0E": Category.Ts, # FULLWIDTH FULL STOP
+        "\uFF1F": Category.Ts, # FULLWIDTH QUESTION MARK
+        "\uFF61": Category.Ts, # HALFWIDTH IDEOGRAPHIC FULL STOP
     },
-    # Quotation markers:
-    Category.Ps: { "\u201A\u201E\u301D": Category.Pi },
-    Category.Pe: { "\u301E\u301F": Category.Pf }
+    Category.Ps: {
+        "\u201A": Category.Pi, # SINGLE LOW-9 QUOTATION MARK
+        "\u201E": Category.Pi, # DOUBLE LOW-9 QUOTATION MARK
+        "\u301D": Category.Pf, # RIGHT DOUBLE QUOTATION MARK
+    },
+    Category.Pe: {
+        "\u301E": Category.Pf, # DOUBLE PRIME QUOTATION MARK
+        "\u301F": Category.Pf, # LOW DOUBLE PRIME QUOTATION MARK
+    }
 }
-"Remapped Unicode characters: {cat: {chars: cat}}."
+"Remapped Unicode character categories: ``{ from_cat: { char: to_cat } }``."
 
+
+###############
+# UNUSED CODE #
+###############
 
 class Tag:
     """
@@ -497,12 +645,13 @@ class Tag:
         Category.Pe: PUNCT,
         Category.Pf: PUNCT,
         Category.Pi: PUNCT,
-        Category.Po: PUNCT, # includes STOP (differentiated in GetTagValue)
+        Category.Po: PUNCT,
         Category.Ps: PUNCT,
         Category.Sc: SYMBOL,
         Category.Sk: SYMBOL,
         Category.Sm: SYMBOL,
         Category.So: SYMBOL,
+        Category.Ts: STOP,
         Category.Zl: BREAKS,
         Category.Zp: BREAKS,
         Category.Zs: SPACES,
@@ -541,7 +690,8 @@ class Tag:
         Return ``True`` if the tag is one of the tags that give rise to
         multi-char tokens
         """
-        return tag in (Tag.LETTERS, Tag.DIGITS, Tag.SPACES, Tag.BREAKS)
+        return tag in (Tag.LETTERS, Tag.DIGITS, Tag.SPACES, Tag.BREAKS,
+                       Tag.ALPHANUMERIC)
 
     @classmethod
     def isWord(cls, tag:int) -> bool:
@@ -578,10 +728,6 @@ class Tag:
                 if type(val) == int:
                     cls._TAG_NAMES[val] = name
 
-
-###########
-# HELPERS #
-###########
 
 def CasetagLetters(cats:bytearray) -> int:
     """
@@ -654,113 +800,3 @@ def CasetagAlphanumeric(cats:bytearray) -> int:
         return CasetagAlphanumeric(cats[1:])
     else:
         raise RuntimeError("no provisions for cats %s" % cats.decode("ASCII"))
-
-
-def CodepointIter(string:str) -> iter:
-    """
-    Yield start, end (positions), category, and tag (integers) of each Unicode
-    code-point in the string.
-    """
-    pos, strlen = 0, len(string)
-
-    while pos < strlen:
-        char = string[pos]
-        cat = GetCharCategoryValue(char)
-        tag = GetTagValue(char, cat)
-        cplen = 1
-
-        if cat == Category.Cs and pos + 1 < strlen:
-            try:
-                pair = string[pos:pos + 2]
-                cat = GetSurrogateCategoryValue(pair)
-            except TypeError:
-                pass
-            else:
-                cplen = 2
-                tag = GetTagValue(pair, cat)
-
-        yield pos, pos + cplen, cat, tag
-        pos += cplen
-
-
-def GetCharCategoryValue(character:chr) -> int:
-    """
-    Return the (remapped) Unicode category value of a *character*.
-
-    :raises: TypeError If the *character* can not be mapped by
-                       :py:func:`unicodedata.category`
-    """
-    cat = getattr(Category, category(character))
-
-    if cat in (Category.Ll, Category.Lu) and IsGreek(character):
-        if cat == Category.Ll: cat = Category.Lg
-        else:                  cat = Category.LG
-    elif cat in REMAPPED_CHARACTERS:
-        cat = RemapCategory(character, cat)
-
-    return cat
-
-
-def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
-    """
-    Return the (remapped) category value of a *surrogate pair*.
-
-    :raises: TypeError If the *surrogate pair* can not be mapped by
-                       :py:func:`unicodedata.category`
-    """
-    cat = getattr(Category, category(surrogate_pair))
-
-    # Not needed, because no Supplementary Plane characters get remapped
-    # if cat in REMAPPED_CHARACTERS:
-    #     cat = RemapCategory(character, cat)
-
-    return cat
-
-def GetTagValue(character:str, category:int) -> int:
-    """
-    Return the integer value of a :py:class:`.Tag` given a *character* and
-    its (remapped) Unicode *category*.
-    """
-    if category == Category.Po and character in STOP_CHARS: return Tag.STOP
-    else: return Tag.forCategory(category)
-
-
-def IsGreek(char:chr) -> bool:
-    """
-    Return ``True`` if the *char* is on one of the Greek code-pages.
-    """
-    return "\u0370" <= char < "\u03FF" or "\u1F00" <= char < "\u1FFF"
-
-
-def RemapCategory(char:str, cat:int) -> int:
-    """
-    Return the remapped category for any character that is described in the
-    REMAPPED_CHARACTERS dictionary.
-
-    :raises: KeyError If *cat* isn't in the REMAPPED_CHARACTERS dictionary.
-    """
-    for character_group in REMAPPED_CHARACTERS[cat]:
-        if char in character_group:
-            cat = REMAPPED_CHARACTERS[cat][character_group]
-            break
-
-    return cat
-
-
-def RetagCases(tag:int, cats:bytearray) -> int:
-    """
-    Return a new tag using :py:func:`.CasetagLetters` if the *tag* is LETTERS
-    and :py:func:`.CasetagAlphanumeric` if it is ALPHANUMERIC; Otherwise just
-    return the *tag*.
-    """
-    if   tag == Tag.LETTERS:      tag = CasetagLetters(cats)
-    elif tag == Tag.ALPHANUMERIC: tag = CasetagAlphanumeric(cats)
-    return tag
-
-
-def YieldNewToken(next_tag:int, last_tag:int) -> bool:
-    """
-    Return ``True`` if the tags mismatch or the new tag is neither LETTERS,
-    DIGITS, BREAKS, or SPACES.
-    """
-    return last_tag != next_tag or not Tag.isMultichar(next_tag)

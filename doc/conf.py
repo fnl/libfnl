@@ -12,7 +12,7 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os
+#import sys, os
 
 import sphinx.jinja2glue
 if not hasattr(sphinx.jinja2glue.idgen, "next"):
@@ -246,7 +246,7 @@ texinfo_documents = [
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'http://docs.python.org/': None}
+intersphinx_mapping = {'python': ('http://docs.python.org/py3k', None)}
 
 # -- Options for autodoc ------
 
