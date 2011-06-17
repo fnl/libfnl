@@ -1,16 +1,18 @@
 #/usr/bin/env python3
+import os
 
 from unittest import main, TestCase
 
-from libfnl.nlp.genia.tagger import GeniaTagger, Token
+from libfnl.nlp.genia.tagger import GeniaTagger, Token, GENIATAGGER_DIR
 
-GENIATAGGER_BINARY = '/Users/fleitner/work/lib/c/geniatagger-3.0.1/geniatagger'
-MORPHDIC_DIR = '/Users/fleitner/work/lib/c/geniatagger-3.0.1'
+assert os.path.exists(GENIATAGGER_DIR) and \
+       os.access(GENIATAGGER_DIR, os.R_OK), \
+    "GENIATAGGER_DIR invalid - skipping GENIA Tagger tests"
 
 class GeniaTaggerTests(TestCase):
 
     def setUp(self):
-        self.tagger = GeniaTagger(GENIATAGGER_BINARY, MORPHDIC_DIR)
+        self.tagger = GeniaTagger()
         self.sentence = "Inhibition of NF-kappa beta activation reversed " \
             "the anti-apoptotic effect of isochamaejasmin."
         self.tokens = [
