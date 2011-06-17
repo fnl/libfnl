@@ -7,9 +7,9 @@
 
 import logging
 
-def Fleiss(frequency_matrix:list(list([int]))) -> float:
+def Fleiss(frequency_matrix):
     """
-    Compute Fleiss' Kappa for two or more raters.
+    Compute Fleiss' Kappa (a `float` value) for two or more raters.
 
     .. seealso::
 
@@ -71,7 +71,7 @@ def Fleiss(frequency_matrix:list(list([int]))) -> float:
     # Return Fleiss' Kappa
     return (mean_agreement - var_votes) / (1 - var_votes)
 
-def CreateRatingMatrix(ratings:list(dict([(str, str)]))) -> list(list([int])):
+def CreateRatingMatrix(ratings:[{str: str}]) -> [[int]]:
     """
     :param ratings: A list of {subject: vote} dictionaries; one per rater.
     :return list: A rating frequency matrix as required for the Kappa
@@ -103,7 +103,7 @@ def CreateRatingMatrix(ratings:list(dict([(str, str)]))) -> list(list([int])):
 
     return M
 
-def FindAndCheckRaters(M:list(list([int])))->int:
+def FindAndCheckRaters(M:[[int]]) -> int:
     """
     Find the number of raters ``R`` and assert that the sum of each row has
     that same number.
