@@ -13,6 +13,21 @@ import os
 from subprocess import Popen, PIPE
 from threading import Thread
 
+GENIATAGGER_DIR = os.environ.get('GENIATAGGER_DIR', '/opt/genia')
+"""
+The directory containing the ``geniatagger`` binary and ``morphdic`` directory,
+defaulting to ``/opt/genia``, or as set in the environment.
+"""
+
+GENIATAGGER = "{}/geniatagger".format(GENIATAGGER_DIR)
+"""
+The default path of the ``geniatagger``, created by appending the regular name
+of the binary to the :data:`GENIATAGGER_DIR`.
+
+If the GENIA Tagger is on the ``PATH``, only the name of the binary will do,
+too.
+"""
+
 class GeniaTagger(object):
     """
     A subprocess wrapper for the GENIA Tagger.
@@ -20,17 +35,20 @@ class GeniaTagger(object):
 
     L = logging.getLogger("GeniaTagger")
 
-    def __init__(self, binary, morphdic_dir, tokenize=True):
+    def __init__(self, binary:str=GENIATAGGER,
+                 morphdic_dir:str=GENIATAGGER_DIR,
+                 tokenize:bool=True):
         """
         :param binary: The path or name (if in ``$PATH``) of the geniatagger
                        binary.
         :param morphdic_dir: The directory where the morphdic directory is
-                             located.
+                             located (ie., **not** including the ``morphdic``
+                             directory itself).
         :param tokenize: If ``False``, geniatagger is run without
                          tokenization (ie., with the ``-nt`` flag).
         """
         if os.path.isabs(binary): GeniaTagger._checkPath(binary, os.X_OK)
-        GeniaTagger._checkPath(morphdic_dir, os.R_OK)
+        GeniaTagger._checkPath("{}/morphdic".format(morphdic_dir), os.R_OK)
         args = [binary] if tokenize else [binary, '-nt']
         self.L.debug("starting '%s'" % ' '.join(args))
         self.L.debug("in directory '%s'", morphdic_dir)
