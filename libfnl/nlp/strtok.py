@@ -92,12 +92,12 @@ class Tokenizer:
 
     def tag(self, text:Unicode):
         """
-        Tag the given *text* with tokens.
+        Tag the given :class:`.Unicode` *text* with tokens.
 
         .. warning::
 
-            Any existing tags on the *text* that are in the same
-            namespace as the tokenizer is set to will be deleted.
+            Any existing tags on the *text* that are in the tokenizer's
+            *namespace* will be deleted.
         """
         assert len(text), "empty text"
         text._tags[self.namespace] = dict() # using unsafe!
@@ -199,13 +199,13 @@ class Category:
     Lu = ord('A')
     "``A`` - upper-case letter"
     LG = ord('B')
-    "``B`` - upper-case Greek character"
+    "``B`` - upper-case Greek character -- a non-standard Unicode category"
     Lt = ord('C')
     "``C`` - title-case letter only (Greek and East European glyphs)"
     Ll = ord('D')
     "``D`` - lower-case character"
     Lg = ord('E')
-    "``E`` - lower-case Greek character"
+    "``E`` - lower-case Greek character -- a non-standard Unicode category"
     LC = ord('F')
     "``F`` - case character (no characters in this category)"
     Lm = ord('G')
@@ -244,7 +244,7 @@ class Category:
     "``h`` - initial quotation mark (like ``«``; ``<`` itself is in Sm)"
     Po = ord('i')
     """``i`` - other punctuation (,, \*, ", ', /, :, ;, etc.), but
-    excluding the sentence :data:`.STOP_CHARS` that are in :attr:`Ts`, and
+    excluding the sentence :data:`.STOP_CHARS` that are in :attr:`.Ts`, and
     sans characters that should be in other (@, #, &) or math (%) symbols."""
     Ps = ord('j')
     "``j`` - punctuation start (brackets, etc., sans three quotation marks)"
@@ -288,55 +288,55 @@ class Category:
 
     @classmethod
     def isControl(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any control character category (C?).
+        "``True`` if the *cat* is any control character category (C?)."
         #return cat in cls.CONTROLS
         return 90 < cat < 97
 
     @classmethod
     def isWord(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any letter, digit, numeral, or separator
+        "``True`` if the *cat* is any letter, digit, numeral, or separator."
         # category (L?, Nd, Nl, Z?).
         #return cat in cls.WORD
         return cat < 78
 
     @classmethod
     def isAlnum(cls, cat:int) -> bool:
-        #``True`` if the *cat* is any letter, digit, or numeral category
+        "``True`` if the *cat* is any letter, digit, or numeral category"
         # (L?, Nd, Nl).
         #return cat in cls.ALNUM
         return cat < 75
 
     @classmethod
     def isLetter(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any letter category (L?).
+        "``True`` if the *cat* is any letter category (L?)."
         #return cat in cls.LETTERS
         return cat < 73
 
     @classmethod
     def isUppercase(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any upper-case letter category
+        "``True`` if the *cat* is any upper-case letter category."
         # (LG, Lt, Lu).
         return cat in cls.UPPERCASE_LETTERS
 
     @classmethod
     def isLowercase(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any lower-case letter category (Lg, Ll).
+        "``True`` if the *cat* is any lower-case letter category (Lg, Ll)."
         return cat in cls.LOWERCASE_LETTERS
 
     @classmethod
     def isOtherLetter(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any non-upper- or -lower-case letter
+        "``True`` if the *cat* is any non-upper- or -lower-case letter."
         # (LC, Lm, Lo).
         return cat in cls.OTHER_LETTERS
 
     @classmethod
     def isNumber(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any number category (N?).
+        "``True`` if the *cat* is any number category (N?)."
         return cat in cls.NUMBERS
 
     @classmethod
     def isNumeric(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any numeric value (Nd, Nl).
+        "``True`` if the *cat* is any numeric value (Nd, Nl)."
         return cat in cls.NUMERIC
 
     @classmethod
@@ -346,32 +346,32 @@ class Category:
 
     @classmethod
     def isNumeral(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is numeral (Nl).
+        "``True`` if the *cat* is numeral (Nl)."
         return cat == Category.Nl
 
     @classmethod
     def isMark(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any mark category (Cf, M?).
+        "``True`` if the *cat* is any mark category (M?)."
         return cat in cls.MARKS
 
     @classmethod
     def isPunctuation(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any punctuation category (P?).
+        "``True`` if the *cat* is any punctuation category (P?)."
         return cat in cls.PUNCTUATION
 
     @classmethod
     def isSymbol(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any symbol character category (S?).
+        "``True`` if the *cat* is any symbol character category (S?)."
         return cat in cls.SYMBOLS
 
     @classmethod
     def isSeparator(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is any separator category (Z?).
+        "``True`` if the *cat* is any separator category (Z?)."
         return cat in cls.SEPARATORS
 
     @classmethod
     def notSeparator(cls, cat:int) -> bool:
-        # ``True`` if the *cat* is not any separator category (Z?).
+        "``True`` if the *cat* is not any separator category (Z?)."
         return cat not in cls.SEPARATORS
 
 
