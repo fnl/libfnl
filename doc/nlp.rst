@@ -75,6 +75,26 @@ Unicode
    :members:
 
 
+======================================
+medline -- Handling of MEDLINE records
+======================================
+
+.. automodule:: libfnl.nlp.medline
+
+.. autodata:: libfnl.nlp.medline.EUTILS_URL
+
+.. autodata:: libfnl.nlp.medline.SKIPPED_ELEMENTS
+
+FetchMedlineXml
+---------------
+
+.. autofunction:: libfnl.nlp.medline.FetchMedlineXml
+
+ParseMedlineXml
+---------------
+
+.. autofunction:: libfnl.nlp.medline.ParseMedlineXml
+
 =============================
 strtok -- String Tokenization
 =============================
