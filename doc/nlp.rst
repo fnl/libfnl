@@ -36,23 +36,22 @@ doc -- Text-Annotation Data Types
 
 .. automodule:: libfnl.nlp.text
 
-This NLP packages uses offset annotations on text to manage the tagging of text spans. To make this simple, Python's `bytes` and `str` implementations are extended with functions to add, retrieve, and delete annotations on these two data types. In addition, the API provides a method on each type to convert to the other without loosing or mangling the (offset) annotations.
+This NLP packages uses offset annotations on text to manage the tagging of text spans. To make this simple, Python's `bytes` and `str` implementations are extended with functions to add, retrieve, and delete annotations on these two data types. In addition, the API provides a method on each type to convert to the other without loosing or mangling the (offsets of) annotations.
 
-Managing documents and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text documents: one for the binary representation (encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any annotations (called **tags**) made on the text. Thereby, offset-based annotations made in one specific encoding can even be easily transformed to the Unicode view where it is easy to work with them in Python, and even back into a completely different encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about either offsets or encoding. Furthermore, a few minimum requirements for tags on the text are enforced:
+Managing documents and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text documents: one for the binary representation (encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any annotations (called **tags**) made on the text. Thereby, offset-based annotations made in one specific encoding can be transformed to the Unicode view where it is easy to work with them in Python, and then back into a completely different encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about offsets or encoding. Furthermore, a few minimum requirements for tags on the text are enforced:
 
-#. All tags are identified by their (string) **namespace** and **key**, and have some (string) **value**.
-#. Only one tag and, hence, value for each namespace and key may exist.
-#. A key ``K`` is a tuple of integers, of length 1, 2, or 2\ ``m`` (for any ``m > 1``).
-#. The key encodes the offsets this tag annotates; A single value key annotates an exact position in the text, a two-value key a given span, and a 2m-value key a multiple (consecutive) text segments.
-#. The key ``K`` of length ``n`` annotating text ``T`` must pass the following conditions (where ``len`` is the Python `len` function applied to the text's content):
+#. All tags consist of a (string) **namespace** and **key**, and have some (integer tuple) **offset**.
+#. A position ``P`` is a tuple of integers, of length 1, 2, or 2\ ``m`` (for any ``m > 1``).
+#. The key ``K`` holds a list of offsets where this tag annotated on the text; A single value position annotates an exact point in the text, a two-value position a given span, and a 2\ ``m``\ -value multiple (consecutive, see next) text segments.
+#. The ``P`` of length ``n`` annotating text ``T`` must pass the following conditions (where ``len`` is the Python `len` function applied to the text's content), that is each offset in ``P`` must be within the text's boundaries and consecutive:
 
-  *    K\ :sub:`1` >= 0 ∧
-  *    K\ :sub:`n` <= len(T) ∧
-  *    K\ :sub:`i` < K\ :sub:`j` ∀ i =: {1, ..., n-1}, j =: i + 1
+  *    P\ :sub:`1` >= 0 ∧
+  *    P\ :sub:`n` <= len(T) ∧
+  *    P\ :sub:`i` < P\ :sub:`j` ∀ i =: {1, ..., n-1}, j =: i + 1
 
-6. By transforming between binary and Unicode, any illegal offsets result in UnicodeErrors.
+6. By transforming between binary and Unicode, any illegal offsets (eg., offsets inside a multi-byte character (for bytes) or inside a surrogate pair (for strings and narrow Python builds) result in UnicodeErrors.
 
-For example, if an offset value in a key points between two surrogate characters or into the byte-sequence that forms a character in the encoded binary version, this would be considered an illegal offset value and raises a :py:exc:`UnicodeError`. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
+For example, if an offset value of a key points between two surrogate characters or into the byte-sequence that forms a character in the encoded binary version, this would be considered an illegal offset value and raises a :py:exc:`UnicodeError`. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
 
 However, both views share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
 

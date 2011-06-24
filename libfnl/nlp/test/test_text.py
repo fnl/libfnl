@@ -1,79 +1,128 @@
 from hashlib import sha256
 from libfnl.nlp.text import Binary, Unicode, AnnotatedContent
+from sys import maxsize
 from unittest import main, TestCase
 
 __author__ = 'Florian Leitner'
-
 
 class AnnotatedContentTests(TestCase):
 
     def setUp(self):
         self.doc = AnnotatedContent()
+        self.tags = {"ns": {"tag": [(1,)]}}
 
     def testCreateUnnamedDoc(self):
         self.assertEqual(self.doc._tags, {})
 
-    def testDelOnlyTag(self):
-        self.doc._tags = {"ns": {(1,): "val"}}
-        self.doc.delTag("ns", 1)
+    def testFetchingTagsCopiesEntireStructure(self):
+        self.doc._tags = self.tags
+        real = self.tags
+        orig = self.doc._tags
+        copied = self.doc.tags
+        # new namespace dictionary
+        self.assertEqual(id(real), id(orig))
+        self.assertNotEqual(id(copied), id(orig))
+        # new key dictionary
+        self.assertEqual(id(real["ns"]), id(orig["ns"]))
+        self.assertNotEqual(id(copied["ns"]), id(orig["ns"]))
+        # new offset list
+        self.assertEqual(id(real["ns"]["tag"]), id(orig["ns"]["tag"]))
+        self.assertNotEqual(id(copied["ns"]["tag"]), id(orig["ns"]["tag"]))
+        # BUT: no new offset tuples!!
+        self.assertEqual(id(real["ns"]["tag"][0]), id(orig["ns"]["tag"][0]))
+        self.assertEqual(id(copied["ns"]["tag"][0]), id(orig["ns"]["tag"][0]))
+
+    def testDelNamespace(self):
+        self.doc.tags = self.tags
+        self.doc.delNamespace("ns")
         self.assertDictEqual(self.doc._tags, {})
 
-    def testDelTagOfMany(self):
-        self.doc._tags = {"ns": {(1,): "val", (1,2): "val"}}
-        self.doc.delTag("ns", 1, 2)
-        self.assertDictEqual(self.doc._tags, {"ns": {(1,): "val"}})
+    def testDelNonExistingNamespace(self):
+        self.doc.tags = self.tags
+        self.assertRaises(KeyError, self.doc.delNamespace, "ns2")
+
+    def testDelOnlyKey(self):
+        self.doc.tags = self.tags
+        self.doc.delKey("ns", "tag")
+        self.assertDictEqual(self.doc._tags, {})
+
+    def testDelKeyOfMany(self):
+        self.doc.tags = {"ns": {"tag": [(1,)], "tag2": [(2,)]}}
+        self.doc.delKey("ns", "tag2")
+        self.assertDictEqual(self.doc._tags, self.tags)
+
+    def testDelOnlyKeyInMultinamespace(self):
+        self.doc.tags = {"ns": {"tag": [(1,)]}, "ns2": {"tag2": [(2,)]}}
+        self.doc.delKey("ns2", "tag2")
+        self.assertDictEqual(self.doc._tags, self.tags)
 
     def testDelNonExistingTag(self):
-        self.doc._tags = {"ns": {(1,): "val", (1,2): "val"}}
-        self.assertRaises(KeyError, self.doc.delTag, "ns", 2)
-        self.assertRaises(KeyError, self.doc.delTag, "wrong", 1)
+        self.doc.tags = self.tags
+        self.assertRaises(KeyError, self.doc.delKey, "ns", "tag2")
 
-    def testGetTags(self):
-        self.doc._tags = {"ns": {(1,): "val", (1,2): "val"}}
-        ns = self.doc.getTags("ns")
-        self.assertDictEqual(ns, {(1,): "val", (1,2): "val"})
+    def testDelOffset(self):
+        self.doc.tags = self.tags
+        self.doc.delOffset("ns", "tag", (1,))
+        self.assertDictEqual(self.doc._tags, {})
 
-    def testGetValue(self):
-        self.doc._tags = {"ns": {(1,2): "val"}}
-        self.assertSequenceEqual(self.doc.getValue("ns", 1, 2), "val")
+    def testDelOffsetOfMany(self):
+        self.doc.tags = {"ns": {"tag": [(1,), (2,)]}}
+        self.doc.delOffset("ns", "tag", (2,))
+        self.assertDictEqual(self.doc._tags, self.tags)
 
-    def testIterNamespaces(self):
-        self.doc._tags = {"ns": {(1,): "val"}, "nb": {(1,): "val"}}
-        nss = sorted(tuple(self.doc.iterNamespaces()))
-        self.assertSequenceEqual(nss, ("nb", "ns"))
+    def testDelOnlyOffsetInMultikey(self):
+        self.doc.tags = {"ns": {"tag": [(1,)], "tag2": [(2,)]}}
+        self.doc.delOffset("ns", "tag2", (2,))
+        self.assertDictEqual(self.doc._tags, self.tags)
+
+    def testNamespaces(self):
+        self.doc._tags = {"ns": {"tag": [(1,)]}, "ns2": {"tag2": [(2,)]}}
+        ns = list(sorted(self.doc.namespaces()))
+        self.assertListEqual(["ns", "ns2"], ns)
+
+    def testKeys(self):
+        self.doc._tags = {"ns": {"tag": [(1,)], "tag2": [(2,)]}}
+        keys = list(sorted(self.doc.keys("ns")))
+        self.assertListEqual(["tag", "tag2"], keys)
+
+    def testOffsets(self):
+        self.doc._tags = {"ns": {"tag": [(2,), (1,)]}}
+        offsets = self.doc.offsets("ns", "tag")
+        self.assertListEqual([(2,), (1,)], offsets)
+
+    def testOffsetsSorted(self):
+        self.doc._tags = {"ns": {"tag": [(2,), (1,)]}}
+        offsets = list(self.doc.offsets("ns", "tag", sort=True))
+        self.assertListEqual([(1,), (2,)], offsets)
+
+    def testSort(self):
+        self.doc._tags = {"ns": {"tag": [(2,), (1,)]}}
+        self.doc.sort()
+        offsets = self.doc.offsets("ns", "tag")
+        self.assertListEqual([(1,), (2,)], offsets)
+
+    def testSortNamespace(self):
+        self.doc._tags = {"ns": {"tag": [(2,), (1,)]}}
+        self.doc.sort("ns")
+        offsets = self.doc.offsets("ns", "tag")
+        self.assertListEqual([(1,), (2,)], offsets)
+
+    def testSortKey(self):
+        self.doc._tags = {"ns": {"tag": [(2,), (1,)]}}
+        self.doc.sort("ns", "tag")
+        offsets = self.doc.offsets("ns", "tag")
+        self.assertListEqual([(1,), (2,)], offsets)
 
     def testIterTags(self):
-        self.doc._tags = {"ns": {(1,): "val", (1,2): "val"}}
-        anns = tuple(self.doc.iterTags("ns"))
-        self.assertSequenceEqual(anns, (((1,2), "val"), ((1,), "val")))
-
-    def testIterTagsOrdering(self):
-        self.doc._tags = {"ns": {
-            (2,): "v", (1,2,5,6): "v", (1,3,5): "v", (1,5): "v"
-        }}
-        anns = tuple(self.doc.iterTags("ns"))
-        self.assertSequenceEqual(
-            anns, ( ((1,2,5,6), "v"), ((1,3,5), "v"), ((1,5), "v"), ((2,), "v") )
-        )
-
-    def testTags(self):
         self.doc._tags = {
-            "ns1": {
-                (2,): "v1", (1,2,5,6): "v2", (1,3,5): "v3", (1,4,5): "v4"
-            },
-            "ns2": {
-                (3,): "v5", (1,6): "v6", (1,4): "v7", (3,5): "v8"
-            }
+            "ns1": { "k1": [(1,), (2,)] },
+            "ns2": { "k2": [(3,)], "k3": [(4,)] }
         }
-        self.assertListEqual(self.doc.tags(), [
-                ((1,2,5,6), "ns1", "v2"),
-                ((1,6),     "ns2", "v6"),
-                ((1,3,5),   "ns1", "v3"),
-                ((1,4,5),     "ns1", "v4"),
-                ((1,4),     "ns2", "v7"),
-                ((2,),      "ns1", "v1"),
-                ((3,5),     "ns2", "v8"),
-                ((3,),      "ns2", "v5"),
+        self.assertListEqual(list(sorted(self.doc.iterTags())), [
+            ("ns1", "k1", (1,)),
+            ("ns1", "k1", (2,)),
+            ("ns2", "k2", (3,)),
+            ("ns2", "k3", (4,)),
         ])
 
 
@@ -83,6 +132,7 @@ class BinaryTests(TestCase):
         self.binary = Binary("test", "latin1")
 
     def testCreateBinary(self):
+        self.assertDictEqual(self.binary._tags, {})
         self.assertEqual(self.binary.encoding, "latin1")
         self.assertEqual(self.binary._digest, None)
         self.assertEqual(self.binary._str_alignment, dict())
@@ -91,32 +141,29 @@ class BinaryTests(TestCase):
         self.assertEqual(len(self.binary), 4)
 
     def testAddTag(self):
-        self.binary.addTag("ns", "val", 1)
-        self.assertDictEqual(self.binary._tags, {"ns": {(1,): "val"}})
+        self.binary.addTag("ns", "key", (1,))
+        self.assertDictEqual(self.binary._tags, {"ns": {"key": [(1,)]}})
 
-    def testAddTagWithMultipleOffsets(self):
-        self.binary.addTag("ns", "val", 1, 2, 3, 4)
-        self.assertDictEqual(self.binary._tags, {"ns": {(1,2,3,4): "val"}})
+    def testAddDuplicateTag(self):
+        self.binary.addTag("ns", "val", (1,))
+        self.binary.addTag("ns", "val", (1,))
+        self.assertDictEqual(self.binary._tags, {"ns": {"val": [(1,), (1,)]}})
 
     def assertAddRaisesAssertionError(self, *args):
         self.assertRaises(AssertionError, self.binary.addTag, *args)
 
-    def testAddDuplicateTag(self):
-        self.binary.addTag("ns", "val", 1)
-        self.assertAddRaisesAssertionError("ns", "val", 1)
-
     def testAddTagAfterLenOfContent(self):
-        self.assertAddRaisesAssertionError("ns", "val", 5)
-        self.assertAddRaisesAssertionError("ns", "val", 0, 5)
+        self.assertAddRaisesAssertionError("ns", "val", (5,))
+        self.assertAddRaisesAssertionError("ns", "val", (0, 5))
 
     def testAddTagWithEndBeforeStart(self):
-        self.assertAddRaisesAssertionError("ns", "val", 2, 1)
+        self.assertAddRaisesAssertionError("ns", "val", (2, 1))
 
     def testAddTagWithNegativeStart(self):
-        self.assertAddRaisesAssertionError("ns", "val", -2)
+        self.assertAddRaisesAssertionError("ns", "val", (-2,))
 
     def testAddTagWithBadOffsets(self):
-        self.assertAddRaisesAssertionError("ns", "val", 0, 1, 2)
+        self.assertAddRaisesAssertionError("ns", "val", (0, 1, 2))
 
     def testDigest(self):
         self.assertEqual(self.binary.digest,
@@ -141,15 +188,21 @@ class BinaryTests(TestCase):
         # text     0       1       2       3       4*surr  5 len(6)
         self.binary._tags = {
             "ns1": {
-                (2,): "v1", (0,2,4,10): "v2", (4,6): "v3", (6,10): "v4"
+                "key1": [(2,), (0,2,4,10), (4,6), (6,10)]
             },
             "ns2": {
-                (0,4): "v5", (2,6): "v6", (4,10): "v7", (6,11): "v8"
+                "key2": [(0,4), (2,6), (4,10), (6,11)]
             }
         }
         binary = self.binary.toUnicode().toBinary("utf-8")
         self.assertSequenceEqual(binary, self.binary)
         self.assertDictEqual(binary._tags, self.binary._tags)
+
+    def testUnicodeError(self):
+        self.binary = Binary(b'\xc3\xa4\xc4\xb5\xce\x95\xf0\x90\x80\x80a',
+                             "utf-8")
+        self.binary._tags = {"ns1": {"key1": [(1,)]}}
+        self.assertRaises(UnicodeDecodeError, self.binary.toUnicode)
 
 
 class TextTests(TestCase):
@@ -161,40 +214,37 @@ class TextTests(TestCase):
         self.assertEqual(len(self.text), 4)
 
     def testAddTag(self):
-        self.text.addTag("ns", "val", 1)
-        self.assertDictEqual(self.text._tags, {"ns": {(1,): "val"}})
+        self.text.addTag("ns", "val", (1,))
+        self.assertDictEqual(self.text._tags, {"ns": {"val": [(1,)]}})
 
-    def testAddTagWithMultipleOffsets(self):
-        self.text.addTag("ns", "val", 1, 2, 3, 4)
-        self.assertDictEqual(self.text._tags, {"ns": {(1,2,3,4): "val"}})
+    def testAddDuplicateTag(self):
+        self.text.addTag("ns", "val", (1,))
+        self.text.addTag("ns", "val", (1,))
+        self.assertDictEqual(self.text._tags, {"ns": {"val": [(1,), (1,)]}})
 
     def assertAddRaisesAssertionError(self, *args):
         self.assertRaises(AssertionError, self.text.addTag, *args)
 
-    def testAddDuplicateTag(self):
-        self.text.addTag("ns", "val", 1)
-        self.assertAddRaisesAssertionError("ns", "val", 1)
-
     def testAddTagAfterLenOfContent(self):
-        self.assertAddRaisesAssertionError("ns", "val", 5)
-        self.assertAddRaisesAssertionError("ns", "val", 0, 5)
+        self.assertAddRaisesAssertionError("ns", "val", (5,))
+        self.assertAddRaisesAssertionError("ns", "val", (0, 5))
 
     def testAddTagWithEndBeforeStart(self):
-        self.assertAddRaisesAssertionError("ns", "val", 2, 1)
+        self.assertAddRaisesAssertionError("ns", "val", (2, 1))
 
     def testAddTagWithNegativeStart(self):
-        self.assertAddRaisesAssertionError("ns", "val", -2)
+        self.assertAddRaisesAssertionError("ns", "val", (-2,))
 
     def testAddTagWithBadOffsets(self):
-        self.assertAddRaisesAssertionError("ns", "val", 0, 1, 2)
+        self.assertAddRaisesAssertionError("ns", "val", (0, 1, 2))
 
     def testGetMultispan(self):
         self.assertSequenceEqual(
-            self.text.getMultispan(0, 1, 2, 4), ["t", "st"]
+            self.text.getMultispan((0, 1, 2, 4)), ["t", "st"]
         )
 
     def testGetMultispanWithBadOffsetKey(self):
-        self.assertRaises(AssertionError, self.text.getMultispan, 0, 1, 2)
+        self.assertRaises(AssertionError, self.text.getMultispan, (0, 1, 2))
 
     def testGetSpan(self):
         self.assertSequenceEqual(self.text[1:3], "es")
@@ -203,6 +253,13 @@ class TextTests(TestCase):
         text = self.text.toBinary("latin1").toUnicode()
         self.assertSequenceEqual(text, self.text)
         self.assertDictEqual(text._tags, self.text._tags)
+
+    def testUnicodeError(self):
+        if maxsize == 0x7FFFFFFF:
+            self.text = Binary(b'\xc3\xa4\xc4\xb5\xce\x95\xf0\x90\x80\x80a',
+                               "utf-8").toUnicode()
+            self.text._tags = {"ns1": {"key1": [(4,)]}}
+            self.assertRaises(UnicodeEncodeError, self.text.toBinary, "utf-8")
 
 
 if __name__ == '__main__':
