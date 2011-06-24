@@ -14,132 +14,174 @@ class AnnotatedContent:
     """
 
     def __init__(self):
-        self._tags = dict()
+        if tags is None: tags = {}
+        self._tags = tags
+        self._sorted = {} # for each namespace, store the sorted stated of it
 
     def __len__(self):
         raise NotImplementedError("abstract")
 
-    def addTag(self, namespace:str, value:object, *key:tuple([int])):
+    @property
+    def tags(self) -> list([(tuple([int]), str, object)]):
+        """
+        Get a copy of the dictionary of tags.
+        """
+        return { ns: list(tag) for ns, tag in self._tags.items() }
+
+    @tags.setter
+    def tags(self, tags:dict):
+        """
+        Replace the entire tags dictionary. No checks are made!
+        """
+        self._tags = tags
+        self._sorted = { ns: False for ns in tags }
+
+    def addTag(self, namespace:str, offsets:tuple([int]), value:object):
         """
         Add a new tag.
 
         :param namespace: The namespace this tag belongs to.
-        :param value: The value of the tag, e.g. the PoS name, chunk type...
-        :param key: The position of this tag; either a single offset value
-                    for tags pointing to just one location in the content,
-                    or paired integers in increasing order indicating the
-                    offsets (start, end) of one or more spans. It is
-                    not allowed to add multiple tags with the same *key* and
-                    *namespace*.
+        :param offsets: The position of this tag; either a single offset value
+            for tags pointing to just one location in the content, or paired
+            integers in increasing order indicating the offsets (start, end) of
+            one or more spans (ie., each offset must be larger than its former).
+        :param value: The value of the tag, eg., the PoS name or chunk type;
+            Usually, a string, but it could also be dictionary, fe., with the
+            following keys:
+            ``{'id': some_id, 'annotator': uri, 'confidence': float}``.
         :raises AssertionError: If the key is malformed.
         """
         # try to fetch the namespace or create a new one
         if namespace in self._tags:
             tags = self._tags[namespace]
         else:
-            tags = dict()
+            tags = list()
             self._tags[namespace] = tags
 
-        # check key is not duplicate and well-formed
-        assert key not in tags, \
-            "{} annotation at {} already exists".format(namespace, key)
-        assert key[0] >= 0 and key[-1] <= len(self), \
-            "offsets {} invalid (max: {})".format(key, len(self))
+        # assert all elements are given and not empty
+        assert namespace, "namespace missing"
+        assert offsets, "offsets missing"
+        assert value, "value missing"
 
-        if len(key) > 1:
-            assert all(key[i-1] < key[i] for i in range(1, len(key))), \
-                "key offsets {} not successive".format(key)
-            assert len(key) % 2 == 0, "odd number of offsets: {}".format(key)
+        # assertions that the offsets are well-formed
+        assert offsets[0] >= 0 and offsets[-1] <= len(self), \
+            "offsets {} invalid (max: {})".format(offsets, len(self))
 
-        # all ok, set the value
-        tags[key] = value
+        if len(offsets) > 1:
+            assert len(offsets) % 2 == 0, \
+                "odd number of offsets: {}".format(offsets)
+            assert all(offsets[i-1] < offsets[i]
+                       for i in range(1, len(offsets))), \
+                "offsets {} not successive".format(offsets)
 
-    def addTagUnsafe(self, namespace:str, value:object, *key:tuple([int])):
+        # all ok, append the tag
+        self._sorted[namespace] = False
+        tags.append((tuple(offsets), value))
+
+    def addTagUnsafe(self, namespace:str, offsets:tuple([int]), value:object):
         """
         Add a new tag, but without any checks. Use at your own discretion!
 
-        :param namespace: The namespace this tag belongs to.
-        :param value: The value of the tag, e.g. the PoS name, chunk type...
-        :param key: The position of this tag; either a single offset value
-                    for tags pointing to just one location in the content,
-                    or paired integers in increasing order indicating the
-                    offsets (start, end) of one or more spans.
+        :param namespace: The namespace this tag belongs to, a string.
+        :param offsets: The position of this tag, a tuple.
+        :param value: The value of the tag, a string or dictionary.
         """
         # try to fetch the namespace or create a new one
         if namespace in self._tags:
             tags = self._tags[namespace]
         else:
-            tags = dict()
+            tags = list()
             self._tags[namespace] = tags
 
-        tags[key] = value
+        self._sorted[namespace] = False
+        tags.append((offsets, value))
 
-    def delTag(self, namespace:str, *key:tuple([int])):
+    def delNamespace(self, namespace:str):
         """
-        Delete the tag in *namespace* with the given *key*.
+        Delete an entire *namespace* and all its tags.
 
-        :raises KeyError: if the tag doesn't exist.
+        :raise KeyError: If the *namespace* doesn't exist.
         """
-        del self._tags[namespace][key]
+        del self._tags[namespace]
+        del self._sorted[namespace]
 
+    def delTag(self, namespace:str, offsets:tuple([int]), value:object):
+        """
+        Delete the tag in *namespace* with the given *offsets* and *value*.
+
+        :raise KeyError: If the *namespace* doesn't exist.
+        :raise ValueError: If that (*offsets*, *value*) tag doesn't exist.
+        """
+        self._tags[namespace].remove((offsets, value))
         # also clean up the namespace if empty
         if not self._tags[namespace]:
             del self._tags[namespace]
+            del self._sorted[namespace]
 
-    def getTags(self, namespace:str) -> dict({tuple([int]): object}):
+    def getTags(self, namespace:str) -> [((int,), object)]:
         """
-        Get a dictionary of all tags in that *namespace*.
+        Get a copied list of all ``(offsets, value)`` tags in *namespace*.
         """
-        return dict(self._tags[namespace])
-
-    def getValue(self, namespace:str, *key:tuple([int])) -> object:
-        """
-        Get the exact value of a tag in *namespace* identified by *key*.
-        """
-        return self._tags[namespace][key]
+        return list(self._tags[namespace])
 
     def iterNamespaces(self) -> iter([str]):
         """
-        Return an iterator of all tag namespaces.
+        Return an iterator over the known namespaces.
         """
         return self._tags.keys()
 
-    def iterTags(self, namespace:str) -> iter([(tuple([int]), object)]):
+    def iterValues(self, namespace:str, offsets:tuple([int])) -> iter([object]):
         """
-        Return an iterator of all tags in *namespace*, returning the tags
-        in order of the key's start (lowest first), end (last offset in key,
-        highest first), and finally ordered by the rest of the key.
+        Get an iterator over all values of any tags in *namespace* that exactly
+        match *offsets*.
+        """
+        # is this much used? could be made faster by divide & conquer
+        # maybe a "get values at position" would be more useful?
+        match_offsets = lambda ov: ov[0] == offsets
+        return_value = lambda ov: ov[1]
+        return map(return_value, filter(match_offsets, self._tags[namespace]))
 
-        For example, the keys: (1,2,3), (1,3), (2,), and (1,3,4) will be
+    def sort(self, namespace:str=None):
+        """
+        Order the tags in place.
+
+        The tags are sorted by the ``offsets``, then the ``value``.
+        Offset sorting is in order of the offset's start (lowest first), end
+        (last offset value, highest first), and then the rest of the offset
+        values. If this isn't sufficient, they are ordered by the natural order
+        of the ``value``.
+
+        For example, the offsets (1,2,3,5), (1,3), (2,), and (1,2,4,5) will be
         ordered like this:
 
-        #. (1,3,4)
-        #. (1,2,3)
+        #. (1,2,3,5)
+        #. (1,2,4,5)
         #. (1,3)
         #. (2,)
 
-        :return: An iterator yielding tuples of (key, value) pairs.
+        If the tags in a namespace have been sorted already and are unchanged,
+        they are not ordered again.
+
+        :param namespace: The *namespace* to sort or all if ``None``.
+        :raise KeyError: If the *namespace* does not exist.
         """
-        tags = self._tags[namespace]
-        keys = sorted(tags.keys(), key=lambda k: (k[0], k[-1] * -1, k))
-        for k in keys: yield k, tags[k]
+        ns_iter = (namespace,) if namespace else self._tags.keys()
+        sort_by_offset = lambda k: (k[0][0], k[0][-1] * -1, k[0], k[1])
 
-    def tags(self) -> list([(tuple([int]), str, object)]):
-        """
-        Return a list of all tags on this instance, ordered just as with
-        `iterTags`, but with the keys from all namespaces.
+        for ns in ns_iter:
+            if self._sorted[ns]: continue
+            self._tags[ns] = sorted(self._tags[ns], key=sort_by_offset)
+            self._sorted[ns] = True
 
-        :return: A list of (key, namespace, value) tuples.
-        """
-        key_ns_val = []
-
-        for ns, kv in self._tags.items():
-            key_ns_val.extend(
-                (key[0], key[-1] * -1, key, ns, val)
-                for key, val in kv.items()
-            )
-
-        return list([item[2:] for item in sorted(key_ns_val)])
+    def _mapTags(self, MapOffsets):
+        # Return a new tag dictionary, mapping the offsets tuple by sending
+        # them to MapOffsets and expecting a new tuple with the mapped offsets.
+        # Used by the toUnicode() and toBinary() casting methods.
+        realign = lambda tag: (MapOffsets(tag[0]), tag[1])
+        return {
+            ns: list(map(realign, self._tags[ns]))
+            for ns in self.iterNamespaces()
+        }
 
 
 class Binary(bytes, AnnotatedContent):
@@ -168,6 +210,8 @@ class Binary(bytes, AnnotatedContent):
         encoding as a parameter, in the latter case (via `str`) it is the
         same procedure as for a regular `bytes` object. See
         :func:`bytearray` for details about creating `bytes`.
+
+        **To emphasize:** the second argument **must** be the encoding.
         """
         AnnotatedContent.__init__(self)
         self._digest = None
@@ -201,28 +245,31 @@ class Binary(bytes, AnnotatedContent):
     def toUnicode(self, errors:str="strict") -> AnnotatedContent:
         """
         Return the :class:`.Unicode` view of this document, with
-        any tag keys mapped to the offsets in the decoded Unicode.
+        any tag offsets mapped to the positions in the decoded Unicode.
+
+        Contrary to the ``decode()`` method of `bytes`, the encoding argument
+        is not needed.
 
         :raises UnicodeDecodeError: If any tag key is illegal.
+        :return: :class:`.Unicode`
         """
-        string = self.decode(self._encoding, errors)
-        text = Unicode(string)
+        text = Unicode(self.decode(self._encoding, errors))
 
         if self._tags:
-            for key, ns, val in self.tags():
-                translated_key = [self._strpos(pos, errors) for pos in key]
-                text.addTag(ns, val, *translated_key)
+            map_offsets = lambda offsets: tuple( self._strpos(pos, errors)
+                                                 for pos in offsets )
+            text.tags = self._mapTags(map_offsets)
 
         return text
 
-    def _strpos(self, pos:int, errors:str) -> int:
-        # Return the offset of that *pos* in the Unicode string.
-        if pos not in self._str_alignment:
-            self._str_alignment[pos] = len(
-                self[:pos].decode(self._encoding, errors)
+    def _strpos(self, offset:int, errors:str) -> int:
+        # Return the offset of that (bytes) *offset* in a decoded string.
+        if offset not in self._str_alignment:
+            self._str_alignment[offset] = len(
+                self[:offset].decode(self._encoding, errors)
             )
 
-        return self._str_alignment[pos]
+        return self._str_alignment[offset]
 
 
 class Unicode(str, AnnotatedContent):
@@ -263,10 +310,10 @@ class Unicode(str, AnnotatedContent):
 
         if self._tags:
             alignment = self._mapStrToBytes(doc.encoding, errors)
-
-            for key, ns, val in self.tags():
-                translated_key = [alignment[pos] for pos in key]
-                doc.addTag(ns, val, *translated_key)
+            map_offsets = lambda offsets: tuple(
+                alignment[pos] for pos in offsets
+            )
+            doc.tags = self._mapTags(map_offsets)
 
         return doc
 
