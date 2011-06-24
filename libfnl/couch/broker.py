@@ -103,7 +103,7 @@ def DesignPathFromName(name:str, type:str) -> [str]:
     return ['_design', design, type, name]
 
 
-def DocPath(id:str) -> str:
+def DocPath(id:str) -> list:
     """
     Return the path segments for the given document *ID*.
 
