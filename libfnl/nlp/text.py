@@ -15,6 +15,13 @@ class AnnotatedContent:
 
     def __init__(self):
         self._tags = {}
+        self.metadata = {}
+        """
+        A free-form dictionary to add any kind of meta-data.
+
+        Ensure it can be encoded to a JSON string, although (ie., only use
+        strings as keys).
+        """
 
     def __len__(self):
         raise NotImplementedError("abstract")
@@ -88,6 +95,14 @@ class AnnotatedContent:
 
         # all ok, append the tag
         tags.append(tuple(offsets))
+
+    def addOffsets(self, namespace:str, key:str, offset_list:[([int])]):
+        """
+        Overwrite any offsets stored in *namespace*, *key* with this new
+        *offset_list*.
+        """
+        if namespace not in self._tags: self._tags[namespace] = {}
+        self._tags[namespace][key] = list(offset_list)
 
     def delNamespace(self, namespace:str):
         """
@@ -187,7 +202,6 @@ class AnnotatedContent:
     def _copyTags(tags, Offsets=list):
         # Make a 'deep copy' of the *tags*.
         # *Offsets* can be any function to copy the list of offsets (tuples).
-        ns, k = None, None
         repack = lambda keys: { k: Offsets(o) for k, o in keys.items() }
         return { ns: repack(keys) for ns, keys in tags.items() }
 

@@ -28,10 +28,11 @@ class TokenizerTests(TestCase):
 
     def assertResult(self, tokenizer, offsets):
         tokenizer.tag(self.text)
+        morph = self.text.metadata["morphology"]
 
-        for idx, (key, val) in enumerate(self.text.iterTags(S.NAMESPACE)):
+        for idx, key in enumerate(self.text.offsets(S.NAMESPACE, S.KEY)):
             self.assertSequenceEqual(offsets[idx], key)
-            self.assertSequenceEqual(self.TAGS[key[0]:key[1]], val)
+            self.assertSequenceEqual(self.TAGS[key[0]:key[1]], morph[idx])
 
     def testSeparator(self):
         offsets = [
@@ -66,26 +67,37 @@ class TokenizerTests(TestCase):
         tokenizer = S.AlnumTokenizer()
         self.assertResult(tokenizer, offsets)
 
-    def testTokenizing100kRandomCharsTakesLessThanOneSec(self):
+    def testTokenizingLargeArticleTakesLessThanOneSec(self):
         #noinspection PyUnusedLocal
+        # faster on entire BMP, slower on random ASCII or sentences
         # string = "".join(chr(randint(1, 0xD7FE)) for i in range(100000))
-        string = "".join(chr(randint(1, 127)) for i in range(100000))
-        # string = "The fox jumped over - uhm, what? Hell, whatever. " * 5000
+        # string = "".join(chr(randint(1, 127)) for i in range(100000))
+        string = "The fox jumped over - uhm, what? Hell, whatever. " * 2000
+        # ^^ 50*2k = 100k chars, 22*2k = 44k tokens (one long article) ^^
         text = Unicode(string)
+        # This tokenizer is slightly faster than the others:
+        # tokenizer = S.Separator()
+        # the two tokenizers take about the same as long, word is a tad slower
         tokenizer = S.WordTokenizer()
+        # tokenizer = S.AlnumTokenizer()
         start = time()
+        # Tagging without morphology (None) is about 30% faster, obviously.
         tokenizer.tag(text)
+        # tokenizer.tag(text, None)
         end = time()
-        tags = text.tags()
+        tags = text.offsets(S.NAMESPACE, S.KEY)
+        # on an average MBP (2.66 GHz) this should take around half a sec in
+        # the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
                         (len(tags), end - start))
 
         # make sure they are all good start/end-positioned
         last = 0
+        morph = text.metadata["morphology"]
 
-        for key, ns, val in tags:
+        for idx, key in enumerate(tags):
             self.assertEqual(key[0], last)
-            self.assertTrue(len(val) <= key[1] - key[0])
+            self.assertTrue(len(morph[idx]) <= key[1] - key[0])
             last = key[1]
 
 
