@@ -444,12 +444,12 @@ class Tokenizer:
 
         .. warning::
 
-            Any existing tags in the defined :attrib:`namespace` and
-            :attrib:`key` on the *text* will be erased.
+            Any existing tags in the defined :attr:`namespace` and
+            :attr:`key` on the *text* will be erased.
 
         :param text: The text to tag.
         :param metamorph: The key to store the list of morphology strings in
-            the :attrib:`AnnotatedContent.metadata` dictionary of the text.
+            the :attr:`AnnotatedContent.metadata` dictionary of the text.
         """
         assert len(text), "empty text"
         tokens = []

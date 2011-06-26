@@ -11,11 +11,9 @@ A simple usage example:
 
 >>> from libfnl.nlp.medline import * # imports only the below two functions
 >>> for record in ParseMedlineXml(FetchMedlineXml((11700088, 11748933))):
-...     print("PMID {} Title:\n{}".format(record["_id"], record["Article"]["ArticleTitle"]))
-PMID 11700088 Title:
-Proton MRI of (13)C distribution by J and chemical shift editing.
-PMID 11748933 Title:
-Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).
+...     print("PMID", record["_id"], "Title:", record["Article"]["ArticleTitle"])
+PMID 11700088 Title: Proton MRI of (13)C distribution by J and chemical shift editing.
+PMID 11748933 Title: Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).
 """
 from http.client import HTTPResponse # function annotation only
 from urllib.request import build_opener

@@ -59,7 +59,7 @@ AnnotatedContent
 ----------------
 
 .. autoclass:: libfnl.nlp.text.AnnotatedContent
-   :members: addTag, delTag, getTags, getValue, iterNamespaces, iterTags, tags
+   :members:
 
 Binary
 ------

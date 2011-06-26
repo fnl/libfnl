@@ -56,9 +56,9 @@ class AnnotatedContent:
 
         For example::
 
-        >>> offsets = [(1, 2, 3, 5), (1, 3), (2,), (1, 2, 4, 5)]
-        >>> list(AnnotatedContent.sorted(offsets))
-        [(1, 2, 3, 5), (1, 2, 4, 5), (1, 3), (2,)]
+            >>> offsets = [(1, 2, 3, 5), (1, 3), (2,), (1, 2, 4, 5)]
+            >>> list(AnnotatedContent.sorted(offsets))
+            [(1, 2, 3, 5), (1, 2, 4, 5), (1, 3), (2,)]
         """
         return sorted(offsets, key=lambda k: (k[0], k[-1] * -1, k))
 
@@ -188,7 +188,7 @@ class AnnotatedContent:
         Get a list of all tag offsets (int-tuples) in *namespace*, *key*.
 
         :param sort: If ``True``, return an iterator that yields the offsets
-            sorted according to :method:`.sorted()`.
+            sorted according to :meth:`.sorted()`.
         :raise KeyError: If the *namespace* or *key* doesn't exist.
         """
         if sort:
@@ -201,7 +201,7 @@ class AnnotatedContent:
     def sort(self, namespace:str=None, key:str=None):
         """
         Order any tags' offset lists, in place and according to
-        :method:`.sorted()`.
+        :meth:`.sorted()`.
 
         :param namespace: The *namespace* to sort or all if ``None``.
         :param key: The tag's *key* to sort or all if ``None``.
@@ -332,7 +332,7 @@ class Binary(bytes, AnnotatedContent):
         but can be assumed equal if the hexdigest document ID system is used.)
 
         :param db: The Couch :class:`.Database`.
-        :param doc_id: The document ID to use; uses the :method:`.hexdigest` if
+        :param doc_id: The document ID to use; uses the :meth:`.hexdigest` if
             ``None``.
         :param force_update: Re-save old documents even if they are unchanged.
         :param attachment: The file name of the text attachment to save.
