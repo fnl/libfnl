@@ -55,13 +55,17 @@ Built-in DB names not matching the :data:`.VALID_DB_NAME` RegEx.
 """
 
 
-Attachment = namedtuple("Attachment", "content_type data")
+Attachment = namedtuple("Attachment", "content_type encoding data")
 """
 The returned named tuple for :meth:`.Database.getAttachment`.
 
 .. attribute:: content_type
 
     The ``Content-Type`` header string.
+
+.. attribute:: encoding
+
+    The ``charset`` value in the ``Content-Type`` header (or ``None``).
 
 .. attribute:: data
 
@@ -170,12 +174,26 @@ class Document(dict):
         """
         return self['_id']
 
+    @id.setter
+    def id(self, _id:str):
+        """
+        Set the document ID.
+        """
+        self['_id'] = _id
+
     @property
     def rev(self) -> str:
         """
         The document revision.
         """
         return self['_rev']
+
+    @rev.setter
+    def rev(self, _rev:str) -> str:
+        """
+        Set the document revision.
+        """
+        self['_rev'] = _rev
 
     @property
     def attachments(self) -> dict:
@@ -586,16 +604,29 @@ class Database(object):
     def __delitem__(self, id:str):
         """
         Remove the document with the specified *ID* from the database.
+
+        :raise KeyError: If no such document exists.
         """
         path = DocPath(id)
-        response = self.resource.head(*path)
+
+        try:
+            response = self.resource.head(*path)
+        except network.ResourceNotFound:
+            raise KeyError(id)
+
         self.resource.delete(*path, rev=response.headers['etag'].strip('"'))
 
     def __getitem__(self, id:str) -> Document:
         """
         Return the :class:`.Document` with the specified *ID*.
+
+        :raise KeyError: If no such document exists.
         """
-        response = self.resource.getJson(*DocPath(id))
+        try:
+            response = self.resource.getJson(*DocPath(id))
+        except network.ResourceNotFound:
+            raise KeyError(id)
+
         return Document(response.data)
 
     def __setitem__(self, id:str, document:dict):
@@ -604,6 +635,8 @@ class Database(object):
 
         :param document: The document; either a plain dictionary (even without
                          an ``_id`` or ``_rev``), or a :class:`.Document`.
+        :raise libfnl.couch.network.ResourceConflict: If the document's
+            revision value does not match the value in the DB.
         """
         response = self.resource.putJson(*DocPath(id), json=document)
         document['_id']  = response.data['id']
@@ -967,12 +1000,19 @@ class Database(object):
         try:
             response = self.resource.get(*path)
             ctype = response.headers.get('Content-Type')
-            return Attachment(ctype, response.data)
+            charset = None
+
+            if "charset" in ctype:
+                for block in ctype.split(";"):
+                    if "charset" in block and "=" in block:
+                        charset = block.split("=")[1].strip().lower()
+
+            return Attachment(ctype, charset, response.data)
         except network.ResourceNotFound:
             return default
 
     def saveAttachment(self, doc:dict, content, filename:str=None,
-                       content_type:str=None, charset:str=None):
+                       content_type:str=None, charset:str=None) -> (str, str):
         """
         Create or replace an attachment.
 
@@ -997,12 +1037,13 @@ class Database(object):
                          the file-like object passed as the *content* argument
                          value.
         :param content_type: MIME type of the attachment; if omitted, it is
-                             guessed based on the *filename* extension.
+            guessed based on the *filename* extension.
         :param charset: A charset value, appended to the *content type* value,
-                        **if not defined there already**. If the content has an
-                        `encoding` attribute, and *charset* is ``None``, the
-                        charset parameter is taken from the attribute's value.
-        :return: A `bool` indicating success.
+            **if not defined there already**. If the content has an `encoding`
+            attribute, and *charset* is ``None``, the charset parameter is
+            taken from the attribute's value. Note that **string** *content* is
+            encoded to **Latin-1** and no (other) *charset* should be set.
+        :return: The document's ``(id, rev)`` tuple.
         """
         if filename is None:
             if hasattr(content, 'name'):
@@ -1014,6 +1055,11 @@ class Database(object):
             content_type = '; '.join(
                 [mime for mime in mimetypes.guess_type(filename) if mime]
             )
+
+            if not content_type and (isinstance(content, str) or
+                                     isinstance(content, TextIOBase)):
+                content_type = 'text/plain'
+
             assert content_type, \
                 "could not guess MIME type of {}".format(filename)
 
@@ -1032,7 +1078,8 @@ class Database(object):
                                      rev=doc['_rev'])
         json = serializer.Decode(response.data)
         doc['_rev'] = json['rev']
-        return json['ok']
+        assert json['ok']
+        return doc['_id'], doc['_rev']
 
     # BULK DOCUMENT API
 
@@ -1470,14 +1517,18 @@ class Server:
     def __getitem__(self, name:str) -> Database:
         """
         Return a :class:`.Database` object representing the database with the
-        specified *name*.
+        specified *name*. Creates the DB if it does not exist.
 
-        :raise libfnl.couch.network.ResourceNotFound: If no database with that
+        :raise libfnl.couch.: If no database with that
             *name* exists.
         """
         db = Database(self.resource(name), ValidateDbName(name))
-        db.resource.head() # actually make a request to the database
-        return db
+
+        try:
+            db.resource.head() # actually make a request to the database
+            return db
+        except network.ResourceNotFound:
+            return self.create(name)
 
     def config(self, section:str=None) -> dict:
         """

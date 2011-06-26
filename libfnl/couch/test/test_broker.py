@@ -13,7 +13,6 @@ import time
 import tempfile
 import threading
 import unittest
-import urllib.parse
 
 from libfnl.couch import broker, network
 from libfnl.couch import testutil
@@ -57,8 +56,12 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertEqual('number of HTTP requests', stats['description'])
 
     def test_get_db_missing(self):
-        self.assertRaises(network.ResourceNotFound,
-                          lambda: self.server['couchdb-python/missing'])
+        if 'couchdb-python/missing' in self.server:
+            del self.server['couchdb-python/missing']
+
+        self.assertTrue(isinstance(self.server['couchdb-python/missing'],
+                                   broker.Database))
+        del self.server['couchdb-python/missing']
 
     def test_create_db_conflict(self):
         name, db = self.temp_db()
@@ -72,6 +75,9 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         assert name not in self.server
 
     def test_delete_db_missing(self):
+        if 'couchdb-python/missing' in self.server:
+            del self.server['couchdb-python/missing']
+
         self.assertRaises(network.ResourceNotFound, self.server.delete,
                           'couchdb-python/missing')
 
