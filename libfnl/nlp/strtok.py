@@ -13,6 +13,10 @@ from unicodedata import category
 __author__ = "Florian Leitner"
 __version__ = "1.0"
 
+#################
+# CONFIGURATION #
+#################
+
 NAMESPACE = "libfnl"
 """
 The default namespace string for the tags added to a text by the tokenizers.
@@ -23,7 +27,7 @@ KEY = "strtok"
 The default key string for the tags added to a text by the tokenizers.
 """
 
-STOP_CHARS = {
+STOP_CHARS = frozenset({
     "\u0021", # EXCLAMATION MARK
     "\u002E", # FULL STOP
     "\u003F", # QUESTION MARK
@@ -72,7 +76,7 @@ STOP_CHARS = {
     "\uFF0E", # FULLWIDTH FULL STOP
     "\uFF1F", # FULLWIDTH QUESTION MARK
     "\uFF61", # HALFWIDTH IDEOGRAPHIC FULL STOP
-}
+})
 """
 An assembly of the more specific sentence stop markers found in Unicode in
 one of the following languages: Latin, Arabic, Chinese, Japanese, Korean,
@@ -84,127 +88,6 @@ not included.
 """
 
 
-class Tokenizer:
-    """
-    Abstract tokenizer implementing the actual procedure.
-    """
-
-    def __init__(self, namespace:str=NAMESPACE, key:str=KEY):
-        """
-        The *namespace* is the string used for the tags created on the text.
-        """
-        self.namespace = namespace
-        self.key = key
-
-    def tag(self, text:Unicode, metamorph:str="morphology"):
-        """
-        Tag the given :class:`.Unicode` *text* with tokens and store them
-        in the defined `namespace` and `key`. The morphology of each token,
-        in the order they appear in the text, is stored in the ``metadata``
-        dictionary of the *text*, using *metamorph* as key.
-
-        .. warning::
-
-            Any existing tags in the defined :attrib:`namespace` and
-            :attrib:`key` on the *text* will be erased.
-
-        :param text: The text to tag.
-        :param metamorph: The key to store the list of morphology strings in
-            the ``metadata`` of the text. If it is None or the empty string,
-            this list of morphology strings is not created or stored (and
-            gives a 30% speedup in tokenization at the cost of loosing this
-            information).
-        """
-        assert len(text), "empty text"
-        tokens = []
-        morphology = []
-        start = 0
-        cats = StringIO()
-        State = lambda c: False
-
-        for end, cat in CharIter(text):
-            if State(cat):
-                if metamorph: cats.write(chr(cat))
-            else:
-                if end:
-                    tokens.append((start, end))
-                    if metamorph: morphology.append(cats.getvalue())
-
-                if metamorph:
-                    cats = StringIO()
-                    cats.write(chr(cat))
-
-                start = end
-                State = self._findState(cat)
-
-        if cats:
-            tokens.append((start, len(text)))
-            if metamorph: morphology.append(cats.getvalue())
-
-        text.addOffsets(self.namespace, self.key, tokens)
-        if metamorph: text.metadata[metamorph] = morphology
-
-    def _findState(self, cat:int) -> FunctionType:
-        """
-        Abstract method that should define the state of the iteration
-        thorough a string and thereby the token boundaries.
-
-        The implementing method should return the appropriate function that
-        evaluates to ``True`` if the same category (or category group) is
-        sent to it.
-        """
-        raise NotImplementedError("abstract")
-
-
-class Separator(Tokenizer):
-    """
-    A tokenizer that only separates `Z?` category character (line- and
-    paragraph-breaks, as well as spaces) from all others.
-    """
-
-    def _findState(self, cat:int) -> FunctionType:
-        if Category.isSeparator(cat):
-            return Category.isSeparator
-        else:
-            return Category.notSeparator
-
-
-class WordTokenizer(Tokenizer):
-    """
-    A tokenizer that creates single character tokens for all non-letter,
-    -digit, -numeral, and -separator character, while it joins the others
-    as long as the next character is of that same category, too.
-    """
-
-    def _findState(self, cat:int) -> FunctionType:
-        if not Category.isWord(cat):
-            return lambda cat: False
-
-        for State in (Category.isLetter, Category.isSeparator,
-                      Category.isDigit, Category.isNumeral):
-            if State(cat): return State
-
-        raise RuntimeError("no State for cat='%s'" % chr(cat))
-
-
-class AlnumTokenizer(Tokenizer):
-    """
-    A tokenizer that creates single character tokens for all non-separator
-    and -alphanumeric characters, and joins the latter two as long as the
-    next character is of that same category, too.
-    """
-
-    def _findState(self, cat:int) -> FunctionType:
-        if not Category.isWord(cat):
-            return lambda cat: False
-        elif Category.isAlnum(cat):
-            return Category.isAlnum
-        elif Category.isSeparator(cat):
-            return Category.isSeparator
-        else:
-            raise RuntimeError("no tests for cat='%s'" % chr(cat))
-
-
 class Category:
     """
     Integer values for the Unicode categories that correspond to single ASCII
@@ -213,7 +96,6 @@ class Category:
 
     Three additional categories are added that are not found in UniCode:
     :attr:`.Lg`, :attr:`.LG`, and :attr:`.Ts`.
-
     """
 
     # 65 - 90 (A-Z)
@@ -222,7 +104,7 @@ class Category:
     LG = ord('B')
     "``B`` - upper-case Greek character -- a non-standard Unicode category"
     Lt = ord('C')
-    "``C`` - title-case letter only (Greek and East European glyphs)"
+    "``C`` - title-case letter only (East European glyphs, sans Greek)"
     Ll = ord('D')
     "``D`` - lower-case character"
     Lg = ord('E')
@@ -293,19 +175,19 @@ class Category:
     Co = ord('[')
     "``[`` - other, private use"
 
-    CONTROLS = { Cc, Cf, Cn, Co, Cs }
-    WORD = { Lu, Ll, LG, Lg, Lt, LC, Lm, Lo, Nd, Nl, Zl, Zp, Zs }
-    ALNUM = { Lu, Ll, Nd, Nl, LG, Lg, Lt, LC, Lm, Lo }
-    LETTERS = { Lu, LG, Lt, Ll, Lg, LC, Lm, Lo }
-    UPPERCASE_LETTERS = { Lu, LG, Lt }
-    LOWERCASE_LETTERS = { Ll, Lg }
-    OTHER_LETTERS = { LC, Lm, Lo }
-    NUMBERS = { Nd, Nl, No }
-    NUMERIC = { Nd, Nl }
-    MARKS = { Mc, Me, Mn }
-    PUNCTUATION = { Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts }
-    SYMBOLS = { Sc, Sk, Sm, So }
-    SEPARATORS = { Zl, Zp, Zs }
+    CONTROLS = frozenset({ Cc, Cf, Cn, Co, Cs })
+    WORD = frozenset({ Lu, Ll, LG, Lg, Lt, LC, Lm, Lo, Nd, Nl, Zl, Zp, Zs })
+    ALNUM = frozenset({ Lu, Ll, Nd, Nl, LG, Lg, Lt, LC, Lm, Lo })
+    LETTERS = frozenset({ Lu, LG, Lt, Ll, Lg, LC, Lm, Lo })
+    UPPERCASE_LETTERS = frozenset({ Lu, LG, Lt })
+    LOWERCASE_LETTERS = frozenset({ Ll, Lg })
+    OTHER_LETTERS = frozenset({ LC, Lm, Lo })
+    NUMBERS = frozenset({ Nd, Nl, No })
+    NUMERIC = frozenset({ Nd, Nl })
+    MARKS = frozenset({ Mc, Me, Mn })
+    PUNCTUATION = frozenset({ Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts })
+    SYMBOLS = frozenset({ Sc, Sk, Sm, So })
+    SEPARATORS = frozenset({ Zl, Zp, Zs })
 
     @classmethod
     def isControl(cls, cat:int) -> bool:
@@ -396,77 +278,59 @@ class Category:
         return cat not in cls.SEPARATORS
 
 
-def CharIter(text:str) -> iter([(int, int)]):
-    """
-    Yields (offset, category) pairs for any *text* string, one per (real -
-    wrt. the surrogate range) character in the *text*.
-    """
-    pos = 0
-    strlen = len(text)
+GREEK_REMAPPED = frozenset({Category.Ll, Category.Lu, Category.Lt})
+"""
+Categories that contain Greek characters that will be remapped.
+"""
 
-    while pos < strlen:
-        cat = GetCharCategoryValue(text[pos])
-        char_len = 1
-
-        if cat == Category.Cs and pos + 1 < strlen:
-            try:
-                cat = GetSurrogateCategoryValue(text[pos:pos + 2])
-                char_len = 2
-            except TypeError:
-                pass
-
-        yield pos, cat
-        pos += char_len
-
-
-def GetCharCategoryValue(character:chr) -> int:
-    """
-    Return the (remapped) Unicode category value of a *character*.
-
-    :raises: TypeError If the *character* can not be mapped by
-                       :func:`unicodedata.category`
-    """
-    cat = getattr(Category, category(character))
-
-    if cat in (Category.Ll, Category.Lu) and IsGreek(character):
-        if cat == Category.Ll: cat = Category.Lg
-        else:                  cat = Category.LG
-    elif cat in REMAPPED_CHARACTERS and character in REMAPPED_CHARACTERS[cat]:
-        cat = REMAPPED_CHARACTERS[cat][character]
-
-    return cat
-
-
-def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
-    """
-    Return the (remapped) category value of a *surrogate pair*.
-
-    :raises: TypeError If the *surrogate pair* can not be mapped by
-                       :func:`unicodedata.category`
-    """
-    cat = getattr(Category, category(surrogate_pair))
-
-    if cat in REMAPPED_CHARACTERS and \
-       surrogate_pair in REMAPPED_CHARACTERS[cat]:
-        cat = REMAPPED_CHARACTERS[cat][surrogate_pair]
-
-    return cat
-
-
-def IsGreek(char:chr) -> bool:
-    """
-    Return ``True`` if the *char* is on one of the Greek code-pages.
-    """
-    return "\u0370" <= char < "\u03FF" or "\u1F00" <= char < "\u1FFF"
-
+CATEGORY_MAP = {
+    "Lu": Category.Lu,
+    "LG": Category.LG,
+    "Lt": Category.Lt,
+    "Ll": Category.Ll,
+    "Lg": Category.Lg,
+    "LC": Category.LC,
+    "Lm": Category.Lm,
+    "Lo": Category.Lo,
+    "Nd": Category.Nd,
+    "Nl": Category.Nl,
+    "Zl": Category.Zl,
+    "Zp": Category.Zp,
+    "Zs": Category.Zs,
+    "No": Category.No,
+    "Mc": Category.Mc,
+    "Me": Category.Me,
+    "Mn": Category.Mn,
+    "Pc": Category.Pc,
+    "Pd": Category.Pd,
+    "Pe": Category.Pe,
+    "Pf": Category.Pf,
+    "Pi": Category.Pi,
+    "Po": Category.Po,
+    "Ps": Category.Ps,
+    "Sc": Category.Sc,
+    "Sk": Category.Sk,
+    "Sm": Category.Sm,
+    "So": Category.So,
+    "Ts": Category.Ts,
+    "Cs": Category.Cs,
+    "Cc": Category.Cc,
+    "Cf": Category.Cf,
+    "Cn": Category.Cn,
+    "Co": Category.Co
+}
+"""
+Mapping of Unicode category names to Category attributes.
+"""
 
 REMAPPED_CHARACTERS = {
+    # NOTE: Lt, Lu and Ll would not be remapped (see GetCharCatVal)
     Category.Cc: {
         "\n": Category.Zl,
         "\f": Category.Zl,
         "\r": Category.Zl,
-        "\u0085": Category.Zl, # NEXT LINE
-        "\u008D": Category.Zl, # REVERSE LINE FEED
+        "\u0085": Category.Zl, # NEXT LINE (is in \s of regexes)
+        # "\u008D": Category.Zl, # REVERSE LINE FEED (isn't in \s of regexes!)
         "\t": Category.Zs,
         "\v": Category.Zs,
         "\u0091": Category.Co, # Private
@@ -553,6 +417,203 @@ REMAPPED_CHARACTERS = {
     }
 }
 "Remapped Unicode character categories: ``{ from_cat: { char: to_cat } }``."
+
+
+##################
+# IMPLEMENTATION #
+##################
+
+class Tokenizer:
+    """
+    Abstract tokenizer implementing the actual procedure.
+    """
+
+    def __init__(self, namespace:str=NAMESPACE, key:str=KEY):
+        """
+        The *namespace* is the string used for the tags created on the text.
+        """
+        self.namespace = namespace
+        self.key = key
+
+    def tag(self, text:Unicode, metamorph:str="morphology"):
+        """
+        Tag the given :class:`.Unicode` *text* with tokens and store them
+        in the defined `namespace` and `key`. The morphology of each token,
+        in the order they appear in the text, is stored in the ``metadata``
+        dictionary of the *text*, using *metamorph* as key.
+
+        .. warning::
+
+            Any existing tags in the defined :attrib:`namespace` and
+            :attrib:`key` on the *text* will be erased.
+
+        :param text: The text to tag.
+        :param metamorph: The key to store the list of morphology strings in
+            the :attrib:`AnnotatedContent.metadata` dictionary of the text.
+        """
+        assert len(text), "empty text"
+        tokens = []
+        morphology = []
+        start = 0
+        cats = None
+        last_cat = None
+        State = lambda c: False
+        findState = self._findState
+
+        for end, cat in CharIter(text):
+            if State(cat):
+                if not cats:
+                    cats = StringIO()
+                    cats.write(last_cat)
+
+                cats.write(chr(cat))
+            else:
+                if end:
+                    tokens.append((start, end))
+                    if not cats: morphology.append(last_cat)
+                    else: morphology.append(cats.getvalue())
+
+                cats = None
+                start = end
+                State = findState(cat)
+                last_cat = chr(cat)
+
+        if cats or last_cat:
+            tokens.append((start, len(text)))
+            if not cats: morphology.append(last_cat)
+            else: morphology.append(cats.getvalue())
+
+        text.addOffsets(self.namespace, self.key, tokens)
+        text.metadata[metamorph] = morphology
+
+    @staticmethod
+    def _findState(cat:int) -> FunctionType:
+        """
+        Abstract method that should define the state of the iteration
+        thorough a string and thereby the token boundaries.
+
+        The implementing method should return the appropriate function that
+        evaluates to ``True`` if the same category (or category group) is
+        sent to it.
+        """
+        raise NotImplementedError("abstract")
+
+
+class Separator(Tokenizer):
+    """
+    A tokenizer that only separates `Z?` category character (line- and
+    paragraph-breaks, as well as spaces) from all others.
+    """
+
+    @staticmethod
+    def _findState(cat:int) -> FunctionType:
+        if Category.isSeparator(cat):
+            return Category.isSeparator
+        else:
+            return Category.notSeparator
+
+
+class WordTokenizer(Tokenizer):
+    """
+    A tokenizer that creates single character tokens for all non-letter,
+    -digit, -numeral, and -separator character, while it joins the others
+    as long as the next character is of that same category, too.
+    """
+
+    @staticmethod
+    def _findState(cat:int) -> FunctionType:
+        if not Category.isWord(cat):
+            return lambda cat: False
+
+        for State in (Category.isLetter, Category.isSeparator,
+                      Category.isDigit, Category.isNumeral):
+            if State(cat): return State
+
+        raise RuntimeError("no State for cat='%s'" % chr(cat))
+
+
+class AlnumTokenizer(Tokenizer):
+    """
+    A tokenizer that creates single character tokens for all non-separator
+    and -alphanumeric characters, and joins the latter two as long as the
+    next character is of that same category, too.
+    """
+
+    @staticmethod
+    def _findState(cat:int) -> FunctionType:
+        if not Category.isWord(cat):
+            return lambda cat: False
+        elif Category.isAlnum(cat):
+            return Category.isAlnum
+        elif Category.isSeparator(cat):
+            return Category.isSeparator
+        else:
+            raise RuntimeError("no tests for cat='%s'" % chr(cat))
+
+
+def CharIter(text:str) -> iter([(int, int)]):
+    """
+    Yields (offset, category) pairs for any *text* string, one per (real -
+    wrt. surrogate pairs) character in the *text*.
+    """
+    pos = 0
+    strlen = len(text)
+
+    while pos < strlen:
+        cat = GetCharCategoryValue(text[pos])
+        char_len = 1
+
+        if cat == Category.Cs and pos + 1 < strlen:
+            try:
+                cat = GetSurrogateCategoryValue(text[pos:pos + 2])
+                char_len = 2
+            except TypeError:
+                pass
+
+        yield pos, cat
+        pos += char_len
+
+
+def GetCharCategoryValue(character:chr) -> int:
+    """
+    Return the (remapped) Unicode category value of a *character*.
+
+    :raises: TypeError If the *character* can not be mapped by
+                       :func:`unicodedata.category`
+    """
+    cat = CATEGORY_MAP[category(character)]
+
+    if cat in GREEK_REMAPPED:
+        if IsGreek(character):
+            if cat == Category.Ll: return Category.Lg
+            else:                  return Category.LG
+    elif cat in REMAPPED_CHARACTERS and character in REMAPPED_CHARACTERS[cat]:
+        cat = REMAPPED_CHARACTERS[cat][character]
+
+    return cat
+
+
+def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
+    """
+    Return the (remapped) category value of a *surrogate pair*.
+
+    :raises: TypeError If the *surrogate pair* can not be mapped by
+                       :func:`unicodedata.category`
+    """
+    cat = CATEGORY_MAP[category(surrogate_pair)]
+
+    if cat in REMAPPED_CHARACTERS and \
+       surrogate_pair in REMAPPED_CHARACTERS[cat]:
+        cat = REMAPPED_CHARACTERS[cat][surrogate_pair]
+
+    return cat
+
+
+def IsGreek(char:chr) -> bool:
+    """
+    Return ``True`` if the *char* is on one of the Greek code-pages.
+    """
+    return "\u036F" < char < "\u1FFF" and not ("\u03FF" < char < "\u1F00")
 
 
 ###############

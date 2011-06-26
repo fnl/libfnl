@@ -16,7 +16,7 @@ class TokenizerTests(TestCase):
         "\n\u2029\uD800\u0007\u00AD\u0092"
     )
     TAGS = (
-        "AAABBBMCEE" # 10 (10)
+        "AAABBBMBEE" # 10 (10)
         "EGJDDDHHHI" # 10 (20)
         "NIIabcde"   #  8 (28)
         "fghijklmno" # 10 (38)
@@ -86,8 +86,8 @@ class TokenizerTests(TestCase):
         # tokenizer.tag(text, None)
         end = time()
         tags = text.offsets(S.NAMESPACE, S.KEY)
-        # on an average MBP (2.66 GHz) this should take around half a sec in
-        # the slowest configuration
+        # on an average MBP (2.66 GHz) this should take less than half a sec
+        # using the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
                         (len(tags), end - start))
 
@@ -129,7 +129,7 @@ class GetCharCategoryTests(TestCase):
             char = chr(i)
             cat = category(char)
 
-            if cat in ("Ll", "Lu") and S.IsGreek(char):
+            if cat in ("Ll", "Lu", "Lt") and S.IsGreek(char):
                 cat = "Lg" if cat == "Ll" else "LG"
 
             if char not in remapped_chars:
