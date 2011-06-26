@@ -4,7 +4,11 @@
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 """
+from collections import defaultdict, namedtuple
 from hashlib import sha256
+from io import StringIO
+from types import FunctionType
+from libfnl.couch.broker import Database, Document
 
 
 class AnnotatedContent:
@@ -20,7 +24,7 @@ class AnnotatedContent:
         A free-form dictionary to add any kind of meta-data.
 
         Ensure it can be encoded to a JSON string, although (ie., only use
-        strings as keys).
+        strings as keys and do not use tuples).
         """
 
     def __len__(self):
@@ -142,14 +146,28 @@ class AnnotatedContent:
             del ns[key]
             if not ns: del self._tags[namespace]
 
-    def iterTags(self) -> iter([(str, str, tuple)]):
+    def iterTags(self, ordered:bool=False) -> iter([(str, str, tuple)]):
         """
-        Yield each tags as ``(namespace, key, offsets)`` tuples.
+        Yield each tag as a ``(namespace, key, offsets)`` tuple.
+
+        :param ordered: Yield the tuples in order of the offset values.
         """
-        for ns, keys in self._tags.items():
-            for key, offset_list in keys.items():
-                for offsets in offset_list:
-                    yield ns, key, offsets
+        if ordered:
+            all_tags = defaultdict(list)
+
+            for ns, keys in self._tags.items():
+                for key, offset_list in keys.items():
+                    for offset in offset_list:
+                        all_tags[offset].append((ns, key, offset))
+
+            for offset in AnnotatedContent.sorted(all_tags.keys()):
+                for item in all_tags[offset]:
+                    yield item
+        else:
+            for ns, keys in self._tags.items():
+                for key, offset_list in keys.items():
+                    for offsets in offset_list:
+                        yield ns, key, offsets
 
     def namespaces(self) -> iter([str]):
         """
@@ -256,6 +274,32 @@ class Binary(bytes, AnnotatedContent):
         self._encoding = str(args[1])
         self._str_alignment = dict()
 
+    @classmethod
+    def load(cls, db:Database, doc_id:str, attachment="binary.txt"):
+        """
+        Load a text from a CouchDB.
+
+        :param db: The Couch :class:`.Database`.
+        :param doc_id: The document ID to load.
+        :oaram attachment: The file name of the text attachment to load.
+        :return: A :class:`.Binary` text.
+        :raise KeyError: If no document with that ID exists.
+        :raise ValueError: If no attachment with that name exists.
+        """
+        doc = db[doc_id]
+        att = db.getAttachment(doc, "binary.txt")
+
+        if att is None:
+            msg = "{} has no {} attachment".format(doc_id, attachment)
+            raise ValueError(msg)
+
+        binary = cls(att.data, att.encoding)
+        binary._tags = { ns: { k: [ tuple(o) for o in off ]
+                               for k, off in keys.items() }
+                         for ns, keys in doc["tags"].items() }
+        binary.metadata = doc["metadata"]
+        return binary
+
     @property
     def encoding(self) -> str:
         """
@@ -280,7 +324,44 @@ class Binary(bytes, AnnotatedContent):
         """
         return "".join('%02x' % b for b in self.digest)
 
-    def toUnicode(self, errors:str="strict") -> AnnotatedContent:
+    def save(self, db:Database, doc_id:str=None, force_update:bool=False,
+             attachment:str="binary.txt") -> (str, str):
+        """
+        Store this text in a CouchDB, overwriting any existing document, unless
+        it has exactly the same fields (The text attachment is not compared,
+        but can be assumed equal if the hexdigest document ID system is used.)
+
+        :param db: The Couch :class:`.Database`.
+        :param doc_id: The document ID to use; uses the :method:`.hexdigest` if
+            ``None``.
+        :param force_update: Re-save old documents even if they are unchanged.
+        :param attachment: The file name of the text attachment to save.
+        :return: An ``(id, rev)`` tuple of the saved document.
+        """
+        if not doc_id: doc_id = self.hexdigest
+        # Need to cast all tuples to lists to compare the documents
+        doc = Document({"tags": self._tags})
+        doc["metadata"] = self.metadata
+        doc.id = doc_id
+        old = db.get(doc_id)
+        if old: doc.rev = old.rev
+
+        if old and not force_update:
+            if "tags" in old:
+                # Need to cast to tuples to compare the two documents
+                old["tags"] = { ns: { k: [ tuple(o) for o in off ]
+                                      for k, off in keys.items() }
+                                for ns, keys in old["tags"].items() }
+
+            if old == doc:
+                return doc.id, doc.rev
+            else:
+                return db.save(doc)
+        else:
+            db[doc.id] = doc
+            return db.saveAttachment(doc, self, filename=attachment)
+
+    def toUnicode(self, errors:str="strict"):
         """
         Return the :class:`.Unicode` view of this document, with
         any tag offsets mapped to the positions in the decoded Unicode.
@@ -298,6 +379,7 @@ class Binary(bytes, AnnotatedContent):
                                               for pos in o ) for o in offsets]
             text._tags = AnnotatedContent._copyTags(self._tags, mapper)
 
+        text.metadata = dict(self.metadata)
         return text
 
     def _strpos(self, offset:int, errors:str) -> int:
@@ -323,6 +405,58 @@ class Unicode(str, AnnotatedContent):
         """
         AnnotatedContent.__init__(self)
 
+    def __str__(self) -> str:
+        """
+        If not tagged, just return the string, otherwise, if tags have been
+        set, it returns a XML-like tagging of the string.
+
+        .. warning::
+
+            Note that if any tags have partial overlaps, this will produce XML
+            that is invalid.
+        """
+        if self._tags:
+            assert not self.listPartiallyOverlappingTags(), \
+                self.listPartiallyOverlappingTags()
+            buffer = StringIO()
+            close_tags = defaultdict(list)
+            GetTag = self._getTagHelper() # a function returning tags in order
+            tag = GetTag()                # of their offsets, as named tuples
+
+            for pos, char in enumerate(self):
+                if pos in close_tags:
+                    for closer in reversed(close_tags[pos]):
+                        buffer.write(closer)
+
+                while tag.start == pos:
+                    # get the (XML-like) open tag string and add end tags to
+                    # the close_tags dictionary:
+                    tag_str = Unicode._strTag(close_tags, pos, tag)
+                    buffer.write(tag_str)
+                    try: tag = GetTag()
+                    except StopIteration: tag = tag._replace(start=-1)
+
+                buffer.write(char)
+
+            # append remaining closers and possible positional tags at the
+            # very end of the Unicode string
+            if len(self) in close_tags: # remaining closers at end
+                for closer in reversed(close_tags[len(self)]):
+                    buffer.write(closer)
+
+            if tag.start == len(self): # remaining (single-offset) tags at end
+                while True:
+                    # no more close_tags should be set here - if, we'd get an
+                    # error for trying to do something dict-like with ``None``
+                    tag_str = Unicode._strTag(None, len(self), tag)
+                    buffer.write(tag_str)
+                    try: tag = GetTag()
+                    except StopIteration: break
+
+            return buffer.getvalue()
+        else:
+            return str.__str__(self)
+
     def getMultispan(self, offsets:tuple([int])) -> list([str]):
         """
         Get the text of a multi-span offsets (ie., key length is an even value,
@@ -334,6 +468,35 @@ class Unicode(str, AnnotatedContent):
         assert len(offsets) % 2 == 0, "odd number of offsets"
         return [ self[offsets[i]:offsets[i + 1]]
                  for i in range(0, len(offsets), 2) ]
+
+    def listPartiallyOverlappingTags(self) -> bool:
+        """
+        Return an empty list if no tag **partially** overlaps with any other.
+
+        Return a list of two ``(namespace, key, start, end)`` tuples of
+        the first two tags that were found to partially overlap, otherwise.
+        """
+        state = [] # stores the last tags iterated
+
+        # iterate over the tags, ordered by lowest start and then highest end
+        for tag in self.iterTags(True):
+            current = (tag[0], tag[1], tag[2][0], tag[2][-1])
+            # pop tags where the end is before or at the current tag's start
+            while state and state[-1][3] <= current[2]: state.pop()
+
+            if state: # compare this tag to the last tag on the state store
+                last = state[-1]
+                # check the current tag starts after the last and ends before
+                # it (anything else would be invalid, as at this stage we know
+                # the last tag does not end before the current tag starts)
+                if last[2] <= current[2] and last[3] >= current[3]:
+                    state.append(current)
+                else:
+                    return [last, current] # REPORT PARTIAL OVERLAP
+            else: # nothing on state list, just add
+                state.append(current)
+
+        return []
 
     def toBinary(self, encoding:str, errors:str="strict") -> Binary:
         """
@@ -350,7 +513,44 @@ class Unicode(str, AnnotatedContent):
                                        for o in offsets ]
             doc._tags = AnnotatedContent._copyTags(self._tags, mapper)
 
+        doc.metadata = dict(self.metadata)
         return doc
+
+    @staticmethod
+    def _strTag(close_tags:defaultdict, pos:int, tag:namedtuple) -> str:
+        # Create the opening tag string representation of *tag* at *pos*, and
+        # add the closing tag to the *close_tags* defaultdict(list).
+        # This is a helper for __str__().
+        if len(tag.offsets) == 1: # Positional tag
+            tag_str = '<{} id={} />'.format(tag.name, tag.id)
+        else:
+            close_tags[tag.offsets[-1]].append('</{}>'.format(tag.name))
+
+            if len(tag.offsets) == 2: # Single-span tag
+                tag_str = '<{} id={}>'.format(tag.name, tag.id)
+            else: # Multi-span tag
+                o = tag.offsets
+                spans = ' '.join('{}:{}'.format(str(o[i]     - pos),
+                                                  str(o[i + 1] - pos))
+                                 for i in range(len(o), step=2))
+
+                tag_str = '<{} id={} spans="{}">'.format(
+                    tag.name, tag.id, spans,
+                )
+
+        return tag_str
+
+    def _getTagHelper(self) -> FunctionType:
+        # Get the next tag (in offset order) with a unique ID for it.
+        # This is a helper for __str__().
+        Tag = namedtuple("Tag", "id name start offsets")
+        ordered_tags = enumerate(self.iterTags(True))
+
+        def GetTag():
+            id, (ns, key, offs) = next(ordered_tags)
+            return Tag(id, "{}:{}".format(ns, key), offs[0], offs)
+
+        return GetTag
 
     def _mapping(self, encoding:str, errors:str) -> list([int]):
         # Return a list of integers, one for each position in the content
