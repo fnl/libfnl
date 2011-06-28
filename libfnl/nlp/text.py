@@ -52,9 +52,14 @@ class AnnotatedContent:
 
         The offsets are sorted by the values of their offsets. Offset sorting
         is in order of the offset's start (lowest first), end (last offset
-        value, highest first), and then the rest of the offset values.
+        value, highest first), and then the rest of the offset values. For
+        example:
 
-        For example::
+        .. testsetup::
+
+            from libfnl.nlp.text import AnnotatedContent
+
+        .. doctest::
 
             >>> offsets = [(1, 2, 3, 5), (1, 3), (2,), (1, 2, 4, 5)]
             >>> list(AnnotatedContent.sorted(offsets))
@@ -275,29 +280,34 @@ class Binary(bytes, AnnotatedContent):
         self._str_alignment = dict()
 
     @classmethod
-    def load(cls, db:Database, doc_id:str, attachment="binary.txt"):
+    def load(cls, db:Database, doc_id:str, filename="binary.txt"):
         """
         Load a text from a CouchDB.
 
         :param db: The Couch :class:`.Database`.
         :param doc_id: The document ID to load.
-        :oaram attachment: The file name of the text attachment to load.
+        :param filename: The name of the text attachment to load.
         :return: A :class:`.Binary` text.
         :raise KeyError: If no document with that ID exists.
-        :raise ValueError: If no attachment with that name exists.
+        :raise ValueError: If no file with that name exists.
         """
         doc = db[doc_id]
         att = db.getAttachment(doc, "binary.txt")
 
         if att is None:
-            msg = "{} has no {} attachment".format(doc_id, attachment)
+            msg = "{} has no {} filename".format(doc_id, filename)
             raise ValueError(msg)
 
         binary = cls(att.data, att.encoding)
-        binary._tags = { ns: { k: [ tuple(o) for o in off ]
-                               for k, off in keys.items() }
-                         for ns, keys in doc["tags"].items() }
+        binary._tags = doc["tags"]
         binary.metadata = doc["metadata"]
+
+        # cast offset values from lists to tuples
+        for keys in binary._tags.values():
+            for offsets in keys.values():
+                for i in range(len(offsets)):
+                    offsets[i] = tuple(offsets[i])
+
         return binary
 
     @property
@@ -324,42 +334,39 @@ class Binary(bytes, AnnotatedContent):
         """
         return "".join('%02x' % b for b in self.digest)
 
-    def save(self, db:Database, doc_id:str=None, force_update:bool=False,
-             attachment:str="binary.txt") -> (str, str):
+    def save(self, db:Database, doc_id:str=None, update:bool=False,
+             filename:str="binary.txt") -> (str, str):
         """
-        Store this text in a CouchDB, overwriting any existing document, unless
-        it has exactly the same fields (The text attachment is not compared,
-        but can be assumed equal if the hexdigest document ID system is used.)
+        Store this text in a Couch *DB*, overwriting any existing document,
+        unless *update* is used.
 
         :param db: The Couch :class:`.Database`.
         :param doc_id: The document ID to use; uses the :meth:`.hexdigest` if
             ``None``.
-        :param force_update: Re-save old documents even if they are unchanged.
-        :param attachment: The file name of the text attachment to save.
+        :param update: Use dictionary update instead of overwriting tags and
+            metadata, and do not overwrite an existing attachment with the same
+            filename (ie., assume it is the same and only some fields are being
+            updated).
+        :param filename: The name to use for the text attachment.
         :return: An ``(id, rev)`` tuple of the saved document.
         """
         if not doc_id: doc_id = self.hexdigest
-        # Need to cast all tuples to lists to compare the documents
-        doc = Document({"tags": self._tags})
-        doc["metadata"] = self.metadata
-        doc.id = doc_id
-        old = db.get(doc_id)
-        if old: doc.rev = old.rev
+        doc = db.get(doc_id, Document({"_id": doc_id}))
 
-        if old and not force_update:
-            if "tags" in old:
-                # Need to cast to tuples to compare the two documents
-                old["tags"] = { ns: { k: [ tuple(o) for o in off ]
-                                      for k, off in keys.items() }
-                                for ns, keys in old["tags"].items() }
-
-            if old == doc:
-                return doc.id, doc.rev
+        for key, value in [("tags", self._tags), ("metadata", self.metadata)]:
+            if update and key in doc:
+                doc[key].update(value)
             else:
-                return db.save(doc)
+                doc[key] = value
+
+        if doc.rev:
+            if not update or filename not in doc.attachments:
+                db.saveAttachment(doc, self, filename=filename)
+
+            return db.save(doc)
         else:
             db[doc.id] = doc
-            return db.saveAttachment(doc, self, filename=attachment)
+            return db.saveAttachment(doc, self, filename=filename)
 
     def toUnicode(self, errors:str="strict"):
         """
@@ -416,8 +423,8 @@ class Unicode(str, AnnotatedContent):
             that is invalid.
         """
         if self._tags:
-            assert not self.listPartiallyOverlappingTags(), \
-                self.listPartiallyOverlappingTags()
+            assert not self.firstPartiallyOverlappingTags(), \
+                self.firstPartiallyOverlappingTags()
             buffer = StringIO()
             close_tags = defaultdict(list)
             GetTag = self._getTagHelper() # a function returning tags in order
@@ -469,12 +476,12 @@ class Unicode(str, AnnotatedContent):
         return [ self[offsets[i]:offsets[i + 1]]
                  for i in range(0, len(offsets), 2) ]
 
-    def listPartiallyOverlappingTags(self) -> bool:
+    def firstPartiallyOverlappingTags(self) -> bool:
         """
-        Return an empty list if no tag **partially** overlaps with any other.
-
         Return a list of two ``(namespace, key, start, end)`` tuples of
-        the first two tags that were found to partially overlap, otherwise.
+        the first two tags that were found to partially overlap.
+
+        Return ``None`` if no tag **partially** overlaps with any other.
         """
         state = [] # stores the last tags iterated
 
@@ -496,7 +503,7 @@ class Unicode(str, AnnotatedContent):
             else: # nothing on state list, just add
                 state.append(current)
 
-        return []
+        return None
 
     def toBinary(self, encoding:str, errors:str="strict") -> Binary:
         """
