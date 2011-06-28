@@ -28,7 +28,7 @@ class PosReaderTests(TestCase):
 
 <article>
 <articleinfo>
-<bibliomisc>MEDLINE:95333264</bibliomisc></articleinfo><title><sentence><w c="DT">The</w> <w c="NN">peri-kappa</w> <w c="NN">B</w> <w c="NN">site</w> <w c="VBZ">mediates</w> <w c="JJ">human</w> <w c="NN">immunodeficiency</w> <w c="NN">virus</w> <w c="NN">type</w> <w c="CD">2</w> <w c="NN">enhancer</w> <w c="NN">activation</w> <w c="IN">in</w> <w c="NNS">monocytes</w> <w c="CC">but</w> <w c="RB">not</w> <w c="IN">in</w> <w c="NN">T</w> <w c="NNS">cells</w><w c=".">.</w></sentence>
+<bibliomisc>MEDLINE:95333264</bibliomisc></articleinfo><title><sentence><w c="DT">The</w> <w c="NN">peri-kappa</w> <w c="NN">B</w> <w c="NN">site</w> <w c="VBZ">mediates</w> <w c="JJ">human</w> <w c="NN">immunodeficiency</w> <w c="NN">virus</w> <w c="NN">type</w> <w c="CD">2</w> <w c="NN">enhancer</w> <w c="NN">activation</w> <w c="IN">in</w> <w c="NNS">monocytes</w> <w c="CC">did</w><w c="RB">n't</w> <w c="IN">in</w> <w c="NN">T</w> <w c="NNS">cells</w><w c=".">.</w></sentence>
 </title>
 <abstract>
 <sentence><w c="JJ">Human</w> <w c="NN">immunodeficiency</w> <w c="NN">virus</w> <w c="NN">type</w> <w c="CD">2</w> <w c="(">(</w><w c="NN">HIV-2</w><w c=")">)</w><w c=",">,</w> <w c="IN">like</w> <w c="NN">HIV-1</w><w c=",">,</w> <w c="VBZ">causes</w> <w c="NN">AIDS</w> <w c="CC">and</w> <w c="VBZ">is</w> <w c="VBN">associated</w> <w c="IN">with</w> <w c="NN">AIDS</w> <w c="NNS">cases</w> <w c="RB">primarily</w> <w c="IN">in</w> <w c="NNP">West</w> <w c="NNP">Africa</w><w c=".">.</w></sentence>
@@ -47,14 +47,23 @@ class PosReaderTests(TestCase):
         self.reader = CorpusReader()
 
     def testReadingSample(self):
-        text = self.reader.toUnicode(self.file)
-        self.assertEqual(len(text.offsets(self.reader.namespace, self.reader.article_key)), 2)
-        self.assertEqual(len(text.offsets(self.reader.namespace, self.reader.abstract_key)), 2)
-        self.assertEqual(len(text.offsets(self.reader.namespace, self.reader.title_key)), 2)
-        self.assertEqual(len(text.offsets(self.reader.namespace, self.reader.sentence_key)), 6)
-        self.assertEqual(sum(len(tags) for tags in text.tags[self.reader.pos_tag_ns].values()), 131)
-        print(text)
+        count = 0
+        sentences = [2, 4]
+        pos_tags = [44, 86] # second: one less for joined "didn't"!
+        for text in self.reader.toUnicode(self.file):
+            self.assertEqual(1, len(text.offsets(self.reader.namespace,
+                                                 self.reader.abstract_key)))
+            self.assertEqual(1, len(text.offsets(self.reader.namespace,
+                                                 self.reader.title_key)))
+            self.assertEqual(sentences[count],
+                             len(text.offsets(self.reader.namespace,
+                                              self.reader.sentence_key)))
+            self.assertEqual(pos_tags[count],
+                             sum(len(tags) for tags in
+                             text.tags[self.reader.pos_tag_ns].values()))
+            count += 1
 
+        self.assertEqual(2, count)
 
 if __name__ == '__main__':
     main()

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-"""Parse and store a corpus."""
-
+"""Parse and store a corpus to its Couch DB."""
+from functools import partial
+from libfnl.couch.broker import Server
 import logging
+from multiprocessing import Pool
 import os
 import sys
-from libfnl.couch.broker import Server, Document
 
 __author__ = "Florian Leitner"
 __version__ = "0.0.0"
@@ -13,7 +14,28 @@ __version__ = "0.0.0"
 DEFAULT_CORPUS="genia"
 DEFAULT_ENCODING=os.getenv("LANG", "en_US.UTF-8").split(".")[1]
 
-def main(corpus_files, corpus:str=DEFAULT_CORPUS,
+def read(encoding, update, reader, corpus, file_name):
+    #noinspection PyBroadException
+    try:
+        couch = Server()
+        db = couch[corpus]
+
+        with open(file_name, encoding=encoding) as stream:
+            basename = os.path.basename(file_name)
+            logging.info("parsing %s", basename)
+
+            for article in reader.toUnicode(stream):
+                binary = article.toBinary("utf-8")
+                binary.metadata["source"] = basename
+                result = binary.save(db, update=update)
+                assert result, \
+                    logging.error("saving article from %s failed", basename)
+
+            logging.info("completed %s", basename)
+    except Exception:
+        logging.exception("reading %s failed", file_name)
+
+def main(corpus_files, update:bool=False, corpus:str=DEFAULT_CORPUS,
          encoding:str=DEFAULT_ENCODING):
     """
     :param corpus_files: A list of file names to parse.
@@ -26,20 +48,11 @@ def main(corpus_files, corpus:str=DEFAULT_CORPUS,
     except ImportError:
         raise ValueError("no corpus reader for {}".format(corpus))
 
-    reader = C.CorpusReader()
-    couch = Server()
-    db = couch[corpus]
-
-    for file_name in corpus_files:
-        with open(file_name, encoding=encoding) as stream:
-            text = reader.toUnicode(stream)
-            binary = text.toBinary("utf-8")
-            basename = os.path.basename(file_name)
-            binary.metadata["filename"] = basename
-            id, rev = binary.save(db)
-            print("{} saved as {}@{}".format(basename, id, rev),
-                  file=sys.stderr)
-
+    pool = Pool()
+    read_file = partial(read, encoding, update, C.CorpusReader(), corpus)
+    pool.map(read_file, corpus_files)
+    pool.close()
+    pool.join()
     return 0
 
 if __name__ == '__main__':
@@ -58,11 +71,15 @@ if __name__ == '__main__':
 
     parser.add_option(
         "-e", "--encoding", default=DEFAULT_ENCODING, metavar="E",
-        help="text encoding of corpus [E=%default]"
+        help="text encoding of corpus [%default]"
     )
     parser.add_option(
-        "-g", "--genia", action="store_const", const="genia",
-        dest="corpus", help="GENIA XML corpus type"
+        "-u", "--update", action="store_true", default=False,
+        help="only update files on the database"
+    )
+    parser.add_option(
+        "--genia", action="store_const", const="genia",
+        dest="corpus", help="GENIA XML corpus type, stored in DB 'genia'"
     )
     parser.add_option(
         "--error", action="store_const", const=logging.ERROR,
