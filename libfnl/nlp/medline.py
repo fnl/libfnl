@@ -9,7 +9,7 @@ records.
 
 A simple usage example:
 
->>> from libfnl.nlp.medline import * # imports only the below two functions
+>>> from libfnl.nlp.medline import * # imports only the next two functions
 >>> for record in ParseMedlineXml(FetchMedlineXml((11700088, 11748933))):
 ...     print("PMID", record["_id"], "Title:", record["Article"]["ArticleTitle"])
 PMID 11700088 Title: Proton MRI of (13)C distribution by J and chemical shift editing.
@@ -49,12 +49,13 @@ SKIPPED_ELEMENTS = ("OtherID", "OtherAbstract", "SpaceFlightMission",
 
 def FetchMedlineXml(pmids:list, timeout:int=60) -> HTTPResponse:
     """
-    Open an NLM XML stream for a list of *PMIDs*, but at most 100 (the probable
-    upper limit defined by the NLM eUtils API).
+    Open an XML stream from the NLM for a list of *PMIDs*, but at most 100
+    (the approximate upper limit of IDs for this query to the eUtils API).
 
     :param pmids: a list of up to 100 PMIDs, as values that can be cast to
         string.
     :param timeout: Number of seconds to wait for a response.
+    :return: An XML stream.
     :raises IOError: If the stream from eUtils cannot be opened.
     :raises urllib.error.URLError: If the connection to the eUtils URL cannot
         be made.
@@ -73,7 +74,8 @@ def FetchMedlineXml(pmids:list, timeout:int=60) -> HTTPResponse:
 def ParseMedlineXml(xml_stream, pmid_key:str="_id") -> iter([dict]):
     """
     Yield MEDLINE records as dictionaries from an *XML stream*, with the
-    **PMID** set as string in to the specified *PMID key* (default: **_id**).
+    **PMID** set as string value of the specified *PMID key* (default:
+    **_id**).
 
     Medline XML records are parsed to dictionaries with the following
     properties:
@@ -114,7 +116,7 @@ def ParseMedlineXml(xml_stream, pmid_key:str="_id") -> iter([dict]):
       dictionary.
 
     Special cases for **Abstract** and **MeshHeadingList**, and for the
-    **ArticleIdList** that is stored under the renamed key **ArticleIds**:
+    **ArticleIdList** stored under the renamed key **ArticleIds**:
 
     * The MEDLINE Citation DTD declares that **Abstract** elements contain one
       or more **AbstractText** elements and an optional **CopyrightNotice**

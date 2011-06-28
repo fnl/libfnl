@@ -449,7 +449,7 @@ class Tokenizer:
 
         :param text: The text to tag.
         :param metamorph: The key to store the list of morphology strings in
-            the :attr:`AnnotatedContent.metadata` dictionary of the text.
+            the :attrib:`AnnotatedContent.metadata` dictionary of the text.
         """
         assert len(text), "empty text"
         tokens = []
