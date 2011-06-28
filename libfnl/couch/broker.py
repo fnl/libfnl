@@ -6,21 +6,19 @@
 
 A Simple usage example:
 
-.. doctest::
-
-    >>> from libfnl.couch import Server
-    >>> server = Server()
-    >>> db = server.create('python-tests')
-    >>> doc_id, doc_rev = db.save({'type': 'Person', 'name': 'John Doe'})
-    >>> doc = db[doc_id]
-    >>> doc['type']
-    'Person'
-    >>> doc['name']
-    'John Doe'
-    >>> del db[doc.id]
-    >>> doc.id in db
-    False
-    >>> del server['python-tests']
+>>> from libfnl.couch import Server
+>>> server = Server()
+>>> db = server.create('python-tests')
+>>> doc_id, doc_rev = db.save({'type': 'Person', 'name': 'John Doe'})
+>>> doc = db[doc_id]
+>>> doc['type']
+'Person'
+>>> doc['name']
+'John Doe'
+>>> del db[doc.id]
+>>> doc.id in db
+False
+>>> del server['python-tests']
 """
 from collections import namedtuple
 from inspect import getsource
@@ -86,7 +84,7 @@ def CallViewlike(resource:network.Resource, doc_ids:list,
         keys = {'keys': list(doc_ids)}
         return resource.postJson(json=keys, **options)
     else:
-        assert "keys" not in options, "for keys, set the doc_ids list"
+        assert "keys" not in options, "for keys, use the doc_ids method param"
         return resource.getJson(**options)
 
 
@@ -307,7 +305,7 @@ class ViewResults:
         self.view = view
         self.doc_ids = list(doc_ids) if doc_ids else None
         self.options = options
-        self._iter = self._rows = self._total_rows = self._offset = None
+        self._rows = self._total_rows = self._offset = None
         self.__open_stream = None
 
     def __del__(self):
@@ -347,22 +345,21 @@ class ViewResults:
         data = self.view._exec(self.doc_ids, self.options)
         wrapper = self.view.wrapper
 
-        if hasattr(data, "read") and not isinstance(self.view, TemporaryView):
+        if hasattr(data, "read"): #and not isinstance(self.view, TemporaryView):
             self.__open_stream = data
-            self._iter = iter(data)
-            first = next(self._iter)
-            self._total_rows = self._getTotal(first)
-            self._offset = self._getOffset(first)
-            self._iter = map(wrapper,
-                             map(serializer.Decode,
-                                 filter(lambda l: len(l) > 5, self._iter)))
-            return self._iter
+            stream = iter(data)
+            first_line = next(stream)
+            self._total_rows = self._getTotal(first_line)
+            self._offset = self._getOffset(first_line)
+            return map(wrapper,
+                       map(serializer.Decode,
+                           filter(lambda l: len(l) > 5, stream)))
         else:
-            if hasattr(data, "read"):
-                encoding = data.charset
-                data = data.read()
-                data = data.decode(encoding or "utf-8")
-                data = serializer.Decode(data)
+#            if hasattr(data, "read"):
+#                encoding = data.charset
+#                data = data.read()
+#                data = data.decode(encoding or "utf-8")
+#                data = serializer.Decode(data)
             
             self._rows = [wrapper(row) for row in data['rows']]
             self._total_rows = data.get('total_rows', -1)
@@ -537,7 +534,6 @@ class Database(object):
     ID, you'd use item access just as with updating:
 
     >>> db['JohnDoe'] = {'type': 'person', 'name': 'John Doe'}
-
     >>> 'JohnDoe' in db
     True
     >>> len(db)
@@ -950,7 +946,7 @@ class Database(object):
 
     # ATTACHMENT API
 
-    def deleteAttachment(self, doc:dict, filename:str):
+    def deleteAttachment(self, id_or_doc, filename:str) -> bool:
         """
         Delete the specified attachment.
 
@@ -959,15 +955,29 @@ class Database(object):
         include the ``_rev`` field. The document's ``_rev`` field will be
         automatically updated.
 
-        :param doc: The dictionary or `Document` representing the
-                    document that the attachment belongs to.
+        :param id_or_doc: Either a document ID, a dictionary or a `Document`
+            object representing the document that the attachment belongs to.
         :param filename: The name of the attachment file.
         :return: A `bool` indicating success.
+        :raise network.ResourceNotFound: If no such document or attachment
+            exists.
         """
-        path = DocPath(doc['_id'])
+        if isinstance(id_or_doc, str):
+            doc_id = id_or_doc
+            path = DocPath(doc_id)
+            resp = self.resource.head(*path)
+            rev = resp.headers["ETag"]
+        else:
+            doc_id = id_or_doc['_id']
+            path = DocPath(doc_id)
+            rev = id_or_doc['_rev']
+
         path.append(filename)
-        response = self.resource.deleteJson(*path, rev=doc['_rev'])
-        doc['_rev'] = response.data['rev']
+        response = self.resource.deleteJson(*path, rev=rev)
+
+        if not isinstance(id_or_doc, str):
+            id_or_doc['_rev'] = response.data['rev']
+
         return response.data['ok']
 
     def getAttachment(self, id_or_doc, filename:str,
@@ -1011,16 +1021,11 @@ class Database(object):
         except network.ResourceNotFound:
             return default
 
-    def saveAttachment(self, doc:dict, content, filename:str=None,
-                       content_type:str=None, charset:str=None) -> (str, str):
+    def saveAttachment(self, id_or_doc, content, filename:str=None,
+                       content_type:str=None, charset:str=None) -> Document:
         """
-        Create or replace an attachment.
-
-        Note that the provided *doc* is required to have a ``_rev`` field.
-        Thus, if the document is based on a view row, the view row would need
-        to include the ``_rev`` field.
-
-        The document's ``_rev`` field is automatically updated.
+        Create or replace an attachment, thereby creating or updating a
+        document.
 
         If the *content* is a `bytes` object, and the content is text, it is
         highly recommended to set the charset value, too. Otherwise, or if
@@ -1028,21 +1033,25 @@ class Database(object):
         will be assumed to use **Latin-1** encoding (the default HTTP 1.1
         encoding).
 
-        :param doc: The dictionary or `Document` object representing the
-                    document that the attachment should be added to.
+        :param id_or_doc: The dictionary, `Document`, or simply document ID
+            string where the attachment should be added to. If the dictionary
+            or `Document` has no ``_rev`` field, an empty document with
+            the given ``_id`` will be created. Note that the document itself
+            will **not** be saved, only the empty document created. For an ID,
+            if it exists in the DB, the ``_rev`` is fetched; Otherwise, an
+            empty document with that ID will be created.
         :param content: The content to upload, either a file-like object or
-                        a filename.
+            a filename.
         :param filename: The name of the attachment file to create/replace; if
-                         omitted, this function tries to get the filename from
-                         the file-like object passed as the *content* argument
-                         value.
+            omitted, this function tries to get the filename from the `name`
+            attribute (eg., file-like objects) of the *content* argument.
         :param content_type: MIME type of the attachment; if omitted, it is
             guessed based on the *filename* extension.
-        :param charset: A charset value, appended to the *content type* value,
-            **if not defined there already**. If the content has an `encoding`
-            attribute, and *charset* is ``None``, the charset parameter is
-            taken from the attribute's value. Note that **string** *content* is
-            encoded to **Latin-1** and no (other) *charset* should be set.
+        :param charset: Appended to the *content type* value, **if not defined
+            there already**. If omitted and not defined in the *content type*,
+            but the *content* object has an `encoding` attribute, that is
+            used in stead. Note that **string** type *content* is encoded to
+            **Latin-1** and no (other) *charset* should be set.
         :return: The document's ``(id, rev)`` tuple.
         """
         if filename is None:
@@ -1071,15 +1080,35 @@ class Database(object):
             elif isinstance(content, str) or isinstance(content, TextIOBase):
                 content_type += "; charset=iso-8859-1"
 
-        path = DocPath(doc['_id'])
-        path.append(filename)
-        response = self.resource.put(*path, body=content,
-                                     headers={'Content-Type': content_type},
-                                     rev=doc['_rev'])
-        json = serializer.Decode(response.data)
-        doc['_rev'] = json['rev']
-        assert json['ok']
-        return doc['_id'], doc['_rev']
+        if isinstance(id_or_doc, str):
+            doc_id = id_or_doc
+            resource = self.resource(*DocPath(doc_id))
+
+            try:
+                resp = resource.head()
+                rev = resp.headers.get("ETag", None)
+            except network.ResourceNotFound:
+                rev = None
+        else:
+            doc_id = id_or_doc['_id']
+            rev = id_or_doc.get('_rev', None)
+            resource = self.resource(*DocPath(doc_id))
+
+        response = resource.put(filename, body=content,
+                                headers={'Content-Type': content_type},
+                                rev=rev)
+        data = serializer.Decode(response.data)
+        assert data['ok']
+
+        if not isinstance(id_or_doc, str):
+            if '_attachments' not in id_or_doc:
+                id_or_doc['_attachments'] = dict()
+
+            id_or_doc['_rev'] = data['rev']
+            doc = self[id_or_doc['_id']]
+            id_or_doc['_attachments'][filename] = doc['_attachments'][filename]
+
+        return data["id"], data["rev"]
 
     # BULK DOCUMENT API
 
@@ -1216,6 +1245,9 @@ class Database(object):
         :return: The query's results.
         :rtype: :class:`.ViewResults`
         """
+        if "chunked_response" not in options:
+            options["chunked_response"] = True
+
         return TemporaryView(self.resource('_temp_view'), map_fun,
                              reduce_fun, language=language,
                              wrapper=wrapper)(doc_ids, **options)
@@ -1263,6 +1295,10 @@ class Database(object):
         :rtype: :class:`.ViewResults`
         """
         path = DesignPathFromName(name, '_view')
+
+        if "chunked_response" not in options:
+            options["chunked_response"] = True
+
         return PermanentView(self.resource(*path), '/'.join(path),
                              wrapper=wrapper)(doc_ids, **options)
 
@@ -1330,6 +1366,9 @@ class Database(object):
         """
         path = DesignPathFromName(name, '_list')
         path.extend(view.split('/', 1))
+
+        if "chunked_response" not in options:
+            options["chunked_response"] = True
 
         response = CallViewlike(self.resource(*path), doc_ids, options)
         return response
@@ -1399,7 +1438,8 @@ class Database(object):
         """
         if opts.get('feed') == 'continuous':
             return self._streamingChanges(**opts)
-        response = self.resource.getJson('_changes', **opts)
+        response = self.resource.getJson('_changes', chunked_response=True,
+                                         **opts)
 
         if isinstance(response.data, network.ResponseStream):
             json = serializer.Decode(str(response.data))
@@ -1408,7 +1448,7 @@ class Database(object):
             return response.data
 
     def _streamingChanges(self, **opts:{str:object}):
-        response = self.resource.get('_changes', **opts)
+        response = self.resource.get('_changes', chunked_response=True, **opts)
         lines = iter(response.data)
 
         for ln in lines:

@@ -393,7 +393,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
 
         doc = self.db.get(doc['_id'], conflicts=True)
         assert '_conflicts' in doc
-        revs = self.db.get(doc['_id'], open_revs='all')
+        revs = self.db.get(doc['_id'], open_revs='all', chunked_response=True)
         assert len(revs) == 2
 
     def test_bulk_update_bad_doc(self):
@@ -568,12 +568,12 @@ class ViewTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
     def test_init_with_resource(self):
         self.db['foo'] = {}
         view = broker.PermanentView(self.db.resource('_all_docs').url, '_all_docs')
-        self.assertEquals(len(list(view())), 1)
+        self.assertEquals(len(list(view(chunked_response=True))), 1)
 
     def test_iter_view(self):
         self.db['föö'] = {"föö": "bär"}
         view = broker.PermanentView(self.db.resource('_all_docs').url, '_all_docs')
-        rows = list(view)
+        rows = list(view(chunked_response=True))
         self.assertEqual(1, len(rows))
         self.assertEqual("föö", rows[0].id)
         self.assertEqual("föö", rows[0].key)

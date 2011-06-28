@@ -19,8 +19,7 @@ import logging
 from os import strerror
 import socket
 from threading import Lock
-from time import mktime, sleep, strptime
-from types import FunctionType
+import time
 from urllib.parse import urlsplit, urlunsplit, urlencode, unquote, quote
 
 from libfnl.couch.serializer import Decode as DecodeJson, \
@@ -30,11 +29,6 @@ __all__ = ['HTTPError', 'PreconditionFailed', 'ResourceNotFound',
            'ResourceConflict', 'ServerError', 'Unauthorized',
            'RedirectLimitExceeded',
            'Session', 'Resource']
-
-CHUNK_SIZE = 1024 * 8 # 8 KB
-"""
-Number of bytes read/wrote at most in a single socket read/write.
-"""
 
 USER_AGENT = "couch.py3/1.0"
 """
@@ -69,11 +63,10 @@ A named tuple representing the result from a request.
 
     The response data, one of:
 
-        * A `str` or `bytes` object.
+        * A `str` (text) or `bytes` (binary data) object.
         * A Python object decoded from a JSON response.
         * A :class:`.ResponseStream` object.
 """
-
 
 quoteall = partial(quote, safe='')
 
@@ -214,8 +207,8 @@ class ServerError(client.HTTPException):
 class Headers(dict):
     """
     A simple dict implementation that ensures header names (the dict's keys)
-    are always stored as lower-case, but always returned in their correct
-    capitalized format from an iterator or any methods that return keys.
+    are always stored as lower-case, but usually returned in their correct
+    capitalized format from an iterator or methods that return keys.
     """
 
     @staticmethod
@@ -267,94 +260,73 @@ class Headers(dict):
         return dict.setdefault(self, key.lower(), default)
 
 
-class ResponseStream:
+class ResponseStream(client.HTTPResponse):
     """
-    HTTP and HTTPS Responses from servers wrapped into a convenience class.
+    :class:`http.client.HTTPResponse` extended with iteration and string
+    casting.
 
-    If a text stream - ie., it has a `charset` value - it can be converted
-    to a string by casting it to `str`, but this consumes the entire stream.
+    If a text stream - ie., the `charset` attribute is set - instances of this
+    class can be converted to strings by casting to `str`, but this consumes
+    the entire stream.
 
     If treated as an iterator or cast to `iter`, and the stream is chunked
-    (``Transfer-Encoding: chunked``), and the data can be retrieved in small
-    parts at a time. If it is a text stream (ie., has a `charset`), text items
-    are returned, otherwise `bytes`. In almost all cases, chunked streams will
-    be text streams.
+    (``Transfer-Encoding: chunked``), the data can be retrieved in small parts
+    at a time. If it is a text stream (ie., has a `charset`), text items
+    are returned, otherwise `bytes`. If the response is not chunked, an
+    AssertionError is raised.
     """
 
-    def __init__(self, resp:client.HTTPResponse, charset):
-        """
-        :param resp: The actual :class:`http.client.HTTPResponse`.
-        :param charset: The encoding of the stream, if any.
-        """
-        self.resp = resp
-        self.charset = charset
+    # maximal line length when calling readline().
+    _MAXLINE = 65536
 
-    def __str__(self) -> str:
-        assert self.charset, "no charset; encoding unknown"
-        raw = self.read()
-        self.resp.close()
-        return raw.decode(self.charset)
+    def __str__(self):
+        assert self.charset
+        return self.read().decode(self.charset)
 
-    def read(self, number:int=None) -> bytes:
-        """
-        Read a *number* of `bytes` of the stream.
-        """
-        raw = self.resp.read(number)
-        if number is None or len(raw) < number: self.resp.close()
-        return raw
-
-    def close(self):
-        """
-        Close the stream.
-        """
-        if not self.resp.closed:
-            self.resp.close()
-
-    @property
-    def closed(self) -> bool:
-        """
-        ``True`` if the stream is closed.
-        """
-        return self.resp.closed
-
-    def __iter__(self) -> iter:
-        """
-        Yield chunked (``Transfer-Encoding: chunked``) content of the stream.
-
-        If the stream is for text (ie., has a `charset`), text items are
-        returned. If the stream is binary, `bytes` are returned by the
-        iterator.
-        """
-        assert self.resp.msg.get('Transfer-Encoding').lower() == 'chunked'
-        sock = self.resp.fp
-
-        if self.charset:
-            decode = lambda ln: ln.decode(self.charset)
-        else:
-            decode = lambda ln: ln
+    def __iter__(self):
+        assert self.chunked != client._UNKNOWN
 
         while True:
-            # yield lines from a chunked HTTP feed
-            if self.resp.closed: break
+            line = self.fp.readline(self._MAXLINE + 1)
+
+            if len(line) > self._MAXLINE:
+                raise client.LineTooLong("chunk size")
+
+            i = line.find(b";")
+            if i >= 0: line = line[:i] # strip chunk-extensions
 
             try:
-                chunksz = int(sock.readline().strip(), 16)
+                chunk_left = int(line, 16)
             except ValueError:
-                raise client.IncompleteRead('missing chunk size')
+                # close the connection as protocol synchronisation is
+                # probably lost
+                self.close()
+                raise client.IncompleteRead(line)
 
-            if not chunksz:
-                sock.read(2) # cr, lf
-                self.resp.close()
-                break
+            if not chunk_left: break
+            chunk = self._safe_read(chunk_left)
 
-            chunk = sock.read(chunksz)
-            if not chunk: raise client.IncompleteRead('no data in chunk')
+            if self.charset:
+                for line in chunk.splitlines(): yield line.decode(self.charset)
+            else:
+                yield chunk
 
-            for line in chunk.splitlines(): yield decode(line)
-            
-            if self.resp.closed: break
-            sock.read(2) # cr, lf
+            self._safe_read(2)  # toss the CRLF at the end of the chunk
 
+        # read and discard trailer up to the CRLF terminator
+        while True:
+            line = self.fp.readline(self._MAXLINE + 1)
+
+            if len(line) > self._MAXLINE:
+                raise client.LineTooLong("trailer line")
+
+            # a tiny number of sites EOF without sending the trailer
+            if not line: break
+            # line is trailer
+            if line == b"\r\n": break
+
+        # we read everything; close the "file"
+        self.close()
 
 class Request:
 
@@ -364,9 +336,11 @@ class Request:
         self.body = body
         self.method = method
         self.split_url = urlsplit(url, scheme='http')
+        self._selector = urlunsplit(('', '') + self.split_url[2:4] + ('',))
         self.L = logging.getLogger(
-            "Request({} {}://{})".format(method, self.split_url.scheme,
-                                         self.split_url.netloc)
+            "Request({} {}://{}{})".format(method, self.split_url.scheme,
+                                           self.split_url.netloc,
+                                           self.split_url.path)
         )
         self.cached_response = cached_response
         self._headers = headers or Headers()
@@ -374,7 +348,6 @@ class Request:
         self._chunked = False
         self.__received = False
         self.__sent = False
-        self._selector = urlunsplit(('', '') + self.split_url[2:4] + ('',))
         self._initHeaders(credentials)
 
     def _initHeaders(self, credentials:(str, str)):
@@ -468,7 +441,7 @@ class Request:
 
 class Session(object):
 
-    CACHE_SIZE = (10, 50)
+    CACHE_SIZE = (25, 100)
     """
     Tuple of (retain, max).
 
@@ -485,7 +458,7 @@ class Session(object):
         :param cache: An instance with a dict-like interface or None to allow
                       the session to create a dict for caching, consisting of
                       URL keys and response values.
-        :param timeout: Socket timeout in number of seconds, or `None` for no
+        :param timeout: Socket timeout in number of seconds, or ``None`` for no
                         timeout.
         :param max_redirects: The max. number of redirects before raising a
                               :exc:`RedirectLimitExceeded` exception.
@@ -514,9 +487,12 @@ class Session(object):
 
         return cached_resp
 
-    def request(self, method:str, url:str, body:object=None,
-                headers:Headers=None, credentials:tuple([str, str])=None,
-                num_redirects:int=0) -> (int, client.HTTPMessage, RawIOBase):
+    def request(self, method:str, url:str,
+                body:object=None,
+                headers:Headers=None,
+                credentials:tuple([str, str])=None,
+                num_redirects:int=0,
+                chunked_response=False) -> (int, client.HTTPMessage, RawIOBase):
         """
         Make a *method* request to *url*.
 
@@ -543,6 +519,7 @@ class Session(object):
                             may not form part of the URL.
         :param num_redirects: The number of times this request has been
                               redirected already (counter).
+        :param chunked_response: If a chunked response is to be expected.
         :return: A tuple of (status, response_message, data).
         :raises TypeError: If a JSON encoding error occurred.
         :raises HttpError: If any of the documented HTTP errors occurred.
@@ -551,17 +528,17 @@ class Session(object):
         :raises ValueError: If the URL is invalid or the scheme is not
                             supported (only http and https are).
         """
-        if url in self.perm_redirects:
-            self.L.debug("%s permanently redirected to %s",
-                         url, self.perm_redirects[url])
-            url = self.perm_redirects[url]
-
+        if url in self.perm_redirects: url = self.perm_redirects[url]
         cached_response = self._cachedResponse(method, url)
         request = Request(method, url, body, headers, credentials,
                           cached_response)
         retries = iter(self.retry_delays)
         response = None
-        conn = self._getConnection(request.split_url)
+
+        if chunked_response:
+            conn = self._connectTo(request.split_url)
+        else:
+            conn = self._getConnection(request.split_url)
 
         while True:
             try:
@@ -584,17 +561,18 @@ class Session(object):
                                     strerror(ecode))
                     raise e
 
-                sleep(delay) # Wait a bit and get a fresh connection
-                conn = self._getConnection(request.split_url)
+                conn.close()
+                time.sleep(delay) # Wait a bit and get a fresh connection
+                
+                if chunked_response:
+                    conn = self._connectTo(request.split_url)
+                else:
+                    conn = self._getConnection(request.split_url)
 
         #if self.L.isEnabledFor(logging.DEBUG):
         #    response.debuglevel = 1
 
-        L = logging.getLogger(
-            "Response({} {}://{})".format(request.method,
-                                          request.split_url.scheme,
-                                          request.split_url.netloc)
-        )
+        L = logging.getLogger("Response({} {})".format(request.method, url))
         status = response.status
         L.debug("HTTP %s (%s)", client.responses[status], status)
         L.debug("headers: %s", response.getheaders())
@@ -621,6 +599,7 @@ class Session(object):
         # Handle errors
         if status >= 400:
             data = response.read()
+            response.close()
             self._returnConnection(request.split_url, conn)
 
             if data and 'application/json' in ctype:
@@ -653,6 +632,7 @@ class Session(object):
         elif status == 303 or \
            method in ('GET', 'HEAD') and status in (301, 302, 307):
             response.read()
+            response.close()
             self._returnConnection(request.split_url, conn)
 
             if num_redirects > self.max_redirects:
@@ -697,39 +677,56 @@ class Session(object):
             self._returnConnection(request.split_url, conn)
         elif headers.get('Transfer-Encoding', 'unset').lower() == 'chunked':
             L.debug("body: <chunked>")
-            streamed = True
-            data = ResponseStream(response, charset)
-            # Note: no returning of connections with streamed responses back
-            # to the pool - they are too often corrupted
+
+            if not chunked_response:
+                L.info("chunked response on pooled connection")
+                data = response.read()
+                response.close()
+                self._returnConnection(request.split_url, conn)
+
+                if data and charset:
+                    data = data.decode(charset)
+            else:
+                streamed = True
+                response.charset = charset
+                data = response
+                # Note: streamed responses cannot run over pooled connections
+                # as their sockets close after reading the first chunk.
         else:
             data = response.read()
             response.close()
+
             if data:
                 if charset:
                     data = data.decode(charset)
                     L.debug("body: <text>")
                 else:
                     L.debug("body: <bytes>")
-            self._returnConnection(request.split_url, conn)
+
+            if chunked_response:
+                L.warning("chunked response set, but not received")
+            else:
+                self._returnConnection(request.split_url, conn)
 
         result = Response(status, headers, data)
 
         # Cache non-chunked responses from GET requests that have an ETag header
         if not streamed and method == 'GET' and 'etag' in response.msg and \
            ccntrl != 'no-cache':
+            L.debug("caching response")
             self.cache[url] = result
             if len(self.cache) > Session.CACHE_SIZE[1]: self._cleanCache()
 
         return result
 
     def _cleanCache(self):
-
         def cache_sort(i):
-            t = mktime(strptime(i[1][1]['Date'][5:-4], '%d %b %Y %H:%M:%S'))
+            t = time.mktime(time.strptime(i[1][1]['Date'][5:-4],
+                                          '%d %b %Y %H:%M:%S'))
             return datetime.fromtimestamp(t)
 
-        ls = sorted(iter(self.cache.items()), key=cache_sort)
-        self.cache = dict(ls[-Session.CACHE_SIZE[0]:])
+        c = sorted(iter(self.cache.items()), key=cache_sort)
+        self.cache = dict(c[-Session.CACHE_SIZE[0]:])
 
     def _connectTo(self, url:namedtuple) -> client.HTTPConnection:
         if url.scheme == 'http':
@@ -740,6 +737,7 @@ class Session(object):
             raise ValueError('scheme %s not supported'.format(url.scheme))
 
         conn = Connection(url.netloc, timeout=self.timeout)
+        conn.response_class = ResponseStream
 
         #if self.L.isEnabledFor(logging.DEBUG):
         #    conn.set_debuglevel(1)
@@ -764,6 +762,7 @@ class Session(object):
             while conns:
                 conn = conns.pop()
                 if conn.sock: break
+                else: conn.close()
 
             if not (conn and conn.sock):
                 conn = self._connectTo(url)
@@ -964,9 +963,7 @@ class Resource:
 
     @staticmethod
     def _prepareJson(json:object, headers:dict) -> (bytes, Headers):
-        if json is not None:
-            json = EncodeJson(json).encode('utf-8')
-
+        if json is not None: json = EncodeJson(json).encode()
         headers = Headers(headers) if headers else Headers()
         headers.setdefault('Content-Type', 'application/json; charset=utf-8')
         headers.setdefault('Accept', 'application/json')
@@ -974,7 +971,8 @@ class Resource:
         return json, headers
 
     def _request(self, method:str, path:list, body:object=None,
-                 headers:dict=None, **params:{str: object}) -> Response:
+                 headers:dict=None, chunked_response:bool=False,
+                 **params:{str: object}) -> Response:
         """
         Make a request to the resource, returning a tuple containing
         the HTTP status, the HTTPMessage object (headers), and a file-like
@@ -986,6 +984,7 @@ class Resource:
         url = UrlJoin(self.url, path, **params)
         return self.session.request(method, url, body=body,
                                     headers=all_headers,
-                                    credentials=self.credentials)
+                                    credentials=self.credentials,
+                                    chunked_response=chunked_response)
 
 
