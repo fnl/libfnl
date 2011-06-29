@@ -563,6 +563,9 @@ class Database(object):
     def __repr__(self) -> str:
         return '<%s %r>' % (type(self).__name__, self.name)
 
+    def __hash__(self):
+        return "{} {}".format(self.resource.url, self.resource.credentials)
+
     def __contains__(self, id:str) -> bool:
         """
         Return ``True`` if the DB contains a document with the specified ID.
@@ -630,7 +633,7 @@ class Database(object):
         Create or update a *document* with the specified *ID*.
 
         :param document: The document; either a plain dictionary (even without
-                         an ``_id`` or ``_rev``), or a :class:`.Document`.
+            ``_id`` or ``_rev`` values), or a :class:`.Document`.
         :raise libfnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
         """
@@ -646,7 +649,7 @@ class Database(object):
         The name string of the database, unescaped.
 
         Note that this may trigger a request to the server unless the name has
-        already been cached by the `info()` method.
+        already been cached by :meth:`.info`.
         """
         if self._name is None: self.info()
         return self._name
@@ -657,7 +660,7 @@ class Database(object):
 
         Removes all unused index files from the database storage area.
 
-        :return: A `bool` to indicate successful cleanup initiation.
+        :return: A `bool` to indicate successful cleanup **initiation**.
         """
         response = self.resource.postJson('_view_cleanup')
         return response.data['ok']
@@ -685,8 +688,8 @@ class Database(object):
         database. With an argument, it will compact the index cache for all
         views in the design document specified.
 
-        :return: A `bool` to indicate whether the compaction was initiated
-                 successfully.
+        :return: A `bool` to indicate whether the compaction was **initiated**
+            successfully.
         """
         if ddoc: response = self.resource.postJson('_compact', ddoc)
         else:    response = self.resource.postJson('_compact')
@@ -744,13 +747,12 @@ class Database(object):
             document = {'_id': uuid4().hex, 'type': 'person', 'name': 'John Doe'}
             db.save(document)
 
-        :param document: The document to store, as `dict` or :class:`.Document`.
-        :param options: Optional args, especially ``batch='ok'`` to just
-                        send documents to memory to achieve higher throughput.
-                        To flush the memory immediately, use
-                        :meth:`.Database.commit()`.
-                        Be aware that ``batch`` is not a safe approach and
-                        should never be used for critical data.
+        :param document: The document to store, as `dict` or `Document`.
+        :param options: Optional args, especially ``batch='ok'`` to just send
+            documents to memory to achieve higher throughput. To flush the
+            memory immediately, use :meth:`.Database.commit()`. Be aware that
+            ``batch`` is not a safe approach and should never be used for
+            critical data.
         :return: A `tuple` of the updated ``(id, rev)`` values of the document.
         :raise libfnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
@@ -771,7 +773,7 @@ class Database(object):
 
     def copy(self, src, dest) -> str:
         """
-        Copy a document to a new document or overwrite an existing one.
+        **Copy** a document to a new document or overwrite an existing one.
 
         :param src: The ID of the document to copy, or a dictionary or
                     `Document` object representing the source document.
@@ -826,13 +828,13 @@ class Database(object):
         >>> del db['johndoe']
         >>> del server['python-tests']
 
-        :param doc: A dictionary or `Document` object holding the document
-                    data.
+        :param doc: A dictionary or :class:`.Document` object holding the
+            document data.
         :return: A `bool` indicating success.
         :raise libfnl.couch.network.ResourceConflict: If the document was
-            updated in the database.
+            updated in the database (ie., the ``_rev`` values mismatch).
         :raise ValueError: If either ID or revision of the document are not
-                           set.
+            set.
         """
         if doc.get('_id') is None:
             raise ValueError('document ID cannot be None')
@@ -1054,12 +1056,14 @@ class Database(object):
             **Latin-1** and no (other) *charset* should be set.
         :return: The document's ``(id, rev)`` tuple.
         """
+        # determine the filename or raise exception
         if filename is None:
             if hasattr(content, 'name'):
                 filename = os.path.basename(content.name)
             else:
                 raise ValueError('no filename specified for attachment')
 
+        # determine the content type or fail assertion
         if content_type is None:
             content_type = '; '.join(
                 [mime for mime in mimetypes.guess_type(filename) if mime]
@@ -1072,6 +1076,7 @@ class Database(object):
             assert content_type, \
                 "could not guess MIME type of {}".format(filename)
 
+        # append the charset to the content type if possible
         if "charset" not in content_type:
             if charset:
                 content_type += "; charset={}".format(charset.lower())
@@ -1080,6 +1085,7 @@ class Database(object):
             elif isinstance(content, str) or isinstance(content, TextIOBase):
                 content_type += "; charset=iso-8859-1"
 
+        # determine the document's revision (if any)
         if isinstance(id_or_doc, str):
             doc_id = id_or_doc
             resource = self.resource(*DocPath(doc_id))
@@ -1094,12 +1100,14 @@ class Database(object):
             rev = id_or_doc.get('_rev', None)
             resource = self.resource(*DocPath(doc_id))
 
+        # save the attachment
         response = resource.put(filename, body=content,
                                 headers={'Content-Type': content_type},
                                 rev=rev)
         data = serializer.Decode(response.data)
         assert data['ok']
 
+        # update the document's revision (if id_or_doc was not a string)
         if not isinstance(id_or_doc, str):
             if '_attachments' not in id_or_doc:
                 id_or_doc['_attachments'] = dict()
@@ -1426,18 +1434,17 @@ class Database(object):
          * ``deleted`` -- Only present, with a value of ``True``, if the
            document was deleted.
 
-
-
         :return: A ``(last_seq, results)`` tuple, where *results* is a list of
-                 changes dictionaries, and *last_seq* is an `int` defining the
-                 sequence number of the last change returned (normally, the
-                 last item in the results).  If the option
-                 ``feed='continuous'`` is used, instead an iterator is
-                 returned that yields one changes dictionary at a time until
-                 the server stream breaks or the process is aborted.
+            changes dictionaries, and *last_seq* is an `int` defining the
+            sequence number of the last change returned (normally, the last
+            item in the results).  If the option ``feed='continuous'`` is used,
+            instead an iterator is returned that yields one changes dictionary
+            at a time until the server stream breaks or the process is aborted.
         """
         if opts.get('feed') == 'continuous':
             return self._streamingChanges(**opts)
+
+        # chunked = ("feed" in opts and opts["feed"] is "longpoll")
         response = self.resource.getJson('_changes', chunked_response=True,
                                          **opts)
 
@@ -1506,6 +1513,12 @@ class Server:
         if not full_commit:
             self.resource.headers['X-Couch-Full-Commit'] = 'false'
 
+    def __hash__(self) -> str:
+        return "{} {}".format(self.resource.url, self.resource.credentials)
+
+    def __repr__(self) -> str:
+        return '<%s %r>' % (type(self).__name__, self.resource.url)
+
     def __contains__(self, name:str) -> bool:
         """
         Return ``True`` if the server contains a database with the specified
@@ -1515,6 +1528,8 @@ class Server:
             self.resource.head(ValidateDbName(name))
             return True
         except network.ResourceNotFound:
+            return False
+        except ValueError:
             return False
 
     def __iter__(self) -> iter([str]):
@@ -1533,7 +1548,7 @@ class Server:
 
     def __bool__(self) -> bool:
         """
-        ``True`` iff the server is available.
+        ``True`` if the server is available.
         """
         #noinspection PyBroadException
         try:
@@ -1541,9 +1556,6 @@ class Server:
             return True
         except:
             return False
-
-    def __repr__(self) -> str:
-        return '<%s %r>' % (type(self).__name__, self.resource.url)
 
     def __delitem__(self, name:str):
         """
