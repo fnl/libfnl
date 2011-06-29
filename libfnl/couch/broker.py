@@ -182,9 +182,9 @@ class Document(dict):
     @property
     def rev(self) -> str:
         """
-        The document revision.
+        The document revision or ``None``.
         """
-        return self['_rev']
+        return self['_rev'] if '_rev' in self else None
 
     @rev.setter
     def rev(self, _rev:str) -> str:
