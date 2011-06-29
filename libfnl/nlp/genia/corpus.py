@@ -7,91 +7,32 @@
 from collections import defaultdict
 from io import TextIOBase
 from libfnl.nlp.text import Unicode
+from libfnl.nlp.penn import AMBIGUITY_SEP, AMBIGUOUS, TAGSET, REMAPPED
 import logging
 from xml.etree.ElementTree import iterparse, Element
 
-PENN_TAGSET = frozenset({
-    "CC", # Coordinating conjunction e.g. and,but,or...
-    "DT", #	Determiner 
-    "EX", # Existential there 
-    "FW", # Foreign word
-    "IN", # Preposision or subordinating conjunction 
-    "JJ", # Adjective 
-    "JJR", # Adjective, comparative 
-    "JJS", # Adjective, superlative
-    "MD", # Modal e.g. can, could, might, may...
-    "NN", # Noun, singular or mass 
-    "NNP", # Proper noun, singular
-    "NNPS", # Proper noun, plural
-    "NNS", # Noun, plural 
-    "PDT", # Predeterminer e.g. all, both ... when they precede an article
-    "POS", # Possessive Ending e.g. Nouns ending in 's
-    "PRP", # Personal Pronoun e.g. I, me, you, he...
-    "PRP$", # Possessive Pronoun e.g. my, your, mine, yours...
-    "RB", # Adverb, most words that end in -ly as well as degree words like quite, too and very
-    "RBR", # Adverb, comparative; Adverbs with the comparative ending -er, with a strictly comparative meaning.
-    "RBS", # Adverb, superlative 
-    "RP", # Particle 
-    "TO", # to 
-    "UH", # Interjection e.g. uh, well, yes, my...
-    "VB", # Verb, base form; subsumes imperatives, infinitives and subjunctives
-    "VBD", # Verb, past tense; includes the conditional form of the verb to be
-    "VBG", # Verb, gerund or persent participle 
-    "VBN", # Verb, past participle 
-    "VBP", # Verb, non-3rd person singular present 
-    "VBZ", # Verb, 3rd person singular present 
-    "WDT", # ", # Wh-determiner e.g. which, and that when it is used as a relative pronoun
-    "WP", # Wh-pronoun e.g. what, who, whom...
-    "WP$", # Possessive wh-pronoun
-    "WRB", # Wh-adverb e.g. how, where, why
-    "CD", # Cardinal Number
-    "LS", # List Item Marker 
-    "SYM", # Symbol; incl. mathematical, scientific or technical symbols, and abbrev. marks
-    "$", # Currency symbols
-    "``", # Opening quotation mark
-    "''", # Closing quotation mark
-    "(", # Opening parentheses
-    ")", # Closing parentheses
-    ",", # Comma
-    ".", # Sentence terminal (.?! and possibly ;:); if abbreviation ., use SYM, or join . with the token's tag
-    ":", # Non-sentence terminal use of ;:/
-})
+DROPPED_TOKENS = '*'
 """
-The list of accepted tags, ie., the exact Penn tagset.
+Used in the corpus to mark tokens dropped by the tagger.
+
+As this destroys the correct sequence dependency of tags, sentences where this
+tag is occurs are dropped.
 """
 
-# To make for better keys or remapping of "wrong" GENIA tags:
-REMAPPED_TAGS = {
-    "PRP$": "PPRP",
-    "WP$": "PWP",
-    "$": "CUR",
-    "``": "Q_O",
-    "''": "Q_C",
-    "(": "P_O",
-    ")": "P_C",
-    ",": "COMMA",
-    ".": "STOP",
-    ":": "PUNC",
+REMAPPED_GENIA = {
+    "-": "--", # They use '-' as the dash tag, but Penn rules are to use '--'
+    "CT": "DT", # funny use of special determiner, 4x in corpus
+    "XT": "DT", # even more peculiar use, only once, on an "a" DT token
+    "N": "NN", # probably an error, committed once, on "CD80"
+    "PP": "PRP$", # probably an error on possessive use of "ours", once
 }
 """
-Mapping of tags consisting of symbol character in the Penn tagset to letter
-characters that are more versatile in usage/handling.
-"""
-
-# Any sentences containing these tags will be skipped:
-KNOWN_PROBLEM_TAGS = PENN_TAGSET.union({
-    '*', # Used when the GENIA tagger dropped the token. As this destroys the
-         # correct sequence dependency of tags, sentences where any token
-         # uses this tag are dropped.
-})
-"""
-Tags that are not correct Penn Tags; Any sentences containing these tags are
-dropped from the parsed corpus.
+Mapping of non-existing Penn tags in the GENIA corpus to valid Penn tags.
 """
 
 class CorpusReader:
     """
-    Read PoS XML files.
+    Read GENIA PoS XML files.
     """
 
     L = logging.getLogger("CorpusReader")
@@ -108,19 +49,21 @@ class CorpusReader:
         self.article_tag = article_tag
 
     def toUnicode(self, stream:TextIOBase) -> iter([Unicode]):
+        """
+        Read an open XML stream, yielding Unicode text instances per article.
+        """
         for event, element in iterparse(stream, events=("end",)):
             if element.tag == self.article_tag:
                 self.article = []
                 self.tags = {
                     self.namespace: {
                         self.sentence_key: [],
-                        self.title_key: [],
-                        self.abstract_key: [],
                     },
                     self.pos_tag_ns: defaultdict(list)
                 }
                 self.pos_tags = self.tags[self.pos_tag_ns]
-                self.sentence_tags = self.tags[self.namespace][self.sentence_key]
+                self.sentence_tags = \
+                    self.tags[self.namespace][self.sentence_key]
                 
                 length = self._parseArticle(element)
 
@@ -130,7 +73,29 @@ class CorpusReader:
                     text.tags = self.tags
                     yield text
 
+    @staticmethod
+    def _splitAmbiguousTags(elements:list([Element])) -> iter:
+        # Split word tag PoS tokens into a tuples of all PoS tokens annotated
+        # on each word.
+        # The tuple has one value only if an unambiguous assignment, and all
+        # PoS tags for ambiguous tags.
+        # Ambiguous PoS tags means that attribute ``c`` is, fe., ``"JJ|VBN"``
+        for w in elements:
+            tag = w.attrib["c"]
+
+
+            if AMBIGUITY_SEP in tag:
+                yield tuple((t if t not in REMAPPED_GENIA else
+                             REMAPPED_GENIA[t])
+                            for t in tag.split(AMBIGUITY_SEP)
+                            if t != DROPPED_TOKENS)
+            else:
+                if tag in REMAPPED_GENIA: tag = REMAPPED_GENIA[tag]
+                yield (tag,)
+
     def _parseArticle(self, element:Element) -> int:
+        # Returns the length of the article, all partial strings of the article
+        # in :attr:`.article`, and sets the tags on :attr:`.tags`.
         offset = 0
 
         for section_name in (self.title_key, self.abstract_key):
@@ -151,6 +116,8 @@ class CorpusReader:
         return offset
 
     def _parseSection(self, element:Element, offset:int) -> int:
+        # Returns the final *offset* for this section *element* and the list
+        # of partial strings for this section.
         sentences = list(element.findall(self.sentence_key))
         increment = 0
         section = []
@@ -165,56 +132,91 @@ class CorpusReader:
 
         return offset, section
 
-    def _parseSentence(self, element:Element, offset:int, increment:int) -> int:
+    def _parseSentence(self, element:Element, offset:int, inc:int) -> int:
+        # Returns the final *offset* for this sentence *element*, and list of
+        # partial strings for this sentence.
+        # If a sentence will later be separated by whitespace from the
+        # previous sentences, the length of that whitespace token should be
+        # indicated by *inc*.
         start = offset
         words = list(element.findall(self.token_tag))
-        offset, sentence = self._analyzeWords(words, offset, increment)
+        offset, sentence = self._analyzeWords(words, offset, inc)
 
         if sentence:
-            start += increment
+            start += inc
             self.sentence_tags.append((start, offset))
 
         return offset, sentence
 
-    def _analyzeWords(self, elements:list([Element]), offset:int, increment:int) -> int:
+    def _analyzeWords(self, elements:list([Element]), offset:int,
+                      inc:int) -> int:
+        # Returns the final *offset* for the word *elements*, and list of
+        # partial strings for this list of words.
+        # If a sentence will later be separated by whitespace from a
+        # previous sentences, the length of that whitespace token should be
+        # indicated by *inc*.
         words = []
+        tags = list(CorpusReader._splitAmbiguousTags(elements))
+        assert all(len(ts) for ts in tags), tags
 
         # Skip any sentences where words have bad tags that cannot be fixed
-        if any(map(lambda w: w.attrib["c"] not in PENN_TAGSET, elements)):
-            unknown_tags = ", ".join(
-                "%s/%s" % (w.text, w.attrib["c"]) for w in elements
-                if w.attrib['c'] not in KNOWN_PROBLEM_TAGS
-            )
-            if unknown_tags: self.L.info("Skipping %s", unknown_tags)
-        else:
-            offset += increment
-            last_tag = None
+        if any(any(tag not in TAGSET for tag in tagset) for tagset in tags):
+            # and report, except those only with a DROPPED_TOKENS tag
+            # unless logging is DEBUG, in which case even those are reported
+            if self.L.isEnabledFor(logging.WARN):
+                unknown_tags = []
+                debug = self.L.isEnabledFor(logging.DEBUG)
 
-            for word in elements:
+                for idx, tagset in enumerate(tags):
+                    for tag in tagset:
+                        if tag not in TAGSET:
+                            if debug or tag != DROPPED_TOKENS:
+                                text = elements[idx].text
+                                tok_tag = "{}/{}".format(text, tag)
+                                unknown_tags.append(tok_tag)
+
+                if unknown_tags:
+                    self.L.warning("skipping %s", ', '.join(unknown_tags))
+                    self.L.info("skipped sentence: '%s'", ''.join(
+                        '{}{}'.format(w.text, w.tail if w.tail else '')
+                        for w in elements
+                    ))
+        else:
+            offset += inc
+
+            for idx, word in enumerate(elements):
                 if word.text:
                     if word.text == "n't":
-                        start, _ = self.pos_tags[last_tag].pop()
                         offset += 3
                         words.append(word.text)
-                        self.pos_tags[last_tag].append((start, offset))
+
+                        for tag in tags[idx - 1]:
+                            start, _ = self.pos_tags[tag].pop()
+                            self.pos_tags[tag].append((start, offset))
+
+                        if len(tags[idx - 1]) > 1:
+                            start, _ = self.pos_tags[AMBIGUOUS].pop()
+                            self.pos_tags[AMBIGUOUS].append((start, offset))
                     else:
                         start = offset
                         offset += len(word.text)
                         words.append(word.text)
-                        penn_tag = word.attrib["c"]
 
-                        if penn_tag in REMAPPED_TAGS:
-                            penn_tag = REMAPPED_TAGS[penn_tag]
+                        for tag in tags[idx]:
+                            if tag in REMAPPED:
+                                tag = REMAPPED[tag]
 
-                        self.pos_tags[penn_tag].append((start, offset))
-                        last_tag = penn_tag
+                            self.pos_tags[tag].append((start, offset))
 
-                if word.tail: # is not None:
+                        if len(tags[idx]) > 1:
+                            self.pos_tags[AMBIGUOUS].append((start, offset))
+
+                if word.tail:
                     words.append(word.tail)
                     offset += len(word.tail)
 
             if not words:
-                offset -= increment
+                offset -= inc
         
         return offset, words
 
