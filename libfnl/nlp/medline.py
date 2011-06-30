@@ -68,7 +68,8 @@ Name of file used for attaching abstracts to Couch documents.
 # IMPORTER #
 ############
 
-def Dump(pmids:list([str]), db:Database, update:bool=False, force:bool=False):
+def Dump(pmids:list([str]), db:Database, update:bool=False,
+         force:bool=False) -> int:
     """
     Dump MEDLINE DB records for a given list of *PMIDs* into a Couch *DB*.
 
@@ -89,8 +90,10 @@ def Dump(pmids:list([str]), db:Database, update:bool=False, force:bool=False):
     :param db: A Couch :class:`.Database` instance.
     :param update: Update existing articles, if appropriate (see above).
     :param force: If ``True``, force the update of all existing articles.
+    :return: Number of dumped documents.
     """
     last_access = 0.0
+    processed_docs = 0
 
     for idx in range(0, len(pmids), FETCH_SIZE):
         if force:
@@ -112,8 +115,11 @@ def Dump(pmids:list([str]), db:Database, update:bool=False, force:bool=False):
             # the Gatekeeper: only make eUtils requests every 3 sec
             sleep(max(last_access - time() + 3, 0))
             last_access = time()
-            stream = Fetch(pmids[idx:idx + FETCH_SIZE])
+            processed_docs += len(query)
+            stream = Fetch(query)
             db.bulk(MakeDocuments(stream, updated))
+
+    return processed_docs
 
 
 def NeedsUpdate(item:(str, dict)) -> bool:
@@ -129,7 +135,7 @@ def NeedsUpdate(item:(str, dict)) -> bool:
             for stamp in ("DateRevised", "DateCompleted"):
                 if stamp not in doc: return True
     else:
-        # record is new and might have not yet been completed
+        # record is new, check if it has been completed
         if "DateCompleted" not in doc: return True
 
     return False
@@ -151,7 +157,9 @@ def MakeBinary(raw_json:dict) -> Binary:
     abstract = raw_json["Article"].get("Abstract", None)
 
     if abstract:
-        text = TextFromAbstract(StringIO(title), abstract, section_tags)
+        buffer = StringIO()
+        buffer.write(title)
+        text = TextFromAbstract(buffer, abstract, section_tags)
         del raw_json["Article"]["Abstract"]
     else:
         text = title
