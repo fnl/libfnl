@@ -275,19 +275,28 @@ class Binary(bytes, AnnotatedContent):
         self._str_alignment = dict()
 
     @staticmethod
-    def load(db:Database, doc_id:str, filename="binary.txt"):
+    def load(db:Database, doc_id:str, filename:str=None):
         """
         Load a text from a CouchDB.
 
         :param db: The Couch :class:`.Database`.
         :param doc_id: The document ID to load.
-        :param filename: The name of the text attachment to load.
+        :param filename: The name of the text attachment to load; if None,
+            the document is checked for its ``textfile`` value.
         :return: A :class:`.Binary` text.
         :raise KeyError: If no document with that ID exists.
-        :raise ValueError: If no file with that name exists.
+        :raise ValueError: If no file with that name exists or if the
+            name of the file cannot be established.
         """
         doc = db[doc_id]
-        att = db.getAttachment(doc, "binary.txt")
+
+        try:
+            if not filename: filename = doc["textfile"]
+        except KeyError:
+            msg = "cannot determine text attachment for {}".format(doc_id)
+            raise ValueError(msg)
+
+        att = db.getAttachment(doc, filename)
 
         if att is None:
             msg = "{} has no {} filename".format(doc_id, filename)
@@ -295,9 +304,10 @@ class Binary(bytes, AnnotatedContent):
 
         binary = Binary(att.data, att.encoding)
         binary._tags = doc["tags"]
-        binary.metadata = doc["metadata"]
+        del doc["tags"]
+        binary.metadata = doc
 
-        # cast offset values from lists to tuples
+        # cast offset values from lists to immutable tuples
         for keys in binary._tags.values():
             for offsets in keys.values():
                 for i in range(len(offsets)):
@@ -369,7 +379,10 @@ class Binary(bytes, AnnotatedContent):
 
         The document ID will be either the one given in the *id or doc*, or, if
         set, the ``_id`` in :attr:`.metadata`, or, finally, the
-        :attr:`.hexdigest` string.
+        :attr:`.hexdigest` string. The document itself is made up of the
+        :attr:`.metadata` as initial dictionary to base the document on, the
+        :attr:`.tags` added as key with the same name, and a key ``textfile``
+        to store the name of the attachment containing the tagged text.
 
         :param id_or_doc: Use the given ID as ``_id``, or, if a `Document` or
             dictionary, use it instead of creating a new document, updating it
@@ -401,15 +414,13 @@ class Binary(bytes, AnnotatedContent):
             'data': b64encode(self).decode('ASCII')
         }
         doc['_attachments'] = atts
+        doc['textfile'] = filename
         return doc
 
     def toUnicode(self, errors:str="strict"):
         """
         Return the :class:`.Unicode` view of this document, with
         any tag offsets mapped to the positions in the decoded Unicode.
-
-        Contrary to the ``decode()`` method of `bytes`, the encoding argument
-        is not needed.
 
         :raise UnicodeDecodeError: If any tag key is illegal.
         :return: :class:`.Unicode`
