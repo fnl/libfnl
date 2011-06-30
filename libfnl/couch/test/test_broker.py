@@ -61,7 +61,17 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
 
         self.assertTrue(isinstance(self.server['couchdb-python/missing'],
                                    broker.Database))
+        self.assertEqual(self.server['couchdb-python/missing'].name,
+                         'couchdb-python/missing')
         del self.server['couchdb-python/missing']
+
+    def test_create_db_conflict(self):
+        name, db = self.temp_db()
+        self.assertRaises(network.PreconditionFailed, self.server.create,
+                          name)
+
+    def test_get_db_none(self):
+        self.assertRaises(ValueError, self.server.__getitem__, None)
 
     def test_create_db_conflict(self):
         name, db = self.temp_db()

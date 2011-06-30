@@ -148,8 +148,9 @@ def ValidateDbName(name:str) -> str:
     Return the name if it is a valid DB name and raise a :exc:`ValueError`
     otherwise.
     """
-    if name not in SPECIAL_DB_NAMES and not VALID_DB_NAME.match(name):
-        raise ValueError('invalid database name "{}"'.format(name))
+    if not name or (
+        name not in SPECIAL_DB_NAMES and not VALID_DB_NAME.match(name)):
+        raise ValueError('invalid database name {}'.format(repr(name)))
 
     return name
 
@@ -1163,7 +1164,8 @@ class Database(object):
                        (aka ``'all_or_nothing': true``}
         :return: A `list` of (`bool`, `str`, `str`) `tuples`.
         """
-        content = dict(docs=list(documents))
+        documents = list(documents)
+        content = dict(docs=documents)
         if strict: content['all_or_nothing'] = True
         response = self.resource.postJson('_bulk_docs', json=content)
         results = []
@@ -1530,6 +1532,10 @@ class Server:
         """
         Return ``True`` if the server contains a database with the specified
         *name*, ``False`` otherwise.
+
+        :raise TypeError: If the DB *name* is not a string.
+        :raise ValueError: If the DB *name* evaluates to ``False`` or is not
+            valid.
         """
         try:
             self.resource.head(ValidateDbName(name))
@@ -1570,6 +1576,9 @@ class Server:
 
         :raise libfnl.couch.network.ResourceNotFound: If no database with that
             *name* exists.
+        :raise TypeError: If the DB *name* is not a string.
+        :raise ValueError: If the DB *name* evaluates to ``False`` or is not
+            valid.
         """
         self.resource.delete(ValidateDbName(name))
 
@@ -1578,10 +1587,12 @@ class Server:
         Return a :class:`.Database` object representing the database with the
         specified *name*. Creates the DB if it does not exist.
 
-        :raise libfnl.couch.: If no database with that
-            *name* exists.
+        :raise TypeError: If the DB *name* is not a string.
+        :raise ValueError: If the DB *name* evaluates to ``False`` or is not
+            valid.
         """
-        db = Database(self.resource(name), ValidateDbName(name))
+        name = ValidateDbName(name)
+        db = Database(self.resource(name), name)
 
         try:
             db.resource.head() # actually make a request to the database
@@ -1684,6 +1695,9 @@ class Server:
 
         :raise libfnl.couch.network.PreconditionFailed: If a database with
             that *name* already exists.
+        :raise TypeError: If the DB *name* is not a string.
+        :raise ValueError: If the DB *name* evaluates to ``False`` or is not
+            valid.
         """
         self.resource.putJson(ValidateDbName(name))
         return self[name]
