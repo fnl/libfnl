@@ -65,7 +65,7 @@ The *tags* attribute of text, in a nutshell, is a dictionary of this form::
         ...
     }
 
-The text views also provide a free-form dictionary to add any kind of meta-data, as a *metadata* attribute. Ensure this dictionary can be encoded to a JSON string (ie., only use strings as keys and better not to use tuples), at least if you plan to store text object to a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, ie., you should not set keys called ``_id``, ``_rev``, or ``_attachments`` on it, and neither use ``tags``, as this is the key where the tags will be stored.
+The text views also provide a free-form dictionary to add any kind of meta-data, as a *metadata* attribute. Ensure this dictionary can be encoded to a JSON string (ie., only use strings as keys and better not to use tuples), at least if you plan to store text object to a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, ie., you should not set keys called ``_id``, ``_rev``, or ``_attachments`` on it, and neither use ``tags`` or ``textfile``, as these keys are used to store the tags and the name of attachment that has the text for the tags, respectively.
 
 Both text views (`Binary` and `Unicode`) share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
 
