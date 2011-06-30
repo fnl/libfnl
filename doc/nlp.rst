@@ -53,7 +53,21 @@ Managing documents and their annotations can be a hassle if there is no abstract
 
 For example, if an offset value of a key points between two surrogate characters or into the byte-sequence that forms a character in the encoded binary version, this would be considered an illegal offset value and raises a :py:exc:`UnicodeError`. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
 
-However, both views share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
+The *tags* attribute of text, in a nutshell, is a dictionary of this form::
+
+    {
+        ...
+        'some_namespace': {
+            ...
+            'some_key': [ ... (10, 20), (24), (25, 28, 30, 33), ... ],
+            ...
+        },
+        ...
+    }
+
+The text views also provide a free-form dictionary to add any kind of meta-data, as a *metadata* attribute. Ensure this dictionary can be encoded to a JSON string (ie., only use strings as keys and better not to use tuples), at least if you plan to store text object to a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, ie., you should not set keys called ``_id``, ``_rev``, or ``_attachments`` on it, and neither use ``tags``, as this is the key where the tags will be stored.
+
+Both text views (`Binary` and `Unicode`) share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
 
 AnnotatedContent
 ----------------
@@ -80,19 +94,105 @@ medline -- Handling of MEDLINE records
 
 .. automodule:: libfnl.nlp.medline
 
+Medline XML records are parsed to dictionaries with the following properties:
+
+* A record is a dictionary built just like a tree, where keys are the tag
+  names of the XML record, and values are either dictionaries or lists for
+  branches, or the PCDATA strings for leafs in the tree.
+* Each key points to another dictionary if it is a branch. The names of the
+  keys are the exact MEDLINE XML tags, except for the special cases
+  described below.
+* Keys (XML tags) that end in **List** contain lists, not dictionaries,
+  with the tag-list the XML encloses. For example, **AuthorList** contains a
+  list of **Author** dictionaries.
+* Leafs where the tag also has attributes are returned as dictionaries,
+  putting the actual PCDATA into a key with the name of the tag (again),
+  and using the attribute names as additional keys holding the attribute
+  values. For example, the (leaf) tag **PMID** sometimes has a **Version**
+  attribute, resulting in a value for the dictionary record's top-level
+  **PMID** key of either the PMID string itself or a dictionary consisting
+  of two entries: **PMID** with the PMID string and **Version** with the
+  version string.
+* Otherwise, a (leaf) key contains a string, namely the PCDATA value it
+  holds.
+* The PMID of the record is always stored in a key **_id** (or any other
+  key specified by *pmid_key*) to ensure equal access to the PMID no
+  matter if the **Version** attribute is used.
+* Dates, where possible, are parsed to Python `datetime.date` values,
+  unless the tag's content is malformed, whence they are represented as
+  dictionaries just like all other XML content. A valid date must have at
+  least uniquely and unambiguously identifiable year and month values,
+  otherwise the default dictionary tree structure approach is used. In
+  general, dates are recognized because their tag names (and hence, the keys
+  in the resulting dictionary) all either start or end with the string
+  **Date**.
+  The only exception is the content of the **MedlineDate** tag, which is
+  always a "free-form string" (and hence a malformed date) that neither can
+  be parsed to a `datetime.date` value nor a can be represented as a
+  dictionary.
+
+Special cases for **Abstract**, **ArticleDate**, **MeshHeadingList**, and
+for the **ArticleIdList** stored under the renamed key **ArticleIds**:
+
+* The MEDLINE Citation DTD declares that **Abstract** elements contain one
+  or more **AbstractText** elements and an optional **CopyrightNotice**
+  element. Therefore, the key **Abstract** contains a dictionary with the
+  following possible keys: (1) **AbstractText** for all AbstractText
+  elements that have no NlmCategory attribute or where that attribute's
+  value is "UNLABELLED". (2) A **CopyrightNotice** key if present. (3) For
+  all **AbstractText** elements where the NlmCategory attribute is given
+  and its value is not "UNLABELLED", the capitalized version of the
+  attribute value is used, resulting in the following five additional keys
+  that might be found in an **Abstract** dictionary: **Background**,
+  **Objective**, **Methods**, **Results**, and **Conclusions**.
+* The **ArticleDate** may be repeated multiple times with different
+  *DateType* attributes. To avoid overriding existing article dates, the
+  key **ArticleDate** is prefixed with that attribute, which in almost
+  all cases so far is "Electronic", resulting in the key
+  **ElectronicArticleDate**.
+* The (MeSH and XML) tags DescriptorName and QualifierName in the
+  **MeshHeadingList** are stored as a list of dictionaries containing a
+  **Descriptor** and an (optional) **Qualifiers** key each, each in turn
+  holding another dictionary: The names of the MeSH terms as keys and
+  `bool`s as values, the latter indicating if a term is tagged major or not.
+  In other words, this `bool` represents the value of the MajorTopicYN
+  attribute found on DescriptorName and QualifierName elements.
+* The **ArticleId** elements in the ArticleIdList element are stored in the
+  key **ArticleIds** as a dictionary (to not confuse default approaches for
+  lists described above). The keys of this dictionary are the IdType
+  attribute values of **ArticleId** elements, the values the actual PCDATA
+  (strings) of the elements (ie., the actual IDs). Therefore, examples of
+  keys found in the **ArticleIds** dictionary are **pubmed**, **pmc**, or
+  **doi**.
+
+The NLM MEDLINE Citation DTD itself is found here:
+http://www.nlm.nih.gov/databases/dtd/nlmmedlinecitationset_110101.dtd
+
+The ArticleIdList is defined in the NLM PubMed Article DTD found here:
+http://www.ncbi.nlm.nih.gov/entrez/query/static/PubMed.dtd
+or
+http://www.ncbi.nlm.nih.gov/corehtml/query/DTD/pubmed_100101.dtd
+
 .. autodata:: libfnl.nlp.medline.EUTILS_URL
 
 .. autodata:: libfnl.nlp.medline.SKIPPED_ELEMENTS
 
-FetchMedlineXml
----------------
+.. autodata:: libfnl.nlp.medline.ABSTRACT_FILE
 
-.. autofunction:: libfnl.nlp.medline.FetchMedlineXml
+Parse
+-----
 
-ParseMedlineXml
----------------
+.. autofunction:: libfnl.nlp.medline.Parse
 
-.. autofunction:: libfnl.nlp.medline.ParseMedlineXml
+Fetch
+-----
+
+.. autofunction:: libfnl.nlp.medline.Fetch
+
+Dump
+----
+
+.. autofunction:: libfnl.nlp.medline.Dump
 
 =============================
 strtok -- String Tokenization
@@ -108,24 +208,24 @@ While tokenizing, the tokenizer adds tags to the :class:`.Unicode` text. Each ta
 
 As a sidenote, these tokenizers all tag the entire string, they do not mysteriously drop characters such as whitespaces or any other "black magick".
 
-Here is a straight-forward usage example::
+Here is a straight-forward usage example:
 
-    >>> from libfnl.nlp.text import Unicode
-    >>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
-    >>> text = Unicode("A simple example sentence.")
-    >>> tok = WordTokenizer()
-    >>> tok.tag(text)
-    >>> for offset, value in text.iterTags(NAMESPACE):
-    ...     print(offset, value, sep='\t')
-    ...
-    (0, 1)	A
-    (1, 2)	M
-    (2, 8)	DDDDDD
-    (8, 9)	M
-    (9, 16)	DDDDDDD
-    (16, 17)	M
-    (17, 25)	DDDDDDDD
-    (25, 26)	o
+>>> from libfnl.nlp.text import Unicode
+>>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
+>>> text = Unicode("A simple example sentence.")
+>>> tok = WordTokenizer()
+>>> tok.tag(text)
+>>> for offset, value in text.iterTags(NAMESPACE):
+...     print(offset, value, sep='\t')
+...
+(0, 1)	A
+(1, 2)	M
+(2, 8)	DDDDDD
+(8, 9)	M
+(9, 16)	DDDDDDD
+(16, 17)	M
+(17, 25)	DDDDDDDD
+(25, 26)	o
 
 .. autodata:: libfnl.nlp.strtok.NAMESPACE
 

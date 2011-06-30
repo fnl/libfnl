@@ -30,9 +30,9 @@ class TokenizerTests(TestCase):
         tokenizer.tag(self.text)
         morph = self.text.metadata["morphology"]
 
-        for idx, key in enumerate(self.text.offsets(S.NAMESPACE, S.KEY)):
-            self.assertSequenceEqual(offsets[idx], key)
-            self.assertSequenceEqual(self.TAGS[key[0]:key[1]], morph[idx])
+        for idx, key in enumerate(self.text.iterTags(True)):
+            self.assertSequenceEqual(offsets[idx], key[2])
+            self.assertSequenceEqual(self.TAGS[key[2][0]:key[2][1]], morph[idx])
 
     def testSeparator(self):
         offsets = [
@@ -85,7 +85,7 @@ class TokenizerTests(TestCase):
         tokenizer.tag(text)
         # tokenizer.tag(text, None)
         end = time()
-        tags = text.offsets(S.NAMESPACE, S.KEY)
+        tags = text.tags
         # on an average MBP (2.66 GHz) this should take less than half a sec
         # using the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
@@ -95,10 +95,10 @@ class TokenizerTests(TestCase):
         last = 0
         morph = text.metadata["morphology"]
 
-        for idx, key in enumerate(tags):
-            self.assertEqual(key[0], last)
-            self.assertTrue(len(morph[idx]) <= key[1] - key[0])
-            last = key[1]
+        for idx, key in enumerate(text.iterTags(True)):
+            self.assertEqual(key[2][0], last)
+            self.assertTrue(len(morph[idx]) <= key[2][1] - key[2][0])
+            last = key[2][1]
 
 
 class CharIterTests(TestCase):

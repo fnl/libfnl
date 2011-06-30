@@ -4,6 +4,7 @@
 
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 """
+from _collections import defaultdict
 
 from io import StringIO
 from types import FunctionType
@@ -17,14 +18,9 @@ __version__ = "1.0"
 # CONFIGURATION #
 #################
 
-NAMESPACE = "libfnl"
+NAMESPACE = "strtok"
 """
-The default namespace string for the tags added to a text by the tokenizers.
-"""
-
-KEY = "strtok"
-"""
-The default key string for the tags added to a text by the tokenizers.
+The default namespace for the tags added to a text by the tokenizers.
 """
 
 STOP_CHARS = frozenset({
@@ -188,92 +184,103 @@ class Category:
     PUNCTUATION = frozenset({ Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts })
     SYMBOLS = frozenset({ Sc, Sk, Sm, So })
     SEPARATORS = frozenset({ Zl, Zp, Zs })
+    BREAKS = frozenset({ Zl, Zp, })
 
     @classmethod
-    def isControl(cls, cat:int) -> bool:
+    def control(cls, cat:int) -> bool:
         """``True`` if the *cat* is any control character category (C?)."""
         #return cat in cls.CONTROLS
         return 90 < cat < 97
 
     @classmethod
-    def isWord(cls, cat:int) -> bool:
+    def word(cls, cat:int) -> bool:
         """``True`` if the *cat* is any letter, digit, numeral, or separator."""
         # category (L?, Nd, Nl, Z?).
         #return cat in cls.WORD
         return cat < 78
 
     @classmethod
-    def isAlnum(cls, cat:int) -> bool:
+    def alnum(cls, cat:int) -> bool:
         """``True`` if the *cat* is any letter, digit, or numeral category"""
         # (L?, Nd, Nl).
         #return cat in cls.ALNUM
         return cat < 75
 
     @classmethod
-    def isLetter(cls, cat:int) -> bool:
+    def letter(cls, cat:int) -> bool:
         """``True`` if the *cat* is any letter category (L?)."""
         #return cat in cls.LETTERS
         return cat < 73
 
     @classmethod
-    def isUppercase(cls, cat:int) -> bool:
+    def uppercase(cls, cat:int) -> bool:
         """``True`` if the *cat* is any upper-case letter category."""
         # (LG, Lt, Lu).
         return cat in cls.UPPERCASE_LETTERS
 
     @classmethod
-    def isLowercase(cls, cat:int) -> bool:
+    def lowercase(cls, cat:int) -> bool:
         """``True`` if the *cat* is any lower-case letter category (Lg, Ll)."""
         return cat in cls.LOWERCASE_LETTERS
 
     @classmethod
-    def isOtherLetter(cls, cat:int) -> bool:
+    def other_letter(cls, cat:int) -> bool:
         """``True`` if the *cat* is any non-upper- or -lower-case letter."""
         # (LC, Lm, Lo).
         return cat in cls.OTHER_LETTERS
 
     @classmethod
-    def isNumber(cls, cat:int) -> bool:
+    def number(cls, cat:int) -> bool:
         """``True`` if the *cat* is any number category (N?)."""
         return cat in cls.NUMBERS
 
     @classmethod
-    def isNumeric(cls, cat:int) -> bool:
+    def numeric(cls, cat:int) -> bool:
         """``True`` if the *cat* is any numeric value (Nd, Nl)."""
         return cat in cls.NUMERIC
 
     @classmethod
-    def isDigit(cls, cat:int) -> bool:
+    def digit(cls, cat:int) -> bool:
         """``True`` if the *cat* is digit (Nd)."""
         return cat == Category.Nd
 
     @classmethod
-    def isNumeral(cls, cat:int) -> bool:
+    def numeral(cls, cat:int) -> bool:
         """``True`` if the *cat* is numeral (Nl)."""
         return cat == Category.Nl
 
     @classmethod
-    def isMark(cls, cat:int) -> bool:
+    def mark(cls, cat:int) -> bool:
         """``True`` if the *cat* is any mark category (M?)."""
         return cat in cls.MARKS
 
     @classmethod
-    def isPunctuation(cls, cat:int) -> bool:
+    def punctuation(cls, cat:int) -> bool:
         """``True`` if the *cat* is any punctuation category (P?)."""
         return cat in cls.PUNCTUATION
 
     @classmethod
-    def isSymbol(cls, cat:int) -> bool:
+    def symbol(cls, cat:int) -> bool:
         """``True`` if the *cat* is any symbol character category (S?)."""
         return cat in cls.SYMBOLS
 
     @classmethod
-    def isSeparator(cls, cat:int) -> bool:
+    def separator(cls, cat:int) -> bool:
         """``True`` if the *cat* is any separator category (Z?)."""
         return cat in cls.SEPARATORS
 
     @classmethod
-    def notSeparator(cls, cat:int) -> bool:
+    def breaker(cls, cat:int) -> bool:
+        """``True`` if the *cat* is any breaker separator category (Zl, Zp)."""
+        return cat in cls.BREAKS
+
+    @classmethod
+    def space(cls, cat:int) -> bool:
+        """``True`` if the *cat* is a space (Zs)."""
+        return cat == Category.Zs
+
+    @classmethod
+    def not_separator(cls, cat:int) -> bool:
         """``True`` if the *cat* is not any separator category (Z?)."""
         return cat not in cls.SEPARATORS
 
@@ -428,12 +435,11 @@ class Tokenizer:
     Abstract tokenizer implementing the actual procedure.
     """
 
-    def __init__(self, namespace:str=NAMESPACE, key:str=KEY):
+    def __init__(self, namespace:str=NAMESPACE):
         """
         The *namespace* is the string used for the tags created on the text.
         """
         self.namespace = namespace
-        self.key = key
 
     def tag(self, text:Unicode, metamorph:str="morphology"):
         """
@@ -449,10 +455,10 @@ class Tokenizer:
 
         :param text: The text to tag.
         :param metamorph: The key to store the list of morphology strings in
-            the :attrib:`AnnotatedContent.metadata` dictionary of the text.
+            the :attr:`AnnotatedContent.metadata` dictionary of the text.
         """
         assert len(text), "empty text"
-        tokens = []
+        tokens = defaultdict(list)
         morphology = []
         start = 0
         cats = None
@@ -469,7 +475,7 @@ class Tokenizer:
                 cats.write(chr(cat))
             else:
                 if end:
-                    tokens.append((start, end))
+                    tokens[State.__name__].append((start, end))
                     if not cats: morphology.append(last_cat)
                     else: morphology.append(cats.getvalue())
 
@@ -479,11 +485,11 @@ class Tokenizer:
                 last_cat = chr(cat)
 
         if cats or last_cat:
-            tokens.append((start, len(text)))
+            tokens[State.__name__].append((start, len(text)))
             if not cats: morphology.append(last_cat)
             else: morphology.append(cats.getvalue())
 
-        text.addOffsets(self.namespace, self.key, tokens)
+        text._tags[self.namespace] = dict(tokens)
         text.metadata[metamorph] = morphology
 
     @staticmethod
@@ -503,14 +509,19 @@ class Separator(Tokenizer):
     """
     A tokenizer that only separates `Z?` category character (line- and
     paragraph-breaks, as well as spaces) from all others.
+
+    Produces the following tag keys:
+
+        * non_separator (all others)+
+        * seaparator (Zl, Zp)+
     """
 
     @staticmethod
     def _findState(cat:int) -> FunctionType:
-        if Category.isSeparator(cat):
-            return Category.isSeparator
+        if Category.separator(cat):
+            return Category.separator
         else:
-            return Category.notSeparator
+            return Category.not_separator
 
 
 class WordTokenizer(Tokenizer):
@@ -518,15 +529,28 @@ class WordTokenizer(Tokenizer):
     A tokenizer that creates single character tokens for all non-letter,
     -digit, -numeral, and -separator character, while it joins the others
     as long as the next character is of that same category, too.
+
+    Produces the following tag keys:
+
+        * breaker (Zl, Zp)+
+        * digit (Nd)+
+        * glyph (all others){1}
+        * letter (L?)+
+        * numeral (Nl)+
+        * space (Zs)+
     """
 
     @staticmethod
-    def _findState(cat:int) -> FunctionType:
-        if not Category.isWord(cat):
-            return lambda cat: False
+    def glyph(_) -> bool:
+        return False
 
-        for State in (Category.isLetter, Category.isSeparator,
-                      Category.isDigit, Category.isNumeral):
+    @staticmethod
+    def _findState(cat:int) -> FunctionType:
+        if not Category.word(cat):
+            return WordTokenizer.glyph
+
+        for State in (Category.letter, Category.space, Category.digit,
+                      Category.breaker, Category.numeral):
             if State(cat): return State
 
         raise RuntimeError("no State for cat='%s'" % chr(cat))
@@ -537,16 +561,25 @@ class AlnumTokenizer(Tokenizer):
     A tokenizer that creates single character tokens for all non-separator
     and -alphanumeric characters, and joins the latter two as long as the
     next character is of that same category, too.
+
+    Produces the following tag keys:
+
+        * alnum (L?, Nl, Nd)+
+        * breaker (Zl, Zp)+
+        * glyph (all others){1}
+        * space (Zs)+
     """
 
     @staticmethod
     def _findState(cat:int) -> FunctionType:
-        if not Category.isWord(cat):
-            return lambda cat: False
-        elif Category.isAlnum(cat):
-            return Category.isAlnum
-        elif Category.isSeparator(cat):
-            return Category.isSeparator
+        if not Category.word(cat):
+            return WordTokenizer.glyph
+        elif Category.alnum(cat):
+            return Category.alnum
+        elif Category.space(cat):
+            return Category.space
+        elif Category.breaker(cat):
+            return Category.breaker
         else:
             raise RuntimeError("no tests for cat='%s'" % chr(cat))
 

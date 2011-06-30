@@ -56,3 +56,20 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
+Command Line Scripts
+====================
+
+The following command line scripts are installed by this package:
+
+``fnlcorpus.py``
+
+    A script to read corpus files.
+
+``fnlkappa.py``
+
+    A script to calculate inter-annotator agreement.
+
+``fnlmedline.py``
+
+    A script to manage a mirror of PubMed/MEDLINE as a CouchDB.
+

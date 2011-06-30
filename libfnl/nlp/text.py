@@ -4,6 +4,7 @@
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 """
+from base64 import b64encode
 from collections import defaultdict, namedtuple
 from hashlib import sha256
 from io import StringIO
@@ -20,12 +21,6 @@ class AnnotatedContent:
     def __init__(self):
         self._tags = {}
         self.metadata = {}
-        """
-        A free-form dictionary to add any kind of meta-data.
-
-        Ensure it can be encoded to a JSON string, although (ie., only use
-        strings as keys and do not use tuples).
-        """
 
     def __len__(self):
         raise NotImplementedError("abstract")
@@ -279,8 +274,8 @@ class Binary(bytes, AnnotatedContent):
         self._encoding = str(args[1])
         self._str_alignment = dict()
 
-    @classmethod
-    def load(cls, db:Database, doc_id:str, filename="binary.txt"):
+    @staticmethod
+    def load(db:Database, doc_id:str, filename="binary.txt"):
         """
         Load a text from a CouchDB.
 
@@ -298,7 +293,7 @@ class Binary(bytes, AnnotatedContent):
             msg = "{} has no {} filename".format(doc_id, filename)
             raise ValueError(msg)
 
-        binary = cls(att.data, att.encoding)
+        binary = Binary(att.data, att.encoding)
         binary._tags = doc["tags"]
         binary.metadata = doc["metadata"]
 
@@ -340,33 +335,73 @@ class Binary(bytes, AnnotatedContent):
         Store this text in a Couch *DB*, overwriting any existing document,
         unless *update* is used.
 
+        To create the actual document, :meth:`.toDocument` is used, and, if
+        this text already existed, the original version is first fetched from
+        the database.
+
         :param db: The Couch :class:`.Database`.
-        :param doc_id: The document ID to use; uses the :meth:`.hexdigest` if
-            ``None``.
-        :param update: Use dictionary update instead of overwriting tags and
-            metadata, and do not overwrite an existing attachment with the same
-            filename (ie., assume it is the same and only some fields are being
-            updated).
+        :param doc_id: The document ID to use; if not set, use the ``_id`` in
+            metadata if set or finally the :attr:`.hexdigest` otherwise.
+        :param update: Use dictionary updates instead of overwriting existing
+            content (if the text already exists in the DB).
         :param filename: The name to use for the text attachment.
         :return: An ``(id, rev)`` tuple of the saved document.
         """
-        if not doc_id: doc_id = self.hexdigest
-        doc = db.get(doc_id, Document({"_id": doc_id}))
+        if not doc_id:
+            doc_id = self.metadata['_id'] if '_id' in self.metadata else \
+                     self.hexdigest
 
-        for key, value in [("tags", self._tags), ("metadata", self.metadata)]:
-            if update and key in doc:
-                doc[key].update(value)
-            else:
-                doc[key] = value
+        old = db[doc_id] if doc_id in db else None
 
-        if doc.rev:
-            if not update or filename not in doc.attachments:
-                db.saveAttachment(doc, self, filename=filename)
-
-            return db.save(doc)
+        if update and old:
+            doc = self.toDocument(old, filename)
         else:
-            db[doc.id] = doc
-            return db.saveAttachment(doc, self, filename=filename)
+            doc = self.toDocument(doc_id, filename)
+
+        if not update and old:
+            doc.rev = old.rev
+
+        return db.save(doc)
+
+    def toDocument(self, id_or_doc=None, filename:str="binary.txt") -> Document:
+        """
+        Convert this text to a CouchDB :class:`.Document`.
+
+        The document ID will be either the one given in the *id or doc*, or, if
+        set, the ``_id`` in :attr:`.metadata`, or, finally, the
+        :attr:`.hexdigest` string.
+
+        :param id_or_doc: Use the given ID as ``_id``, or, if a `Document` or
+            dictionary, use it instead of creating a new document, updating it
+            with the text's `metadata` and `tags`, while attaching the text,
+            and return the updated document.
+        :param filename: The name of the text file attachment.
+        """
+        assert "tags" not in self.metadata
+
+        if id_or_doc and isinstance(id_or_doc, str):
+            self.metadata["_id"] = id_or_doc
+        elif not id_or_doc and "_id" not in self.metadata:
+            self.metadata["_id"] = self.hexdigest
+
+        if id_or_doc and isinstance(id_or_doc, dict):
+            doc = id_or_doc
+            doc.update(self.metadata)
+        else:
+            doc = Document(self.metadata)
+
+        if "tags" in doc and isinstance(doc["tags"], dict):
+            doc["tags"].update(self._tags)
+        else:
+            doc["tags"] = self.tags
+
+        atts = doc.get('_attachments', {})
+        atts[filename] = {
+            'content_type': 'text/plain; charset={}'.format(self.encoding),
+            'data': b64encode(self).decode('ASCII')
+        }
+        doc['_attachments'] = atts
+        return doc
 
     def toUnicode(self, errors:str="strict"):
         """
@@ -423,8 +458,10 @@ class Unicode(str, AnnotatedContent):
             that is invalid.
         """
         if self._tags:
-            assert not self.firstPartiallyOverlappingTags(), \
-                self.firstPartiallyOverlappingTags()
+            if __debug__:
+                overlaps = self.firstPartiallyOverlappingTags()
+                assert not overlaps, overlaps
+
             buffer = StringIO()
             close_tags = defaultdict(list)
             GetTag = self._getTagHelper() # a function returning tags in order

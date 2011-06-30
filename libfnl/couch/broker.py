@@ -187,7 +187,7 @@ class Document(dict):
         return self['_rev'] if '_rev' in self else None
 
     @rev.setter
-    def rev(self, _rev:str) -> str:
+    def rev(self, _rev:str):
         """
         Set the document revision.
         """
@@ -200,6 +200,13 @@ class Document(dict):
         pointing to dictionaries describing the file; or an empty dictionary.
         """
         return self.get('_attachments', {})
+
+    @attachments.setter
+    def attachments(self, atts:dict):
+        """
+        Set the attachments dictionary if not ``None`` or empty.
+        """
+        if atts: self['_attachments'] = atts
 
 
 class Row(dict):
@@ -580,7 +587,7 @@ class Database(object):
         """
         Return the ID strings of all documents in the DB.
         """
-        return iter([item.id for item in self.view('_all_docs')])
+        return (item.id for item in self.view('_all_docs'))
 
     def __len__(self) -> int:
         """

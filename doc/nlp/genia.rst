@@ -4,6 +4,18 @@ nlp.genia -- GENIA Corpus and Tools
 
 .. automodule:: libfnl.nlp.genia
 
+=============================
+corpus -- GENIA Corpus Reader
+=============================
+
+.. automodule:: libfnl.nlp.genia.corpus
+
+Reader
+------
+
+.. autoclass:: libfnl.nlp.genia.corpus.Reader
+    :members:
+
 ======================
 tagger -- GENIA Tagger
 ======================
@@ -32,7 +44,7 @@ Token(word='of', stem='of', pos='IN', chunk='B-PP', entity='O')
 Token(word='isochamaejasmin', stem='isochamaejasmin', pos='NN', chunk='B-NP', entity='O')
 Token(word='.', stem='.', pos='.', chunk='O', entity='O')
 
-Note that initalizing a new tagger will take a while due to reading the models. Sentences should be a Unicode strings (default in Python 3000, use ``u"string"`` or ``"string".decode()`` in Python 2.x) and not contain line-feed (``\n``) characters. After sending the sentence, the tagger instance can be used as iterator yielding :py:class:`libfnl.nlp.genia.tagger.Token` instances::
+Note that initalizing a new tagger will take a while due to reading the models. Sentences should be strings and not contain line-breaking (eg., ``\n``) characters. After sending the sentence, the tagger instance can be used as iterator yielding :py:class:`libfnl.nlp.genia.tagger.Token` instances::
 
             tagger.send(sentence)
 

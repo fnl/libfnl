@@ -3,7 +3,7 @@ from logging import basicConfig
 import os
 import unittest
 
-from libfnl.nlp.medline import FetchMedlineXml, ParseMedlineXml
+from libfnl.nlp.medline import Fetch, Parse
 
 PARSED_SAMPLE = [
 {'Article': {'Abstract': {'AbstractText': 'This study subdivides the cryopreservation procedure for Diplodus puntazzo spermatozoa into three key phases, fresh, prefreezing (samples equilibrated in cryosolutions), and postthawed stages, and examines the ultrastructural anomalies and motility profiles of spermatozoa in each stage, with different cryodiluents. Two simple cryosolutions were evaluated: 0.17 M sodium chloride containing a final concentration of 15% dimethyl sulfoxide (Me(2)SO) (cryosolution A) and 0.1 M sodium citrate containing a final concentration of 10% Me(2)SO (cryosolution B). Ultrastructural anomalies of the plasmatic and nuclear membranes of the sperm head were common and the severity of the cryoinjury differed significantly between the pre- and the postfreezing phases and between the two cryosolutions. In spermatozoa diluted with cryosolution A, during the prefreezing phase, the plasmalemma of 61% of the cells was absent or damaged compared with 24% in the fresh sample (P < 0.001). In spermatozoa diluted with cryosolution B, there was a pronounced increase in the number of cells lacking the head plasmatic membrane from the prefreezing to the postthawed stages (from 32 to 52%, P < 0.01). In both cryosolutions, damages to nuclear membrane were significantly higher after freezing (cryosolution A: 8 to 23%, P < 0.01; cryosolution B: 5 to 38%, P < 0.001). With cryosolution A, the after-activation motility profile confirmed a consistent drop from fresh at the prefreezing stage, whereas freezing and thawing did not affect the motility much further and 50% of the cells were immotile by 60-90 s after activation. With cryosolution B, only the postthawing stage showed a sharp drop of motility profile. This study suggests that the different phases of the cryoprocess should be investigated to better understand the process of sperm damage.',
@@ -151,15 +151,14 @@ class TestMedline(unittest.TestCase):
                                encoding="utf-8")
         self.count = 0
 
-
     def tearDown(self):
         self.xml_stream.close()
 
     def testDownloader(self):
         pmids = (11700088, 11748933)
-        stream = FetchMedlineXml(pmids)
+        stream = Fetch(pmids)
 
-        for record in ParseMedlineXml(stream):
+        for record in Parse(stream):
             self.assertEqual(pmids[self.count], int(record['_id']))
             self.count += 1
 
@@ -168,7 +167,7 @@ class TestMedline(unittest.TestCase):
     def testParser(self):
         basicConfig()
         
-        for record in ParseMedlineXml(self.xml_stream):
+        for record in Parse(self.xml_stream):
             self.assertDictEqual(PARSED_SAMPLE[self.count], record)
             self.count += 1
 

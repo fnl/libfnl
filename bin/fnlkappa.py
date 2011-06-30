@@ -11,6 +11,9 @@ from libfnl.stat.kappa import Fleiss, CreateRatingMatrix
 __author__ = "Florian Leitner"
 __version__ = "1.0"
 
+# Changes
+# v1.0 - first release
+
 def main(*file_names:tuple([str]), subject_col:int=1, rating_col:int=2, Kappa:FunctionType=Fleiss):
     """
     :param file_names: File names of subject-vote TSV's; one per rater.

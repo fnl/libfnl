@@ -1,6 +1,6 @@
 from tempfile import TemporaryFile
 from unittest import main, TestCase
-from libfnl.nlp.genia.corpus import CorpusReader
+from libfnl.nlp.genia.corpus import Reader
 
 __author__ = 'Florian Leitner'
 
@@ -44,20 +44,20 @@ class PosReaderTests(TestCase):
         self.file = TemporaryFile()
         self.file.write(PosReaderTests.SAMPLE.encode())
         self.file.seek(0)
-        self.reader = CorpusReader()
+        self.reader = Reader()
 
     def testReadingSample(self):
         count = 0
         sentences = [2, 4]
         pos_tags = [44, 86] # second: one less for joined "didn't"!
         for text in self.reader.toUnicode(self.file):
-            self.assertEqual(1, len(text.offsets(self.reader.namespace,
-                                                 self.reader.abstract_key)))
-            self.assertEqual(1, len(text.offsets(self.reader.namespace,
-                                                 self.reader.title_key)))
+            self.assertEqual(1, len(text.offsets(self.reader.section_ns,
+                                                 self.reader.abstract_tag)))
+            self.assertEqual(1, len(text.offsets(self.reader.section_ns,
+                                                 self.reader.title_tag)))
             self.assertEqual(sentences[count],
-                             len(text.offsets(self.reader.namespace,
-                                              self.reader.sentence_key)))
+                             len(text.offsets(self.reader.section_ns,
+                                              self.reader.sentence_tag)))
             self.assertEqual(pos_tags[count],
                              sum(len(tags) for tags in
                              text.tags[self.reader.pos_tag_ns].values()))

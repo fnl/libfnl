@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Parse and store a corpus to its Couch DB."""
+
 from functools import partial
 from libfnl.couch.broker import Server
 import logging
@@ -9,7 +10,7 @@ import os
 import sys
 
 __author__ = "Florian Leitner"
-__version__ = "0.0.0"
+__version__ = "0.1"
 
 DEFAULT_CORPUS="genia"
 DEFAULT_ENCODING=os.getenv("LANG", "en_US.UTF-8").split(".")[1]

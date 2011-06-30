@@ -30,40 +30,62 @@ REMAPPED_GENIA = {
 Mapping of non-existing Penn tags in the GENIA corpus to valid Penn tags.
 """
 
-class CorpusReader:
+class Reader:
     """
     Read GENIA PoS XML files.
     """
 
-    L = logging.getLogger("CorpusReader")
+    L = logging.getLogger("Reader")
 
-    def __init__(self, namespace="genia", pos_tag_ns="penn", token_tag="w",
+    def __init__(self, section_ns="section", pos_tag_ns="penn",
+                 token_tag="w", pos_attribute="c",
                  sentence_tag="sentence", title_tag="title",
                  abstract_tag="abstract", article_tag="article"):
-        self.namespace = namespace
+        """
+        :param section_ns: The tag namespace for the article section tags.
+        :param pos_tag_ns: The tag namespace for the PoS tags.
+        :param token_tag: The name of the XML tag containing a (PoS) token.
+        :param pos_attribute: The name of the *token tag*'s attribute that
+            contains the PoS tag.
+        :param sentence_tag: The name of the XML tag containing a sentence.
+        :param title_tag: The name of the XML tag containing a title.
+        :param abstract_tag: The name of the XML tag containing an abstract.
+        :param article_tag:  The name of the XML tag containing an article.
+        """
+        self.section_ns = section_ns
         self.pos_tag_ns = pos_tag_ns
+        self.pos_tags = None # will be: { pos_tag: [(start, end)] }
         self.token_tag = token_tag
-        self.sentence_key = sentence_tag
-        self.title_key = title_tag
-        self.abstract_key = abstract_tag
+        self.pos_attr = pos_attribute
+        self.sentence_tag = sentence_tag
+        self.sentence_tags = None # will be: [(start, end)]
+        self.title_tag = title_tag
+        self.abstract_tag = abstract_tag
         self.article_tag = article_tag
 
     def toUnicode(self, stream:TextIOBase) -> iter([Unicode]):
         """
-        Read an open XML stream, yielding Unicode text instances per article.
+        Read an open XML stream, yielding :class:`.Unicode` text instances,
+        one per article.
+
+        The PoS attributes on the XML token tags are used to create tags on
+        the text, using the Penn tag name as keys. The start and end positions
+        of sections (title, abstract) and sentences are stored in the section
+        namespace, keyed by their XML tag name (ie., "title", "abstract", and
+        "sentence").
         """
         for event, element in iterparse(stream, events=("end",)):
             if element.tag == self.article_tag:
                 self.article = []
                 self.tags = {
-                    self.namespace: {
-                        self.sentence_key: [],
+                    self.section_ns: {
+                        self.sentence_tag: [],
                     },
                     self.pos_tag_ns: defaultdict(list)
                 }
                 self.pos_tags = self.tags[self.pos_tag_ns]
                 self.sentence_tags = \
-                    self.tags[self.namespace][self.sentence_key]
+                    self.tags[self.section_ns][self.sentence_tag]
                 
                 length = self._parseArticle(element)
 
@@ -73,32 +95,12 @@ class CorpusReader:
                     text.tags = self.tags
                     yield text
 
-    @staticmethod
-    def _splitAmbiguousTags(elements:list([Element])) -> iter:
-        # Split word tag PoS tokens into a tuples of all PoS tokens annotated
-        # on each word.
-        # The tuple has one value only if an unambiguous assignment, and all
-        # PoS tags for ambiguous tags.
-        # Ambiguous PoS tags means that attribute ``c`` is, fe., ``"JJ|VBN"``
-        for w in elements:
-            tag = w.attrib["c"]
-
-
-            if AMBIGUITY_SEP in tag:
-                yield tuple((t if t not in REMAPPED_GENIA else
-                             REMAPPED_GENIA[t])
-                            for t in tag.split(AMBIGUITY_SEP)
-                            if t != DROPPED_TOKENS)
-            else:
-                if tag in REMAPPED_GENIA: tag = REMAPPED_GENIA[tag]
-                yield (tag,)
-
     def _parseArticle(self, element:Element) -> int:
         # Returns the length of the article, all partial strings of the article
         # in :attr:`.article`, and sets the tags on :attr:`.tags`.
         offset = 0
 
-        for section_name in (self.title_key, self.abstract_key):
+        for section_name in (self.title_tag, self.abstract_tag):
             section = element.find(section_name)
 
             if element is not None:
@@ -109,7 +111,7 @@ class CorpusReader:
                 if section:
                     if self.article: self.article.append("\n")
                     self.article.extend(section)
-                    self.tags[self.namespace][section_name] = [(start, offset)]
+                    self.tags[self.section_ns][section_name] = [(start, offset)]
                 elif self.article:
                     offset -= 1
 
@@ -118,7 +120,7 @@ class CorpusReader:
     def _parseSection(self, element:Element, offset:int) -> int:
         # Returns the final *offset* for this section *element* and the list
         # of partial strings for this section.
-        sentences = list(element.findall(self.sentence_key))
+        sentences = list(element.findall(self.sentence_tag))
         increment = 0
         section = []
 
@@ -156,7 +158,7 @@ class CorpusReader:
         # previous sentences, the length of that whitespace token should be
         # indicated by *inc*.
         words = []
-        tags = list(CorpusReader._splitAmbiguousTags(elements))
+        tags = list(self._splitAmbiguousTags(elements))
         assert all(len(ts) for ts in tags), tags
 
         # Skip any sentences where words have bad tags that cannot be fixed
@@ -219,5 +221,23 @@ class CorpusReader:
                 offset -= inc
         
         return offset, words
+
+    def _splitAmbiguousTags(self, elements:list([Element])) -> iter:
+        # Split word tag PoS tokens into a tuples of all PoS tokens annotated
+        # on each word.
+        # The tuple has one value only if an unambiguous assignment, and all
+        # PoS tags for ambiguous tags.
+        # Ambiguous PoS tags means that attribute ``c`` is, fe., ``"JJ|VBN"``
+        for w in elements:
+            pos_tag = w.attrib[self.pos_attr]
+
+            if AMBIGUITY_SEP in pos_tag:
+                yield tuple((t if t not in REMAPPED_GENIA else
+                             REMAPPED_GENIA[t])
+                            for t in pos_tag.split(AMBIGUITY_SEP)
+                            if t != DROPPED_TOKENS)
+            else:
+                if pos_tag in REMAPPED_GENIA: pos_tag = REMAPPED_GENIA[pos_tag]
+                yield (pos_tag,)
 
 

@@ -19,7 +19,7 @@ class AnnotatedContentTests(TestCase):
         real = self.tags
         orig = self.doc._tags
         copied = self.doc.tags
-        # new namespace dictionary
+        # new section_ns dictionary
         self.assertEqual(id(real), id(orig))
         self.assertNotEqual(id(copied), id(orig))
         # new key dictionary

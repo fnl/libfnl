@@ -5,23 +5,27 @@
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 
 This module provides functions to fetch and parse NLM PubMed/MEDLINE XML
-records.
+records, and dump them into a CouchDB.
 
 A simple usage example:
 
 >>> from libfnl.nlp.medline import * # imports only the next two functions
->>> for record in ParseMedlineXml(FetchMedlineXml((11700088, 11748933))):
+>>> for record in Parse(Fetch((11700088, 11748933))):
 ...     print("PMID", record["_id"], "Title:", record["Article"]["ArticleTitle"])
 PMID 11700088 Title: Proton MRI of (13)C distribution by J and chemical shift editing.
 PMID 11748933 Title: Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).
 """
+from io import StringIO
 from http.client import HTTPResponse # function annotation only
+from time import sleep, time, strptime
 from urllib.request import build_opener
 from xml.etree.ElementTree import iterparse, tostring
 from logging import getLogger
-from datetime import date
+from datetime import date, timedelta
+from libfnl.couch.broker import Database
+from libfnl.nlp.text import Unicode, Binary
 
-__all__ = ['FetchMedlineXml', 'ParseMedlineXml']
+__all__ = ['Fetch', 'Parse']
 
 LOGGER = getLogger()
 
@@ -39,15 +43,145 @@ The base URL where eUtils requests for MEDLINE records should be made.
 Multiple PMIDs are joined comma-separated and appended to this URL.
 """
 
+FETCH_SIZE = 100
+"""
+Number of records that can be fetched from eUtils in one go.
+"""
+
 SKIPPED_ELEMENTS = ("OtherID", "OtherAbstract", "SpaceFlightMission",
                     "GeneralNote", "NameID", "ELocationID")
 "Ignored tags in MedlineCitation elements that are never parsed."
+
+ABSTRACT_ELEMENTS = ("AbstractText", "Background", "Objective", "Methods",
+                     "Results", "Conclusions", "CopyrightNotice")
+"""
+List of keys found in Article{1}->Abstract{0,1}, in order of how they should
+be presented.
+"""
+
+ABSTRACT_FILE = "abstract.txt"
+"""
+Name of file used for attaching abstracts to Couch documents.
+"""
+
+############
+# IMPORTER #
+############
+
+def Dump(pmids:list([str]), db:Database, update:bool=False, force:bool=False):
+    """
+    Dump MEDLINE DB records for a given list of *PMIDs* into a Couch *DB*.
+
+    Records are treated as :class:`libfnl.nlp.text.Binary` data by attaching
+    the title and abstract (if present) to the document. The key **Abstract**
+    in **Article** will be deleted.
+
+    Records already existing in a MEDLINE CouchDB can be checked if they are
+    ripe for *update*. This is the case if they are one to ten years old and
+    do not have all three time stamps (created, completed, and revised) or if
+    they are less than one year old and have no a **DateCompleted**.
+
+    This "filtered" update mechanism can be overridden and the update can
+    be *force*\ d for all existing records.
+
+    :param pmids: The list of PMIDs to fetch (but existing articles will be
+        ignored).
+    :param db: A Couch :class:`.Database` instance.
+    :param update: Update existing articles, if appropriate (see above).
+    :param force: If ``True``, force the update of all existing articles.
+    """
+    last_access = 0.0
+
+    for idx in range(0, len(pmids), FETCH_SIZE):
+        if force:
+            updated = { p: db[p].rev for p in pmids[idx:idx + FETCH_SIZE]
+                        if p in db }
+            query = pmids[idx:idx + FETCH_SIZE]
+        elif update:
+            existing = { p: db[p] for p in pmids[idx:idx + FETCH_SIZE]
+                         if p in db }
+            updated = dict(map(lambda p, d: (p, d.rev),
+                               filter(NeedsUpdate, existing.items())))
+            query = [ p for p in pmids[idx:idx + FETCH_SIZE]
+                      if (p in updated or p not in existing) ]
+        else:
+            updated = {}
+            query = [ p for p in pmids[idx:idx + FETCH_SIZE] if p not in db ]
+
+        if len(query):
+            # the Gatekeeper: only make eUtils requests every 3 sec
+            sleep(max(last_access - time() + 3, 0))
+            last_access = time()
+            stream = Fetch(pmids[idx:idx + FETCH_SIZE])
+            db.bulk(MakeDocuments(stream, updated))
+
+
+def NeedsUpdate(item:(str, dict)) -> bool:
+    one_year = timedelta(365)
+    today = date.today()
+    doc = item[1]
+    created = date(*strptime(doc["DateCreated"], "%Y-%m-%d")[0:3])
+
+    if today - created > one_year:
+        # select records that are one year old, but not more than ten
+        if today - created < 10 * one_year:
+            # ignoring "ancient" records, check they have all three stamps
+            for stamp in ("DateRevised", "DateCompleted"):
+                if stamp not in doc: return True
+    else:
+        # record is new and might have not yet been completed
+        if "DateCompleted" not in doc: return True
+
+    return False
+
+
+def MakeDocuments(stream, old_revisions:dict) -> iter([dict]):
+    for raw_json in Parse(stream):
+        text = MakeBinary(raw_json)
+
+        if raw_json['_id'] in old_revisions:
+            raw_json['_rev'] = old_revisions[raw_json['_id']]
+
+        yield text.toDocument(raw_json, ABSTRACT_FILE)
+
+
+def MakeBinary(raw_json:dict) -> Binary:
+    title = raw_json["Article"]["ArticleTitle"]
+    section_tags = {"ArticleTitle": [(0, len(title))]}
+    abstract = raw_json["Article"].get("Abstract", None)
+
+    if abstract:
+        text = TextFromAbstract(StringIO(title), abstract, section_tags)
+        del raw_json["Article"]["Abstract"]
+    else:
+        text = title
+
+    text = Unicode(text)
+    text.tags = {"section": section_tags}
+    text = text.toBinary('utf-8')
+    return text
+
+
+def TextFromAbstract(buffer:StringIO, abstract:dict, section_tags:dict) -> str:
+    offset = section_tags["ArticleTitle"][0][1]
+
+    for section in ABSTRACT_ELEMENTS:
+        if section in abstract:
+            buffer.write("\n\n")
+            offset += 2
+            content = abstract[section]
+            start = offset
+            offset += len(content)
+            section_tags[section] = [(start, offset)]
+            buffer.write(content)
+
+    return buffer.getvalue()
 
 ##############
 # DOWNLOADER #
 ##############
 
-def FetchMedlineXml(pmids:list, timeout:int=60) -> HTTPResponse:
+def Fetch(pmids:list, timeout:int=60) -> HTTPResponse:
     """
     Open an XML stream from the NLM for a list of *PMIDs*, but at most 100
     (the approximate upper limit of IDs for this query to the eUtils API).
@@ -62,7 +196,7 @@ def FetchMedlineXml(pmids:list, timeout:int=60) -> HTTPResponse:
     :raises socket.timout: If *timeout* seconds have passed before a response
         arrives.
     """
-    assert len(pmids) < 100, "too many PMIDs"
+    assert len(pmids) <= FETCH_SIZE, "too many PMIDs"
     url = EUTILS_URL + ','.join(map(str, pmids))
     LOGGER.debug("fetching MEDLINE records from %s", url)
     return URL_OPENER.open(url, timeout=timeout)
@@ -71,86 +205,16 @@ def FetchMedlineXml(pmids:list, timeout:int=60) -> HTTPResponse:
 # PARSER #
 ##########
 
-def ParseMedlineXml(xml_stream, pmid_key:str="_id") -> iter([dict]):
+def Parse(xml_stream, pmid_key:str="_id") -> iter([dict]):
     """
     Yield MEDLINE records as dictionaries from an *XML stream*, with the
     **PMID** set as string value of the specified *PMID key* (default:
     **_id**).
 
-    Medline XML records are parsed to dictionaries with the following
-    properties:
-
-    * A record is a dictionary built just like a tree, where keys are the tag
-      names of the XML record, and values are either dictionaries or lists for
-      branches, or the PCDATA strings for leafs in the tree.
-    * Each key points to another dictionary if it is a branch. The names of the
-      keys are the exact MEDLINE XML tags, except for the special cases
-      described below.
-    * Keys (XML tags) that end in **List** contain lists, not dictionaries,
-      with the tag-list the XML encloses. For example, **AuthorList** contains a
-      list of **Author** dictionaries.
-    * Leafs where the tag also has attributes are returned as dictionaries,
-      putting the actual PCDATA into a key with the name of the tag (again),
-      and using the attribute names as additional keys holding the attribute
-      values. For example, the (leaf) tag **PMID** sometimes has a **Version**
-      attribute, resulting in a value for the dictionary record's top-level
-      **PMID** key of either the PMID string itself or a dictionary consisting
-      of two entries: **PMID** with the PMID string and **Version** with the
-      version string.
-    * Otherwise, a (leaf) key contains a string, namely the PCDATA value it
-      holds.
-    * The PMID of the record is always stored in a key **_id** (or any other
-      key specified by *pmid_key*) to ensure equal access to the PMID no
-      matter if the **Version** attribute is used.
-    * Dates, where possible, are parsed to Python `datetime.date` values,
-      unless the tag's values are malformed, whence they are represented as
-      dictionaries just like all other XML content. A valid date must have at
-      least uniquely and unambiguously identifiable year and month values,
-      otherwise the default dictionary tree structure approach is used. In
-      general, dates are recognized because their tag names (and hence, the keys
-      in the resulting dictionary) all either start or end with the string
-      **Date**.
-      The only exception is the content of the **MedlineDate** tag, which is
-      always a "free-form string" (and hence a malformed date) that neither can
-      be parsed to a `datetime.date` value nor a can be represented as
-      dictionary.
-
-    Special cases for **Abstract** and **MeshHeadingList**, and for the
-    **ArticleIdList** stored under the renamed key **ArticleIds**:
-
-    * The MEDLINE Citation DTD declares that **Abstract** elements contain one
-      or more **AbstractText** elements and an optional **CopyrightNotice**
-      element. Therefore, the key **Abstract** contains a dictionary with the
-      following possible keys: (1) **AbstractText** for all AbstractText
-      elements that have no NlmCategory attribute or where that attribute's
-      value is "UNLABELLED". (2) A **CopyrightNotice** key if present. (3) For
-      all **AbstractText** elements where the NlmCategory attribute is given
-      and its value is not "UNLABELLED", the capitalized version of the
-      attribute value is used, resulting in the following five additional keys
-      that might be found in an **Abstract** dictionary: **Background**,
-      **Objective**, **Methods**, **Results**, and **Conclusions**.
-    * The (MeSH and XML) tags DescriptorName and QualifierName in the
-      **MeshHeadingList** are stored as a list of dictionaries containing a
-      **Descriptor** and an (optional) **Qualifiers** key each, each in turn
-      holding another dictionary: The names of the MeSH terms as keys and
-      `bool`s as values, the latter indicating if a term is tagged major or not.
-      In other words, this `bool` represents the value of the MajorTopicYN
-      attribute found on DescriptorName and QualifierName elements.
-    * The **ArticleId** elements in the ArticleIdList element are stored in the
-      key **ArticleIds** as a dictionary (to not confuse default approaches for
-      lists described above). The keys of this dictionary are the IdType
-      attribute values of **ArticleId** elements, the values the actual PCDATA
-      (strings) of the elements (ie., the actual IDs). Therefore, examples of
-      keys found in the **ArticleIds** dictionary are **pubmed**, **pmc**, or
-      **doi**.
-
-    The NLM MEDLINE Citation DTD itself is found here:
-    http://www.nlm.nih.gov/databases/dtd/nlmmedlinecitationset_110101.dtd
-
-    The ArticleIdList is defined in the NLM PubMed Article DTD found here:
-    http://www.ncbi.nlm.nih.gov/entrez/query/static/PubMed.dtd
-    or
-    http://www.ncbi.nlm.nih.gov/corehtml/query/DTD/pubmed_100101.dtd
+    :param xml_stream: A stream as returned by :func:`.Fetch`.
+    :param pmid_key: The dictionary key to store the PMID in.
+    :raise AssertionError: If parsing of the XML does not go as expected, but
+        only in non-optimized mode.
     """
     for unused_event, element in iterparse(xml_stream):
         if element.tag == "PubmedArticle":
@@ -161,7 +225,7 @@ def ParseMedlineXml(xml_stream, pmid_key:str="_id") -> iter([dict]):
                 record["ArticleIds"] = ParseArticleIdList(article_id_list)
 
             assert "PMID" in record, \
-                "No PMID in:\n{}".format(tostring(element))
+                "No PMID in record XML:\n{}".format(tostring(element))
 
             if isinstance(record["PMID"], str):
                 record[pmid_key] = record["PMID"]
@@ -170,11 +234,13 @@ def ParseMedlineXml(xml_stream, pmid_key:str="_id") -> iter([dict]):
 
             yield record
 
-
 # Main Element Parser and Regular Elements
 
 def ParseElement(element):
     tag = element.tag
+
+    if __debug__ and tag == "PMID":
+        LOGGER.debug("Parse: PMID=%s", element.text)
 
     if tag.endswith("List"):
         return ParseElementList(element)
@@ -186,6 +252,7 @@ def ParseElement(element):
         return ParseMeshHeading(element)
     else:
         return ParseRegularElement(element)
+
 
 def ParseRegularElement(element):
     content = dict(ParseChildren(element))
@@ -202,26 +269,33 @@ def ParseRegularElement(element):
         content[element.tag] = element.text
 
     if attributes: content.update(dict(attributes))
-    assert content, "Empty element:\n{}".format(tostring(element))
+    assert content, "Empty element; XML:\n{}".format(tostring(element))
     return content
+
 
 def ParseChildren(parent):
     known_tags = []
+
     for child in parent.getchildren():
         if child.tag in SKIPPED_ELEMENTS: continue
+
         if child.tag == "ArticleDate":
             # Multiple article dates can exist; to avoid overwriting any,
             # use the DateType attribute as prefix of the tag/key.
-            tag = "%s%s" % (child.get("DateType", "Electronic"), child.tag)
+            # The default, according to the DTD, is "Electronic".
+            tag = "{}ArticleDate".format(child.get("DateType", "Electronic"))
         else:
             tag = child.tag
+
         assert tag not in known_tags, \
-            "Duplicate child element {}:\n{}".format(tag, tostring(parent))
+            "Duplicate child {}; XML::\n{}".format(tag, tostring(parent))
         yield tag, ParseElement(child)
         known_tags.append(tag)
 
+
 def ParseElementList(list_element):
     return [ ParseElement(element) for element in list_element.getchildren() ]
+
 
 def ParseDateElement(date_element):
     if date_element.tag == "MedlineDate":
@@ -241,11 +315,11 @@ def ParseDateElement(date_element):
             return date(year, month, 1)
     except (AttributeError, TypeError, ValueError):
         if date_element.find("MedlineDate") is None:
-            LOGGER.exception("ParseDateElement: %s not recognized; XML:\n%s",
-                             date_element.tag, tostring(date_element))
+            msg = "ParseDateElement: {} not recognized".format(date_element.tag)
+            LOGGER.exception(msg)
+            assert False, "{}; XML:\n{}".format(msg, tostring(date_element))
 
         return dict(ParseChildren(date_element))
-
 
 # Special Cases
 
@@ -254,12 +328,18 @@ def ParseArticleIdList(element):
 
     for article in element.findall("ArticleId"):
         id_type = article.get("IdType")
-        assert id_type not in articles, \
-            "Duplicate {} ArticleId:\n{}".format(id_type, tostring(element))
+
+        if id_type in articles:
+            msg = "duplicate {} ArticleId".format(id_type)
+            LOGGER.error(msg)
+            assert id_type not in articles, \
+                "{}; XML:\n{}".format(msg, tostring(element))
+
         articles[id_type] = article.text
 
-    assert articles, "Empty ArticleIdList:\n{}".format(tostring(element))
+    assert articles, "Empty ArticleIdList; XML:\n{}".format(tostring(element))
     return articles
+
 
 def ParseMeshHeading(element):
     descriptor = ParseElement(element.find("DescriptorName"))
@@ -267,6 +347,7 @@ def ParseMeshHeading(element):
     mesh_heading = {"Descriptor": dict([descriptor]) }
     if qualifiers: mesh_heading["Qualifiers"] = dict(qualifiers)
     return mesh_heading
+
 
 def ParseAbstract(element):
     abstract = {}
@@ -276,7 +357,8 @@ def ParseAbstract(element):
 
         if cat == "Unlabelled": cat = "AbstractText"
         assert cat not in abstract, \
-            "Duplicate AbstractText NlmCategories:\n{}".format(tostring(element))
+            "Duplicate AbstractText NlmCategories; XML:\n" \
+            "{}".format(tostring(element))
         abstract[cat] = abstract_text.text
 
     copyright = element.find("CopyrightInformation")
