@@ -62,12 +62,14 @@ Server
 
 .. autoclass:: libfnl.couch.broker.Server
     :members:
+    :special-members:
 
 Database
 --------
 
 .. autoclass:: libfnl.couch.broker.Database
     :members:
+    :special-members:
 
 ViewResults
 -----------
