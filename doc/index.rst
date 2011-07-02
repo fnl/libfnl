@@ -47,6 +47,7 @@ Contents
    couch
    nlp
    nlp/genia
+   nlp/medline
    stat
 
 Indices and tables
@@ -71,5 +72,5 @@ The following command line scripts are installed by this package:
 
 ``fnlmedline.py``
 
-    A script to manage a mirror of PubMed/MEDLINE as a CouchDB.
+    A script to manage a mirror of PubMed/MEDLINE records and external document attachments as a CouchDB.
 

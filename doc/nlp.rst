@@ -30,9 +30,9 @@ you are running a wide build [#f2]_.
          UTF-32/UCS-4 encoded strings would when no Supplementary Plane
          characters are involved).
 
-=================================
-doc -- Text-Annotation Data Types
-=================================
+==================================
+text -- Text-Annotation Data Types
+==================================
 
 .. automodule:: libfnl.nlp.text
 
@@ -88,111 +88,122 @@ Unicode
    :members:
 
 
-======================================
-medline -- Handling of MEDLINE records
-======================================
+=========================================
+extract -- Text extraction from documents
+=========================================
 
-.. automodule:: libfnl.nlp.medline
+.. automodule:: libfnl.nlp.extract
 
-Medline XML records are parsed to dictionaries with the following properties:
+Extract
+-------
 
-* A record is a dictionary built just like a tree, where keys are the tag
-  names of the XML record, and values are either dictionaries or lists for
-  branches, or the PCDATA strings for leafs in the tree.
-* Each key points to another dictionary if it is a branch. The names of the
-  keys are the exact MEDLINE XML tags, except for the special cases
-  described below.
-* Keys (XML tags) that end in **List** contain lists, not dictionaries,
-  with the tag-list the XML encloses. For example, **AuthorList** contains a
-  list of **Author** dictionaries.
-* Leafs where the tag also has attributes are returned as dictionaries,
-  putting the actual PCDATA into a key with the name of the tag (again),
-  and using the attribute names as additional keys holding the attribute
-  values. For example, the (leaf) tag **PMID** sometimes has a **Version**
-  attribute, resulting in a value for the dictionary record's top-level
-  **PMID** key of either the PMID string itself or a dictionary consisting
-  of two entries: **PMID** with the PMID string and **Version** with the
-  version string.
-* Otherwise, a (leaf) key contains a string, namely the PCDATA value it
-  holds.
-* The PMID of the record is always stored in a key **_id** (or any other
-  key specified by *pmid_key*) to ensure equal access to the PMID no
-  matter if the **Version** attribute is used.
-* Dates, where possible, are parsed to Python `datetime.date` values,
-  unless the tag's content is malformed, whence they are represented as
-  dictionaries just like all other XML content. A valid date must have at
-  least uniquely and unambiguously identifiable year and month values,
-  otherwise the default dictionary tree structure approach is used. In
-  general, dates are recognized because their tag names (and hence, the keys
-  in the resulting dictionary) all either start or end with the string
-  **Date**.
-  The only exception is the content of the **MedlineDate** tag, which is
-  always a "free-form string" (and hence a malformed date) that neither can
-  be parsed to a `datetime.date` value nor a can be represented as a
-  dictionary.
+Extract the contents of the file at *filename*, assuming the given
+*encoding* for the file, and returning a :class:`.Binary` text object.
 
-Special cases for **Abstract**, **ArticleDate**, **MeshHeadingList**, and
-for the **ArticleIdList** stored under the renamed key **ArticleIds**:
+If the file-type contains HTML markup, this markup is preserved as much as
+possible. A plain-text file simply gets read into `Binary`, but no
+annotations are made. If the MIME type isn't set and cannot be guessed
+(from the file's extension), 'text/plain' is assumed automatically.
 
-* The MEDLINE Citation DTD declares that **Abstract** elements contain one
-  or more **AbstractText** elements and an optional **CopyrightNotice**
-  element. Therefore, the key **Abstract** contains a dictionary with the
-  following possible keys: (1) **AbstractText** for all AbstractText
-  elements that have no NlmCategory attribute or where that attribute's
-  value is "UNLABELLED". (2) A **CopyrightNotice** key if present. (3) For
-  all **AbstractText** elements where the NlmCategory attribute is given
-  and its value is not "UNLABELLED", the capitalized version of the
-  attribute value is used, resulting in the following five additional keys
-  that might be found in an **Abstract** dictionary: **Background**,
-  **Objective**, **Methods**, **Results**, and **Conclusions**.
-* The **ArticleDate** may be repeated multiple times with different
-  *DateType* attributes. To avoid overriding existing article dates, the
-  key **ArticleDate** is prefixed with that attribute, which in almost
-  all cases so far is "Electronic", resulting in the key
-  **ElectronicArticleDate**.
-* The (MeSH and XML) tags DescriptorName and QualifierName in the
-  **MeshHeadingList** are stored as a list of dictionaries containing a
-  **Descriptor** and an (optional) **Qualifiers** key each, each in turn
-  holding another dictionary: The names of the MeSH terms as keys and
-  `bool`s as values, the latter indicating if a term is tagged major or not.
-  In other words, this `bool` represents the value of the MajorTopicYN
-  attribute found on DescriptorName and QualifierName elements.
-* The **ArticleId** elements in the ArticleIdList element are stored in the
-  key **ArticleIds** as a dictionary (to not confuse default approaches for
-  lists described above). The keys of this dictionary are the IdType
-  attribute values of **ArticleId** elements, the values the actual PCDATA
-  (strings) of the elements (ie., the actual IDs). Therefore, examples of
-  keys found in the **ArticleIds** dictionary are **pubmed**, **pmc**, or
-  **doi**.
+Currently supported MIME-types (ie., file-types) are:
 
-The NLM MEDLINE Citation DTD itself is found here:
-http://www.nlm.nih.gov/databases/dtd/nlmmedlinecitationset_110101.dtd
+* text/html, application/xhtml (.htm, .html, .xhtml)
+* text/plain (.txt) [defaulted if not set and guessing fails]
 
-The ArticleIdList is defined in the NLM PubMed Article DTD found here:
-http://www.ncbi.nlm.nih.gov/entrez/query/static/PubMed.dtd
-or
-http://www.ncbi.nlm.nih.gov/corehtml/query/DTD/pubmed_100101.dtd
+.. autofunction:: libfnl.nlp.extract.Extract
 
-.. autodata:: libfnl.nlp.medline.EUTILS_URL
+HtmlExtractor
+-------------
 
-.. autodata:: libfnl.nlp.medline.SKIPPED_ELEMENTS
+Converts HTML files to plain text files as close as possible to the way
+these files would be shown in a browser without any formatting directives.
 
-.. autodata:: libfnl.nlp.medline.ABSTRACT_FILE
+.. warning::
 
-Parse
------
+    This extractor relies on :mod:`html.parser` and therefore is not especially robust when used on noisy HTML. Therefore, it is recommended you install the lxml_ package wrapping **libxml2** and first clean HTML documents with :func:`lxml.html.clean.clean_html` before feeding the HTML to this extractor.
 
-.. autofunction:: libfnl.nlp.medline.Parse
+Any section (ie., a HTML element that would separate a piece of text from
+another -- not just ``p``, but also things such as ``dl``, ``li``, ``h3``,
+or ``div``) are separated by one or two line feeds (\\n), any entity (eg.,
+&nbsp) or character reference (eg., &#x0123) is converted to the
+corresponding character, while any such reference that would be invalid
+gets replaced by the replacement (U+FFFD) character.
 
-Fetch
------
+All the elements that can be handled by the extractor are listed in
+:attr:`.HtmlExtractor.TAG_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped
+entirely, including any elements or text they might contain.
 
-.. autofunction:: libfnl.nlp.medline.Fetch
+A few elements follow special replacement procedures -- see
+:attr:`.HtmlExtractor.REPLACE`\ .
 
-Dump
-----
+All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or
+section (:attr:`.HtmlExtractor.CONTENT_BLOCK`) tags and are annotated on the resulting
+string with offsets, preserving as much of their attributes as sensible --
+see :class:`.HtmlExtractor.Tag`\ . Both of these kind of elements encountered are converted
+to text tags, available from the attributes ``format_tags`` and
+``section_tags``, respectively, **after** the HTMLs extracted
+:attr:`.HtmlExtractor.string` has been fetched the first time.
 
-.. autofunction:: libfnl.nlp.medline.Dump
+The parser should be initialized, then the HTML :meth:`.feed` sent to it,
+which has to be :meth:`.HtmlExtractor.close`\ d if has been fed in several rounds.
+Now, the :attr:`.HtmlExtractor.string` of the extracted content can be fetched, whence
+the two tag dictionaries will become available as :attr:`.HtmlExtractor.format_tags` and
+:attr:`.HtmlExtractor.section_tags`. To reuse the same instance, call :meth:`.HtmlExtractor.reset`
+before feeding new content. An example:
+
+>>> from libfnl.nlp.extract import HtmlExtractor
+>>> html = HtmlExtractor()
+>>> html.feed('''<html>
+...   <head>
+...     <meta name="meta" content="content">
+...    </head>
+...    <body>
+...      <div id="div" class="a b">
+... This is the <b>text</b><br/> of this weird&nbsp;document.<object/>
+...      </div>
+...    </body>
+... </html>''')
+>>> html.close()
+>>> html.string
+'meta: content\\n\\nThis is the text\\nof this weird\u00a0document.\\n\\n'
+>>> html.section_tags['div#div.a.b']
+[(15, 55)]
+>>> print(html.string[15:55]) # &nbsp in div is represented as U+00A0
+This is the text
+of this weird\u00a0document.
+>>> list(sorted(html.section_tags.keys()))
+['body', 'div#div.a.b', 'head']
+>>> html.format_tags
+{'strong': [(27, 31)]}
+>>> len(html.string) == html.section_tags['body'][-1][1]
+True
+
+.. autoclass:: libfnl.nlp.extract.HtmlExtractor
+    :members: feed, reset, close, string, TAG_INDEX, MINOR_CONTENT, CONTENT_BLOCK, INLINE, REPLACE, IGNORE
+
+.. py:class:: libfnl.nlp.extract.HtmlExtractor.Tag
+
+    Text annotation tag keys created are from elements by using this `namedtuple` class.
+
+    Tags always start with the element's name. The following attributes on
+    an element are appended to the tag, too:
+
+    * The ``id`` gets appended as ``#<id>`` to section tag keys.
+    * The ``class`` values get appended as ``.<class>`` (repetitive) to both
+      section and format tag keys.
+    * The ``href`` values get appended as ``:<href>`` to format keys **if**
+      an URL is supplied to the :meth:`.feed` call **or** the document has a
+      ``base`` element in the header with a ``href`` URL attribute.
+    * The ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the
+      **text** (not the tag key!) content of that element (except ``img``
+      elements, that are handled specially -- see :attr:`.REPLACE`\ ).
+
+    Any other attributes not mentioned are dropped.
+
+    For more information on text annotation and tags, see
+    :mod:`libfnl.nlp.text`.
+
+.. _lxml: http://lxml.de
 
 =============================
 strtok -- String Tokenization

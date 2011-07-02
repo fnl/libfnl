@@ -5,16 +5,12 @@
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 
 This module provides functions to fetch and parse NLM PubMed/MEDLINE XML
-records, and dump them into a CouchDB.
-
-A simple usage example:
-
->>> from libfnl.nlp.medline import * # imports only the next two functions
->>> for record in Parse(Fetch((11700088, 11748933))):
-...     print("PMID", record["_id"], "Title:", record["Article"]["ArticleTitle"])
-PMID 11700088 Title: Proton MRI of (13)C distribution by J and chemical shift editing.
-PMID 11748933 Title: Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).
+records, dump them into a CouchDB, and attach external content articles (eg.,
+full-text articles) to them.
 """
+import logging
+import os
+from _collections import defaultdict
 from io import StringIO
 from http.client import HTTPResponse # function annotation only
 from time import sleep, time, strptime
@@ -23,9 +19,10 @@ from xml.etree.ElementTree import iterparse, tostring
 from logging import getLogger
 from datetime import date, timedelta
 from libfnl.couch.broker import Database
+from libfnl.nlp.extract import Extract
 from libfnl.nlp.text import Unicode, Binary
 
-__all__ = ['Fetch', 'Parse']
+__all__ = ['Attach', 'Dump', 'Fetch', 'Parse']
 
 LOGGER = getLogger()
 
@@ -45,7 +42,7 @@ Multiple PMIDs are joined comma-separated and appended to this URL.
 
 FETCH_SIZE = 100
 """
-Number of records that can be fetched from eUtils in one go.
+Number of records that can be fetched from eUtils in one request.
 """
 
 SKIPPED_ELEMENTS = ("OtherID", "OtherAbstract", "SpaceFlightMission",
@@ -71,20 +68,6 @@ Name of file used for attaching abstracts to Couch documents.
 def Dump(pmids:list([str]), db:Database, update:bool=False,
          force:bool=False) -> int:
     """
-    Dump MEDLINE DB records for a given list of *PMIDs* into a Couch *DB*.
-
-    Records are treated as :class:`libfnl.nlp.text.Binary` data by attaching
-    the title and abstract (if present) to the document. The key **Abstract**
-    in **Article** will be deleted.
-
-    Records already existing in a MEDLINE CouchDB can be checked if they are
-    ripe for *update*. This is the case if they are one to ten years old and
-    do not have all three time stamps (created, completed, and revised) or if
-    they are less than one year old and have no a **DateCompleted**.
-
-    This "filtered" update mechanism can be overridden and the update can
-    be *force*\ d for all existing records.
-
     :param pmids: The list of PMIDs to fetch (but existing articles will be
         ignored).
     :param db: A Couch :class:`.Database` instance.
@@ -191,9 +174,6 @@ def TextFromAbstract(buffer:StringIO, abstract:dict, section_tags:dict) -> str:
 
 def Fetch(pmids:list, timeout:int=60) -> HTTPResponse:
     """
-    Open an XML stream from the NLM for a list of *PMIDs*, but at most 100
-    (the approximate upper limit of IDs for this query to the eUtils API).
-
     :param pmids: a list of up to 100 PMIDs, as values that can be cast to
         string.
     :param timeout: Number of seconds to wait for a response.
@@ -215,10 +195,6 @@ def Fetch(pmids:list, timeout:int=60) -> HTTPResponse:
 
 def Parse(xml_stream, pmid_key:str="_id") -> iter([dict]):
     """
-    Yield MEDLINE records as dictionaries from an *XML stream*, with the
-    **PMID** set as string value of the specified *PMID key* (default:
-    **_id**).
-
     :param xml_stream: A stream as returned by :func:`.Fetch`.
     :param pmid_key: The dictionary key to store the PMID in.
     :raise AssertionError: If parsing of the XML does not go as expected, but
@@ -372,3 +348,64 @@ def ParseAbstract(element):
     copyright = element.find("CopyrightInformation")
     if copyright is not None: abstract["CopyrightInformation"] = copyright.text
     return abstract
+
+#############
+# RELATIONS #
+#############
+
+def Attach(filenames:list, medline_db:Database, force:bool=False):
+    """
+    :param filenames: A list of file name strings.
+    :param medline_db: A :class:`.Database` instance.
+    :param force: Replace any existing article. Note this does not erase any
+        ``pmids`` already stored on the article.
+    :raise IOError: If the file cannot be read.
+    :return: A dictionary of PMIDs, with a list of the files' document IDs that
+        were created for them.
+    """
+    logger = logging.getLogger("Attach")
+    results = defaultdict(list)
+
+    for fn in filenames:
+        try:
+            binary = Extract(fn)
+        except IOError:
+            logger.error('could not read %s', fn)
+            continue
+        except RuntimeError:
+            logger.exception('failed to extract %s', fn)
+            continue
+
+        base = os.path.basename(fn)
+        pmid, ext = os.path.splitext(base)
+
+        if pmid not in medline_db:
+            logger.error('PMID %s not in DB', pmid)
+            continue
+
+        if binary.hexdigest in medline_db:
+            article = medline_db[binary.hexdigest]
+            pm_ids = article['pmids'] if 'pmids' in article else []
+
+            if pmid in pm_ids and not force:
+                logger.info('%s already attached', fn)
+            else:
+                pm_ids.append(pmid)
+
+                if force:
+                    logger.info('overwriting %s (%s)', binary.hexdigest, base)
+                    del medline_db[article]
+                    binary.metadata['pmids'] = pm_ids
+                    binary.save(medline_db, filename='article.txt')
+                else:
+                    logger.debug('updating %s with %s', binary.hexdigest, base)
+                    article['pmids'] = pm_ids
+                    medline_db.save(article)
+        else:
+            logger.debug('adding article %s (%s)', base, binary.hexdigest)
+            binary.metadata['pmids'] = [pmid]
+            binary.save(medline_db, filename='article.txt')
+
+        results[pmid].append(binary.hexdigest)
+
+    return results
