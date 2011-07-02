@@ -2,7 +2,14 @@
 .. py:module:: broker
    :synopsis: A CouchDB client over HTTP.
 
+.. moduleauthor:: Christopher Lenz
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+
+This module has been largely left untouched from the original code by
+Christopher Lenz for CouchDB-Python (in ``client.py``) at the API level, but
+much of the internals have completely changed. However, even if you are
+familiar with the original API, it is recommendable to at least once check
+the documentation of each public method for changes.
 
 A Simple usage example:
 

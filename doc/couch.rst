@@ -116,7 +116,11 @@ ResponseStream
 HTTPError
 ---------
 
+These errors might be raised when executing functions and methods of the :mod:`.broker` module.
+
 .. autoclass:: libfnl.couch.network.HTTPError
+
+    HTTPError is based on :exc:`http.client.HTTPException`\ .
 
 .. autoclass:: libfnl.couch.network.PreconditionFailed
 
@@ -131,7 +135,11 @@ HTTPError
 ServerError
 -----------
 
+This error is raised when something went wrong on the server (CouchDB) side, ie., HTTP 500 responses.
+
 .. autoclass:: libfnl.couch.network.ServerError
+
+    ServerError is based on :exc:`http.client.HTTPException`\ .
 
 
 

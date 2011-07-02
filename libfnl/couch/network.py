@@ -5,8 +5,11 @@
 .. moduleauthor:: Christopher Lenz
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 
-A virtual rewrite from the original code in ``http.py`` by Christopher
-Lenz for CouchDB-Python, except for the `Resouce` class.
+This module provides the actual HTTP connectivity.
+
+The module constitutes a comprehensive rewrite from the original code in
+``http.py`` by Christopher Lenz for CouchDB-Python to adapt it to Python 3000,
+except for the underlying `Resouce` class (not part of the documentation).
 """
 from base64 import b64encode
 from collections import defaultdict, namedtuple
@@ -180,6 +183,10 @@ class ResourceConflict(HTTPError):
     """
     Exception raised when a 409 HTTP error is received in response to a
     request.
+
+    Usually the case when trying to update a document with mismatching
+    ``_rev`` values (eg., because another thread updated the same document
+    a moment earlier).
     """
 
 
