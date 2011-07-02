@@ -81,9 +81,17 @@ Attach additional files to MEDLINE records as separate records.
 
 The file names must consist of the PMID and the proper file-type extension, eg., ``1234567.html``. The corresponding PMID must exist in the DB. If the article was already attached, it is not replaced. The files are saved as separate documents ID'd by their :attr:`.nlp.text.Binary.hexdigest`.
 
-The created documents are provided with a field ``pmids``, to list the MEDLINE records they map to (as it is possible for the same PMID to have several articles, and vice versa). A DB design doc then should be installed to find the reverse mapping::
+The created documents are provided with a field ``pmids``, to list the MEDLINE records they map to (as it is possible for the same PMID to have several articles, and vice versa). A DB map view then should be installed to find the reverse mapping::
 
-    TODO - javascript of the design doc
+    { "map":
+        "function(rec) {
+            if (rec.pmids) {
+                for (var i in rec.pmids) {
+                    emit(rec.pmids[i])
+                }
+            }
+        }"
+    }
 
 The extraction is handled by :func:`.nlp.extract.Extract` and therefore file formats must conform to one of the formats this function can handle and be distinguishable by the file's extension.
 
