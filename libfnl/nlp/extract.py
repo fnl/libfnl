@@ -3,6 +3,7 @@
    :synopsis: Extract text from files.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 Conversion of content from files to the internal :mod:`libfnl.nlp.text`
 format, attempting to preserve annotations where possible.

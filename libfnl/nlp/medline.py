@@ -3,6 +3,7 @@
    :synopsis: Download and parse MEDLINE XML records.
 
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 This module provides functions to fetch and parse NLM PubMed/MEDLINE XML
 records, dump them into a CouchDB, and attach external content articles (eg.,

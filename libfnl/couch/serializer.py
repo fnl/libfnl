@@ -3,6 +3,7 @@
    :synopsis: JSON data serializer.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 Thin configuration layer over the json package in the standard library
 with settings optimized for speed.

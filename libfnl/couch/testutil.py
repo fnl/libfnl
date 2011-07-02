@@ -3,6 +3,7 @@
    :synopsis: A database mixin for the TestCases.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 Modified from the original code by Christopher Lenz for CouchDB-Python.
 """

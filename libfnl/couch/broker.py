@@ -4,6 +4,7 @@
 
 .. moduleauthor:: Christopher Lenz
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 This module has been largely left untouched from the original code by
 Christopher Lenz for CouchDB-Python (in ``client.py``) at the API level, but

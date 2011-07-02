@@ -3,6 +3,7 @@
    :synopsis: A subprocess wrapper for the GENIA Tagger.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
+.. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 
 This module works with both Python 3000 and Python 2.4+.
 """

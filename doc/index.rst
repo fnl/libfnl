@@ -24,6 +24,13 @@ problems.
 .. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
 
+License
+=======
+
+The entire API/code-base is licensed under the `GNU Affero GPL v3`_
+
+.. _GNU Affero GPL v3: http://www.gnu.org/licenses/agpl.html
+
 Environment
 ===========
 

@@ -15,6 +15,13 @@ Introduction
 .. warning:: This API is currently under heavy development and by no means to be
     considered stable.
 
+License
+=======
+
+The entire API/code-base is licensed under the `GNU Affero GPL v3`_
+
+.. _GNU Affero GPL v3: http://www.gnu.org/licenses/agpl.html
+
 Requirements
 ============
 
