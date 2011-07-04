@@ -1,6 +1,6 @@
 """
 .. py:module:: penn
-   :synopsis: The Penn tagset.
+   :synopsis: The Penn tag-set.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
@@ -82,7 +82,6 @@ case shown in :data:`.AMBIGUITY_SEP`, the tags should look like::
       ... }
 """
 
-# To make for better keys or remapping of "wrong" GENIA tags:
 REMAPPED = {
     "PRP$": "PRPP",
     "WP$": "WPP",
@@ -97,6 +96,6 @@ REMAPPED = {
     "--": "DASH",
 }
 """
-Mapping of tags containing symbol characters in the Penn tagset to letter
+Mapping of tags containing symbol characters in the Penn tag-set to letter
 characters, as they are more versatile in various ways of handling them.
 """

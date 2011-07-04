@@ -26,7 +26,8 @@ ACTIONS = {
 }
 
 def main(pmids:list, action:int=CREATE, couch_db:str=COUCHDB_URL,
-         database:str='medline', force:bool=False) -> int:
+         database:str='medline', encoding:str='utf-8',
+         force:bool=False) -> int:
     logging.info("%sing %i %s%s in %s/%s", ACTIONS[action], len(pmids),
                  'PMIDs' if action else 'files',
                  ' (forced)' if force else '', couch_db, database)
@@ -36,7 +37,7 @@ def main(pmids:list, action:int=CREATE, couch_db:str=COUCHDB_URL,
 
     if action == ATTACH:
         processed_docs = sum(len(i) for i in
-                             Attach(pmids, db, force).values())
+                             Attach(pmids, db, encoding, force).values())
     else:
         if not pmids and action in (UPDATE, READ):
             # read/update all records...
@@ -106,13 +107,17 @@ if __name__ == '__main__':
     )
     parser.add_option(
         "-a", "--attach", action="store_const", const=ATTACH, dest="action",
-        help="upload fulltext files that are attached to MEDLINE records; "\
-             "the files' names (w/o extension) must be the PMIDs to attach "\
-             "to, eg., 1234567.html"
+        help="upload files that are attached to MEDLINE records; the files' "\
+             "names (w/o extension) must be the PMIDs to attach to, eg., "\
+             "1234567.html"
     )
     parser.add_option(
         "-f", "--force", action="store_true", default=False,
         help="force writing documents, even if they are stored already"
+    )
+    parser.add_option(
+        "--encoding", action="store", default="utf-8",
+        help="the encoding of the files too attach [%default]"
     )
     parser.add_option(
         "--couch-db", default=COUCHDB_URL,

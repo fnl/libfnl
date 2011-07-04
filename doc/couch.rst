@@ -113,6 +113,18 @@ ResponseStream
 .. autoclass:: libfnl.couch.network.ResponseStream
     :members:
 
+Session
+-------
+
+.. autoclass:: libfnl.couch.network.Session
+    :members:
+
+Resource
+--------
+
+.. autoclass:: libfnl.couch.network.Resource
+    :members:
+
 HTTPError
 ---------
 
@@ -141,5 +153,17 @@ This error is raised when something went wrong on the server (CouchDB) side, ie.
 
     ServerError is based on :exc:`http.client.HTTPException`\ .
 
+==============================
+serializer -- Data Serializers
+==============================
 
+b64encode
+---------
+
+.. autofunction:: libfnl.couch.serializer.b64encode
+
+b64decode
+---------
+
+.. autofunction:: libfnl.couch.serializer.b64decode
 

@@ -1,5 +1,6 @@
-from hashlib import sha256
-from libfnl.nlp.text import Binary, Unicode, AnnotatedContent
+from hashlib import md5
+from libfnl.couch.serializer import b64encode
+from libfnl.nlp.text import Binary, Unicode, Annotated
 from sys import maxsize
 from unittest import main, TestCase
 
@@ -8,7 +9,7 @@ __author__ = 'Florian Leitner'
 class AnnotatedContentTests(TestCase):
 
     def setUp(self):
-        self.doc = AnnotatedContent()
+        self.doc = Annotated()
         self.tags = {"ns": {"tag": [(1,)]}}
 
     def testCreateUnnamedDoc(self):
@@ -166,12 +167,14 @@ class BinaryTests(TestCase):
         self.assertAddRaisesAssertionError("ns", "val", (0, 1, 2))
 
     def testDigest(self):
-        self.assertEqual(self.binary.digest,
-                         sha256("test".encode("latin1")).digest())
+        self.assertEqual(self.binary.digest(),
+                         md5("test".encode("latin1")).digest())
 
-    def testHexdigest(self):
-        self.assertEqual(self.binary.hexdigest,
-                         sha256("test".encode("latin1")).hexdigest())
+    def testBase64digest(self):
+        expected = b64encode(
+            md5("test".encode("latin1")).digest()
+        )[:-2].decode('ascii')
+        self.assertEqual(expected, self.binary.base64digest())
 
     def testToText(self):
         text = self.binary.toUnicode()

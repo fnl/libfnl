@@ -11,7 +11,7 @@ This module provides the actual HTTP connectivity.
 
 The module constitutes a comprehensive rewrite from the original code in
 ``http.py`` by Christopher Lenz for CouchDB-Python to adapt it to Python 3000,
-except for the underlying `Resouce` class (not part of the documentation).
+except for the underlying :class:`.Resource` class.
 """
 from base64 import b64encode
 from collections import defaultdict, namedtuple

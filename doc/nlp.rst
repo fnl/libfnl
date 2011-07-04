@@ -38,9 +38,13 @@ text -- Text-Annotation Data Types
 
 This NLP packages uses offset annotations on text to manage the tagging of text spans. To make this simple, Python's `bytes` and `str` implementations are extended with functions to add, retrieve, and delete annotations on these two data types. In addition, the API provides a method on each type to convert to the other without loosing or mangling the (offsets of) annotations.
 
-Managing documents and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text documents: one for the binary representation (encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any annotations (called **tags**) made on the text. Thereby, offset-based annotations made in one specific encoding can be transformed to the Unicode view where it is easy to work with them in Python, and then back into a completely different encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about offsets or encoding. Furthermore, a few minimum requirements for tags on the text are enforced:
+Managing text and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text as abstract documents: one for the binary representation (ie., encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any (offset-based) annotations (called *tags*) made on the text. Thereby, **byte-offset-based** annotations made in one specific encoding can be transformed to the Unicode view where it is easy to work with them in Python with a **character-based offset**, and then converted back into any desired encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about the encoding- and programming language-dependency of offsets.
 
-#. All tags consist of a (string) **namespace** and **key**, and have some (integer tuple) **offset**.
+The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
+
+A **tag** consists of a *namespace*, a *key* and an *offset*. The namespace and key can be any string, the offset is a [immutable!] tuple of integer values (one, two, or any multiple of two integers for multi-span annotations). Therefore, a few minimum requirements are enforced:
+
+#. All tags consist of a (string) **namespace** and **key**, and have some (integer tuple) **offsets**.
 #. A position ``P`` is a tuple of integers, of length 1, 2, or 2\ ``m`` (for any ``m > 1``).
 #. The key ``K`` holds a list of offsets where this tag annotated on the text; A single value position annotates an exact point in the text, a two-value position a given span, and a 2\ ``m``\ -value multiple (consecutive, see next) text segments.
 #. The ``P`` of length ``n`` annotating text ``T`` must pass the following conditions (where ``len`` is the Python `len` function applied to the text's content), that is each offset in ``P`` must be within the text's boundaries and consecutive:
@@ -49,9 +53,7 @@ Managing documents and their annotations can be a hassle if there is no abstract
   *    P\ :sub:`n` <= len(T) ∧
   *    P\ :sub:`i` < P\ :sub:`j` ∀ i =: {1, ..., n-1}, j =: i + 1
 
-6. By transforming between binary and Unicode, any illegal offsets (eg., offsets inside a multi-byte character (for bytes) or inside a surrogate pair (for strings and narrow Python builds) result in UnicodeErrors.
-
-For example, if an offset value of a key points between two surrogate characters or into the byte-sequence that forms a character in the encoded binary version, this would be considered an illegal offset value and raises a :py:exc:`UnicodeError`. The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
+6. By transforming between :class:`.Binary` and :class:`.Unicode`, any illegal offsets (eg., offsets inside a multi-byte character (for `Binary` `bytes`) or inside a surrogate pair (for `Unicode` strings on narrow Python builds) result in UnicodeErrors.
 
 The *tags* attribute of text, in a nutshell, is a dictionary of this form::
 
@@ -65,15 +67,19 @@ The *tags* attribute of text, in a nutshell, is a dictionary of this form::
         ...
     }
 
-The text views also provide a free-form dictionary to add any kind of meta-data, as a *metadata* attribute. Ensure this dictionary can be encoded to a JSON string (ie., only use strings as keys and better not to use tuples), at least if you plan to store text object to a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, ie., you should not set keys called ``_id``, ``_rev``, or ``_attachments`` on it, and neither use ``tags`` or ``textfile``, as these keys are used to store the tags and the name of attachment that has the text for the tags, respectively.
+The text views also provide a **meta-data dictionary** to store any kind of :attr:`.metadata`\ , useful to maintain information otherwise contained in a CouchDB document that is used to store the text (for example, metadata from MEDLINE records). Therefore, ensure this dictionary can be encoded to a JSON string (ie., only use strings as dictionary keys and better not to use tuples, as they are transformed to lists, anyways) -- at least if you plan to store the text objects in a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, that will use the fields ``tags`` and ``text`` to store the text -- so it is adviseable to not add any metadata keys with those names, either. Finally, two datetime values are set on those `Document`\ s: ``created`` and ``modified``, that would also overwrite any metadata of the same name.
 
-Both text views (`Binary` and `Unicode`) share the same methods for manipulating the tags annotated on the text; the following properties and methods are shared by both views through an abstract base class:
+Both text views (`Binary` and `Unicode`) share the same methods for manipulating the tags inherited from their abstract parent :class:`.Annotated`\ :
 
-AnnotatedContent
+Annotated
 ----------------
 
-.. autoclass:: libfnl.nlp.text.AnnotatedContent
+.. autoclass:: libfnl.nlp.text.Annotated
    :members:
+
+.. py:attribute:: libfnl.nlp.text.Annotated.metadata
+
+    A dictionary to store any number of values. Note it is recommended not to use the keys that coincide with the fields used when casting the text to a Couch document, namely ``text``, ``encoding``, and ``tags``.
 
 Binary
 ------
@@ -86,6 +92,7 @@ Unicode
 
 .. autoclass:: libfnl.nlp.text.Unicode
    :members:
+   :special-members:
 
 
 =========================================

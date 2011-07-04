@@ -5,11 +5,10 @@
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
-from _collections import defaultdict
-
+from collections import defaultdict
+from libfnl.nlp.text import Unicode
 from io import StringIO
 from types import FunctionType
-from libfnl.nlp.text import Unicode
 from unicodedata import category
 
 __author__ = "Florian Leitner"
@@ -456,7 +455,7 @@ class Tokenizer:
 
         :param text: The text to tag.
         :param metamorph: The key to store the list of morphology strings in
-            the :attr:`AnnotatedContent.metadata` dictionary of the text.
+            the :attr:`Annotated.metadata` dictionary of the text.
         """
         assert len(text), "empty text"
         tokens = defaultdict(list)
