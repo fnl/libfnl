@@ -8,18 +8,20 @@
 Conversion of content from files to the internal :mod:`libfnl.nlp.text`
 format, attempting to preserve annotations where possible.
 """
+import os
+import re
 from collections import defaultdict, namedtuple
 from html.entities import entitydefs
 from html.parser import HTMLParser
-from unicodedata import category
-from libfnl.nlp.text import Binary, Unicode
+from libfnl.nlp.text import Unicode
 from logging import getLogger
 from mimetypes import guess_type
-import re
+from socket import gethostname
+from unicodedata import category, normalize
 from urllib.parse import urlparse
 
 
-def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Binary:
+def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Unicode:
     """
     :param filename: The path and name of the file to extract.
     :param encoding: The charset encoding of the file; can be guessed by
@@ -27,33 +29,32 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Binary:
         guessed, UTF-8 is assumed.
     :param mime_type: Optionally, set the MIME type that describes the
         file's type (instead of having `mimetypes` guess it).
-    :return: A :class:`.Binary` text.
+    :return: A :class:`.Unicode` text.
     :raise IOError: If the file cannot be opened.
     :raise RuntimeError: If there are no extraction rules for the file's MIME
         type or the extractor fails horribly.
     """
-    logger = getLogger("Extract")
+    logger = getLogger('Extract')
 
     if not encoding or not mime_type:
         guessed_mime_type, guessed_encoding = guess_type(filename)
 
         if not encoding:
             if not guessed_encoding:
-                msg = "encoding of {} unknown - using UTF-8".format(filename)
-                logger.warn(msg)
+                logger.warn('encoding of %s unknown - using UTF-8', filename)
                 guessed_encoding = 'utf-8'
 
             encoding = guessed_encoding
 
         if not mime_type:
             if not guessed_mime_type:
-                logger.warn("could not guess MIME type of %s", filename)
-                logger.info("assuming text/plain for %s", filename)
-                mime_type = "text/plain"
+                logger.warn('could not guess MIME type of %s', filename)
+                logger.info('assuming text/plain for %s', filename)
+                mime_type = 'text/plain'
             else:
                 mime_type = guessed_mime_type
 
-    if mime_type in ("text/html", "application/xhtml"):
+    if mime_type in ('text/html', 'application/xhtml'):
         html = HtmlExtractor()
 
         for line in open(filename, encoding=encoding):
@@ -65,21 +66,31 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Binary:
             'section': html.section_tags,
             'format': html.format_tags
         }
-        print(text)
-        binary = text.toBinary(encoding)
-    elif mime_type == "text/plain" :
+        text.metadata['source'] = html.url or MakeSource(filename)
+    elif mime_type == 'text/plain':
         plain_text = open(filename, 'rb').read()
-        binary = Binary(plain_text, encoding)
+        text = Unicode(plain_text)
+        text.metadata['source'] = MakeSource(filename)
     else:
-        msg = "no extraction rules for MIME type {}".format(mime_type)
+        msg = 'no extraction rules for MIME type {}'.format(mime_type)
         raise RuntimeError(msg)
 
-    return binary
+    return text
+
+
+def MakeSource(filename:str) -> str:
+    username = os.getlogin()
+    hostname = gethostname()
+
+    if not os.path.isabs(filename):
+        filename = os.path.join(os.getcwd(), filename)
+
+    return '{}@{}:{}'.format(username, hostname, filename)
 
 
 class HtmlExtractor(HTMLParser):
 
-    L = getLogger("HtmlExtractor")
+    L = getLogger('HtmlExtractor')
 
     MULTI_WS = re.compile(r'\s+', re.ASCII) # only match r'[ \t\n\r\f\v]+'
 
@@ -91,12 +102,12 @@ class HtmlExtractor(HTMLParser):
     REPLACEMENT = '\uFFFD'
     SPACES = frozenset(' \t\n\r\f\v{}{}{}'.format(LINE_SEP, NBS, PARA_SEP))
 
-    URL_LIKE = re.compile("^\w+://") # simple check if a string is "URL-like"
+    URL_LIKE = re.compile('^\w+://') # simple check if a string is 'URL-like'
 
     EMPTY_TAGS = frozenset({
-        "area", "base", "basefont", "bsound", "br", "col", "command", "embed",
-        "eventsource", "frame", "hr", "img", "input", "isindex", "link",
-        "meta", "nobr", "param", "source", "wbr"
+        'area', 'base', 'basefont', 'bsound', 'br', 'col', 'command', 'embed',
+        'eventsource', 'frame', 'hr', 'img', 'input', 'isindex', 'link',
+        'meta', 'nobr', 'param', 'source', 'wbr'
     })
     # Elements that might not be closed but always are empty,
     # according to the W3C HTML specification.
@@ -162,141 +173,141 @@ class HtmlExtractor(HTMLParser):
     # == Tag == #
     #############
 
-    Tag = namedtuple("Tag", "name type id classes href title")
+    Tag = namedtuple('Tag', 'name type id classes href title')
 
     TAG_INDEX = {
-        "a": INLINE,
-        "abbr": INLINE,
-        "acronym": INLINE,
-        "address": CONTENT_BLOCK,
-        "applet": IGNORE,
-        "area": IGNORE,
-        "article": CONTENT_BLOCK,
-        "aside": CONTENT_BLOCK,
-        "audio": IGNORE,
-        "b": INLINE,
-        "base": REPLACE,
-        "basefont": IGNORE,
-        "bb": CONTENT_BLOCK,
-        "bdo": INLINE,
-        "bgsound": IGNORE,
-        "big": INLINE,
-        "blockquote": INLINE,
-        "blink": INLINE,
-        "body": CONTENT_BLOCK,
-        "br": REPLACE,
-        "button": CONTENT_BLOCK,
-        "canvas": IGNORE,
-        "caption": CONTENT_BLOCK,
-        "center": CONTENT_BLOCK,
-        "cite": INLINE,
-        "code": INLINE,
-        "col": INLINE,
-        "colgroup": IGNORE,
-        "command": IGNORE,
-        "datagrid": CONTENT_BLOCK,
-        "datalist": CONTENT_BLOCK,
-        "dd": CONTENT_BLOCK,
-        "del": INLINE,
-        "details": CONTENT_BLOCK,
-        "dfn": INLINE,
-        "dialog": CONTENT_BLOCK,
-        "dir": CONTENT_BLOCK,
-        "div": CONTENT_BLOCK,
-        "dl": CONTENT_BLOCK,
-        "dt": CONTENT_BLOCK,
-        "em": INLINE,
-        "embed": IGNORE,
-        "eventsource": IGNORE,
-        "fieldset": CONTENT_BLOCK,
-        "figcaption": CONTENT_BLOCK,
-        "figure": CONTENT_BLOCK,
-        "font": INLINE,
-        "footer": CONTENT_BLOCK,
-        "form": CONTENT_BLOCK,
-        "frame": IGNORE,
-        "frameset": CONTENT_BLOCK,
-        "h1": CONTENT_BLOCK,
-        "h2": CONTENT_BLOCK,
-        "h3": CONTENT_BLOCK,
-        "h4": CONTENT_BLOCK,
-        "h5": CONTENT_BLOCK,
-        "h6": CONTENT_BLOCK,
-        "head": CONTENT_BLOCK,
-        "header": CONTENT_BLOCK,
-        "hgroup": CONTENT_BLOCK,
-        "hr": REPLACE, # SPECIAL: create content block separator!
-        "html": CONTENT_BLOCK,
-        "i": INLINE,
-        "iframe": CONTENT_BLOCK,
-        "img": REPLACE,
-        "input": IGNORE,
-        "ins": INLINE,
-        "isindex": IGNORE,
-        "kbd": INLINE,
-        "keygen": IGNORE,
-        "label": CONTENT_BLOCK,
-        "legend": CONTENT_BLOCK,
-        "li": CONTENT_BLOCK,
-        "listing": CONTENT_BLOCK,
-        "link": IGNORE,
-        "map": INLINE,
-        "mark": INLINE,
-        "marquee": INLINE,
-        "menu": CONTENT_BLOCK,
-        "meta": REPLACE,
-        "meter": INLINE,
-        "nav": CONTENT_BLOCK,
-        "nobr": IGNORE,
-        "noembed": INLINE,
-        "noframes": INLINE,
-        "noscript": INLINE,
-        "object": IGNORE,
-        "ol": CONTENT_BLOCK,
-        "optgroup": IGNORE,
-        "option": CONTENT_BLOCK,
-        "output": IGNORE,
-        "p": CONTENT_BLOCK,
-        "param": IGNORE,
-        "plaintext": CONTENT_BLOCK,
-        "pre": CONTENT_BLOCK,
-        "progress": INLINE,
-        "q": INLINE,
-        "rp": IGNORE,
-        "rt": IGNORE,
-        "ruby": IGNORE,
-        "s": INLINE,
-        "samp": INLINE,
-        "script": IGNORE,
-        "section": CONTENT_BLOCK,
-        "select": CONTENT_BLOCK,
-        "small": INLINE,
-        "source": IGNORE,
-        "spacer": INLINE,
-        "span": INLINE,
-        "strike": INLINE,
-        "strong": INLINE,
-        "style": IGNORE,
-        "sub": INLINE,
-        "summary": CONTENT_BLOCK,
-        "sup": INLINE,
-        "table": CONTENT_BLOCK,
-        "tbody": INLINE,
-        "td": CONTENT_BLOCK,
-        "textarea": CONTENT_BLOCK,
-        "tfoot": INLINE,
-        "th": CONTENT_BLOCK,
-        "thead": INLINE,
-        "time": INLINE,
-        "title": CONTENT_BLOCK,
-        "tr": INLINE,
-        "tt": INLINE,
-        "u": INLINE,
-        "ul": CONTENT_BLOCK,
-        "var": INLINE,
-        "video": IGNORE,
-        "wbr": IGNORE,
-        "xmp": INLINE, }
+        'a': INLINE,
+        'abbr': INLINE,
+        'acronym': INLINE,
+        'address': CONTENT_BLOCK,
+        'applet': IGNORE,
+        'area': IGNORE,
+        'article': CONTENT_BLOCK,
+        'aside': CONTENT_BLOCK,
+        'audio': IGNORE,
+        'b': INLINE,
+        'base': REPLACE,
+        'basefont': IGNORE,
+        'bb': CONTENT_BLOCK,
+        'bdo': INLINE,
+        'bgsound': IGNORE,
+        'big': INLINE,
+        'blockquote': INLINE,
+        'blink': INLINE,
+        'body': CONTENT_BLOCK,
+        'br': REPLACE,
+        'button': CONTENT_BLOCK,
+        'canvas': IGNORE,
+        'caption': CONTENT_BLOCK,
+        'center': CONTENT_BLOCK,
+        'cite': INLINE,
+        'code': INLINE,
+        'col': INLINE,
+        'colgroup': IGNORE,
+        'command': IGNORE,
+        'datagrid': CONTENT_BLOCK,
+        'datalist': CONTENT_BLOCK,
+        'dd': CONTENT_BLOCK,
+        'del': INLINE,
+        'details': CONTENT_BLOCK,
+        'dfn': INLINE,
+        'dialog': CONTENT_BLOCK,
+        'dir': CONTENT_BLOCK,
+        'div': CONTENT_BLOCK,
+        'dl': CONTENT_BLOCK,
+        'dt': CONTENT_BLOCK,
+        'em': INLINE,
+        'embed': IGNORE,
+        'eventsource': IGNORE,
+        'fieldset': CONTENT_BLOCK,
+        'figcaption': CONTENT_BLOCK,
+        'figure': CONTENT_BLOCK,
+        'font': INLINE,
+        'footer': CONTENT_BLOCK,
+        'form': CONTENT_BLOCK,
+        'frame': IGNORE,
+        'frameset': CONTENT_BLOCK,
+        'h1': CONTENT_BLOCK,
+        'h2': CONTENT_BLOCK,
+        'h3': CONTENT_BLOCK,
+        'h4': CONTENT_BLOCK,
+        'h5': CONTENT_BLOCK,
+        'h6': CONTENT_BLOCK,
+        'head': CONTENT_BLOCK,
+        'header': CONTENT_BLOCK,
+        'hgroup': CONTENT_BLOCK,
+        'hr': REPLACE, # SPECIAL: create content block separator!
+        'html': CONTENT_BLOCK,
+        'i': INLINE,
+        'iframe': CONTENT_BLOCK,
+        'img': REPLACE,
+        'input': IGNORE,
+        'ins': INLINE,
+        'isindex': IGNORE,
+        'kbd': INLINE,
+        'keygen': IGNORE,
+        'label': CONTENT_BLOCK,
+        'legend': CONTENT_BLOCK,
+        'li': CONTENT_BLOCK,
+        'listing': CONTENT_BLOCK,
+        'link': IGNORE,
+        'map': INLINE,
+        'mark': INLINE,
+        'marquee': INLINE,
+        'menu': CONTENT_BLOCK,
+        'meta': REPLACE,
+        'meter': INLINE,
+        'nav': CONTENT_BLOCK,
+        'nobr': IGNORE,
+        'noembed': INLINE,
+        'noframes': INLINE,
+        'noscript': INLINE,
+        'object': IGNORE,
+        'ol': CONTENT_BLOCK,
+        'optgroup': IGNORE,
+        'option': CONTENT_BLOCK,
+        'output': IGNORE,
+        'p': CONTENT_BLOCK,
+        'param': IGNORE,
+        'plaintext': CONTENT_BLOCK,
+        'pre': CONTENT_BLOCK,
+        'progress': INLINE,
+        'q': INLINE,
+        'rp': IGNORE,
+        'rt': IGNORE,
+        'ruby': IGNORE,
+        's': INLINE,
+        'samp': INLINE,
+        'script': IGNORE,
+        'section': CONTENT_BLOCK,
+        'select': CONTENT_BLOCK,
+        'small': INLINE,
+        'source': IGNORE,
+        'spacer': INLINE,
+        'span': INLINE,
+        'strike': INLINE,
+        'strong': INLINE,
+        'style': IGNORE,
+        'sub': INLINE,
+        'summary': CONTENT_BLOCK,
+        'sup': INLINE,
+        'table': CONTENT_BLOCK,
+        'tbody': INLINE,
+        'td': CONTENT_BLOCK,
+        'textarea': CONTENT_BLOCK,
+        'tfoot': INLINE,
+        'th': CONTENT_BLOCK,
+        'thead': INLINE,
+        'time': INLINE,
+        'title': CONTENT_BLOCK,
+        'tr': INLINE,
+        'tt': INLINE,
+        'u': INLINE,
+        'ul': CONTENT_BLOCK,
+        'var': INLINE,
+        'video': IGNORE,
+        'wbr': IGNORE,
+        'xmp': INLINE, }
     """
     A mapping of all valid HTML 4 and 5 tags to
     :attr:`.INLINE` (3),
@@ -320,19 +331,19 @@ class HtmlExtractor(HTMLParser):
         for att, val in attrs:
             if not val:
                 continue
-            elif att == "id":
-                tag_id = "#%s" % val.strip()
-            elif att == "class" and val:
-                classes = "." + ".".join(c for c in val.split() if c)
-            elif att == "title":
+            elif att == 'id':
+                tag_id = '#{}'.format(val.strip())
+            elif att == 'class' and val:
+                classes = '.{}'.format('.'.join(c for c in val.split() if c))
+            elif att == 'title':
                 title = val.strip()
-            elif att == "href" and url and val != "#":
+            elif att == 'href' and url and val != '#':
                 href = cls._makeHrefLink(url, val)
 
         try:
             tag_type = cls.TAG_INDEX[name]
         except KeyError:
-            cls.L.warn("HTML name %s unknown; ignoring content", name)
+            cls.L.warn('HTML name %s unknown; ignoring content', name)
             tag_type = cls.IGNORE
 
         if name in cls.NORMAL_TAG:
@@ -344,17 +355,17 @@ class HtmlExtractor(HTMLParser):
     def _makeHrefLink(cls, url:str, val:str) -> str:
         parsed = urlparse(url)
 
-        if val[0] == "#":
-            return "%s://%s%s%s" % (parsed.scheme, parsed.netloc,
+        if val[0] == '#':
+            return '%s://%s%s%s' % (parsed.scheme, parsed.netloc,
                                     parsed.path, val)
-        elif val[0] == "/":
-            return "%s://%s%s" % (parsed.scheme, parsed.netloc, val)
+        elif val[0] == '/':
+            return '%s://%s%s' % (parsed.scheme, parsed.netloc, val)
         elif cls.URL_LIKE.match(val):
             return val
         else:
-            path = parsed.path.split("/")
-            path = "/".join(path[1:-1])
-            return "%s://%s/%s/%s" % (parsed.scheme, parsed.netloc, path, val)
+            path = parsed.path.split('/')
+            path = '/'.join(path[1:-1])
+            return '%s://%s/%s/%s' % (parsed.scheme, parsed.netloc, path, val)
 
     ##############################
     # == TAG CHECKING METHODS == #
@@ -433,6 +444,13 @@ class HtmlExtractor(HTMLParser):
     ######################
 
     @property
+    def url(self) -> str:
+        """
+        Return any URL set or found for this document (or ``None``).
+        """
+        return self.__url
+
+    @property
     def string(self) -> str:
         """
         After feeding the parser (and, possibly, calling :meth:`.close`, too),
@@ -484,14 +502,16 @@ class HtmlExtractor(HTMLParser):
                         chunk = chunk[1:]
 
                 if chunk:
-                    self.__string.append(chunk)
+                    self.__string.append(normalize('NFC', chunk))
                     end += len(chunk)
 
         if tag.title:
             prefix = '' if self.__string[-1].endswith(' ') else ' '
             title = self.MULTI_WS.sub(' ', tag.title).strip()
             suffix = '' if HtmlExtractor.isContent(tag) else ' '
-            self.__string.append('{}({}){}'.format(prefix, title, suffix))
+            self.__string.append(normalize(
+                'NFC', '{}({}){}'.format(prefix, title, suffix)
+            ))
             end += len(self.__string[-1])
 
         return end
@@ -553,7 +573,7 @@ class HtmlExtractor(HTMLParser):
             elif HtmlExtractor.isIgnored(tag):
                 self.__ignoring_content.append(name)
             else:
-                msg = "unhandled type {} for tag {}".format(tag.type, name)
+                msg = 'unhandled type {} for tag {}'.format(tag.type, name)
                 raise RuntimeError(msg)
         else:
             self.__ignoring_content.append(name)
@@ -569,7 +589,7 @@ class HtmlExtractor(HTMLParser):
             elif self.isInlined(tag):
                 if tag.title: self.__chunks.append(' {} '.format(tag.title))
             else:
-                msg = "unhandled type {} for tag {}".format(tag.type, name)
+                msg = 'unhandled type {} for tag {}'.format(tag.type, name)
                 raise RuntimeError(msg)
 
     def handle_endtag(self, name:str):
@@ -604,7 +624,7 @@ class HtmlExtractor(HTMLParser):
     def handle_charref(self, ref:str):
         if self.__in_body and not self.__ignoring_content:
             try:
-                codepoint = int(ref[1:], 16) if ref[0].lower() == "x" else \
+                codepoint = int(ref[1:], 16) if ref[0].lower() == 'x' else \
                             int(ref)
                 char = chr(codepoint)
 
@@ -614,7 +634,7 @@ class HtmlExtractor(HTMLParser):
 
                 self.__chunks.append(char)
             except (ValueError, OverflowError):
-                self.L.warn("HTML charref &#%s; not a valid codepoint", ref)
+                self.L.warn('HTML charref &#%s; not a valid codepoint', ref)
                 self.__chunks.append(HtmlExtractor.REPLACEMENT)
 
     def handle_entityref(self, ref:str):
@@ -622,7 +642,7 @@ class HtmlExtractor(HTMLParser):
             try:
                 self.__chunks.append(entitydefs[ref])
             except KeyError:
-                self.L.warn("HTML entityref &%s; unknown", ref)
+                self.L.warn('HTML entityref &%s; unknown', ref)
                 self.__chunks.append(HtmlExtractor.REPLACEMENT)
 
     def _handleReplacementTag(self, tag:Tag, attrs:tuple):
