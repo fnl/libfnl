@@ -12,7 +12,37 @@ with settings optimized for speed.
 from json.encoder import JSONEncoder
 from json.decoder import JSONDecoder
 
-__all__ = ['Decode', 'Encode']
+from binascii import a2b_base64, b2a_base64
+
+SAFE = bytearray(range(256))
+SAFE[ord('+')] = ord('-')
+SAFE[ord('-')] = ord('+')
+SAFE[ord('/')] = ord('.')
+SAFE[ord('.')] = ord('/')
+
+__all__ = ['b64decode', 'b64encode', 'Decode', 'Encode']
+
+def b64encode(b:bytes, charmap:bytes=SAFE) -> bytes:
+    """
+    A **CouchDB-URL**\ -safe version of the base64 encoding.
+
+    After regular base64 encoding, any ``+`` is translated to ``-``, and ``/``
+    to ``.`` (just as the base64 encoding for XML name tokens), not ``_`` (as
+    URL-safe base64 encoding would do).
+
+    If desired, the translation can be changed any time by providing a
+    different character map (as a `bytearray` or `bytes` object of length 256,
+    with the remapping of any characters as preferred).
+    """
+    return b2a_base64(b)[:-1].translate(charmap)
+
+def b64decode(b:bytes, charmap:bytes=SAFE):
+    """
+    A **CouchDB-URL**\ -safe version of the base64 decoding.
+
+    See :func:`.b64encode` for details.
+    """
+    return a2b_base64(b.translate(charmap))
 
 def IsoformatSerializer(obj):
     """
