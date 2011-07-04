@@ -5,46 +5,36 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
-from base64 import b64encode
 from collections import defaultdict, namedtuple
-from hashlib import sha256
+from datetime import datetime
+from hashlib import md5
 from io import StringIO
+from logging import getLogger
+from libfnl.couch.broker import Document
+from libfnl.couch.serializer import b64encode
 from types import FunctionType
-from libfnl.couch.broker import Database, Document
 
-
-class AnnotatedContent:
+class Annotated:
     """
     Abstract manager class for tagging content, implemented by both
     :class:`.Binary` and :class:`.Unicode`.
     """
 
+    L = getLogger('Annotated')
+
     def __init__(self):
         self._tags = {}
         self.metadata = {}
 
-    def __len__(self):
-        raise NotImplementedError("abstract")
-
-    @property
-    def tags(self) -> {str: {str: [(int,)]}}:
-        """
-        Get a copy of the dictionary of tags.
-        """
-        return AnnotatedContent._copyTags(self._tags)
-
-    @tags.setter
-    def tags(self, tags:{str: {str: [(int,)]}}):
-        """
-        Replace the entire tags dictionary. No safety checks are made, but
-        the tags are copied before they are stored.
-        """
-        self._tags = AnnotatedContent._copyTags(tags)
+    def __len__(self) -> int:
+        # Unicode/str: return string (quasi-"character") length
+        # Binary/bytes: return byte length
+        raise NotImplementedError('abstract')
 
     @staticmethod
-    def sorted(offsets:[(int,)]) -> [(int,)]:
+    def sorted(offset_list:list) -> list:
         """
-        Return a sorted iterator over the list of *offsets*.
+        Return a sorted iterator over a *list of offsets*.
 
         The offsets are sorted by the values of their offsets. Offset sorting
         is in order of the offset's start (lowest first), end (last offset
@@ -53,17 +43,37 @@ class AnnotatedContent:
 
         .. testsetup::
 
-            from libfnl.nlp.text import AnnotatedContent
+            from libfnl.nlp.text import Annotated
 
         .. doctest::
 
             >>> offsets = [(1, 2, 3, 5), (1, 3), (2,), (1, 2, 4, 5)]
-            >>> list(AnnotatedContent.sorted(offsets))
+            >>> list(Annotated.sorted(offsets))
             [(1, 2, 3, 5), (1, 2, 4, 5), (1, 3), (2,)]
         """
-        return sorted(offsets, key=lambda k: (k[0], k[-1] * -1, k))
+        return sorted(offset_list, key=lambda k: (k[0], k[-1] * -1, k))
 
-    def addTag(self, namespace:str, key:str, offsets:tuple([int])):
+    @staticmethod
+    def fromDocument(doc:dict):
+        # Convert CouchDB documents to text.
+        raise NotImplementedError('abstract')
+
+    @property
+    def tags(self) -> dict:
+        """
+        Get (a copy of) the dictionary of tags.
+        """
+        return Annotated._copyTags(self._tags)
+
+    @tags.setter
+    def tags(self, tags:dict):
+        """
+        Replace the entire tags dictionary. No safety checks are made, but
+        the tags are copied before they are stored.
+        """
+        self._tags = Annotated._copyTags(tags)
+
+    def addTag(self, namespace:str, key:str, offsets:tuple):
         """
         Add a new tag.
 
@@ -101,17 +111,25 @@ class AnnotatedContent:
         # all ok, append the tag
         tags.append(tuple(offsets))
 
-    def addOffsets(self, namespace:str, key:str, offset_list:[([int])]):
+    def addOffsets(self, namespace:str, key:str, offset_list:list):
         """
         Overwrite any offsets stored in *namespace*, *key* with this new
         *offset_list*.
+
+        If the *namespace* or *key* do not exist, they are created.
+
+        .. note::
+
+            No safety checks are made to ensure the tags are conforming to
+            the specification. It is the sole responsibility of the user
+            to ensure the tags thus set are correct.
         """
         if namespace not in self._tags: self._tags[namespace] = {}
         self._tags[namespace][key] = list(offset_list)
 
     def delNamespace(self, namespace:str):
         """
-        Delete an entire *namespace* and all its containing tags.
+        Delete an entire *namespace* and all its tags.
 
         :raise KeyError: If the *namespace* doesn't exist.
         """
@@ -119,8 +137,7 @@ class AnnotatedContent:
 
     def delKey(self, namespace:str, key:str):
         """
-        Delete the all the offsets for *key* in *namespace* and the *key*
-        itself.
+        Delete *key* in *namespace* and all its offsets.
 
         Also deletes the *namespace* it it happens to be empty after that.
 
@@ -130,28 +147,33 @@ class AnnotatedContent:
         # also clean up the namespace if empty
         if not self._tags[namespace]: del self._tags[namespace]
 
-    def delOffset(self, namespace:str, key:str, offsets:tuple([int])):
+    def delOffset(self, namespace:str, key:str, offsets:tuple):
         """
-        Delete the *offset* in *namespace*, *key*.
+        Delete a *offsets* `tuple` in the *namespace* of *key*.
 
         Also deletes the *key* it it happens to be empty after that, as well
-        as the *namespace*, if empty too.
+        as the *namespace*, if empty, too.
 
         :raise KeyError: If the *namespace* or *key* doesn't exist.
         :raise ValueError: If a tag at those *offsets* doesn't exist.
         """
         ns = self._tags[namespace]
         ns[key].remove(offsets)
+
         # also clean up the key and namespace if empty
         if not ns[key]:
             del ns[key]
             if not ns: del self._tags[namespace]
 
-    def iterTags(self, ordered:bool=False) -> iter([(str, str, tuple)]):
+    def iterTags(self, ordered:bool=False, block:bool=False) -> iter([tuple]):
         """
         Yield each tag as a ``(namespace, key, offsets)`` tuple.
 
-        :param ordered: Yield the tuples in order of the offset values.
+        :param ordered: Yield the tuples in order of the offset values **over
+            all namespaces**.
+        :param block: If *ordered* is ``True``, all tags with the same offset
+            tuple can be emitted at once -- ie., then the iterator returns
+            lists of ``(ns, key, offsets)`` tuples.
         """
         if ordered:
             all_tags = defaultdict(list)
@@ -161,9 +183,12 @@ class AnnotatedContent:
                     for offset in offset_list:
                         all_tags[offset].append((ns, key, offset))
 
-            for offset in AnnotatedContent.sorted(all_tags.keys()):
-                for item in all_tags[offset]:
-                    yield item
+            for offset in Annotated.sorted(all_tags.keys()):
+                if block:
+                    yield all_tags[offset]
+                else:
+                    for item in all_tags[offset]:
+                        yield item
         else:
             for ns, keys in self._tags.items():
                 for key, offset_list in keys.items():
@@ -184,7 +209,7 @@ class AnnotatedContent:
         """
         return self._tags[namespace].keys()
 
-    def offsets(self, namespace:str, key:str, sort:bool=False) -> [(int,)]:
+    def offsets(self, namespace:str, key:str, sort:bool=False) -> list:
         """
         Get a list of all tag offsets (int-tuples) in *namespace*, *key*.
 
@@ -193,7 +218,7 @@ class AnnotatedContent:
         :raise KeyError: If the *namespace* or *key* doesn't exist.
         """
         if sort:
-            extract = AnnotatedContent.sorted
+            extract = Annotated.sorted
         else:
             extract = list
 
@@ -201,12 +226,12 @@ class AnnotatedContent:
 
     def sort(self, namespace:str=None, key:str=None):
         """
-        Order any tags' offset lists, in place and according to
-        :meth:`.sorted()`.
+        Order any tags' offset lists, in place, and according to
+        :meth:`.sorted`.
 
         :param namespace: The *namespace* to sort or all if ``None``.
-        :param key: The tag's *key* to sort or all if ``None``.
-        :raise KeyError: If the *namespace* or *key* doesn't exist.
+        :param key: The *key* to sort or all if ``None``.
+        :raise KeyError: If the given *namespace* or *key* doesn't exist.
         """
         ns_iter = (namespace,) if namespace else self._tags.keys()
 
@@ -215,16 +240,20 @@ class AnnotatedContent:
             key_iter = (key,) if key else ns_dict.keys()
 
             for k in key_iter:
-                ns_dict[k] = list(AnnotatedContent.sorted(ns_dict[k]))
+                ns_dict[k] = list(Annotated.sorted(ns_dict[k]))
+
+    def toDocument(self, id_or_doc=None) -> Document:
+        # Convert instance to a CouchDB document.
+        raise NotImplementedError('abstract')
 
     @staticmethod
-    def _copyTags(tags, Offsets=list):
+    def _copyTags(tags, Offsets=list) -> dict:
         # Make a 'deep copy' of the *tags*.
         # *Offsets* can be any function to copy the list of offsets (tuples).
         repack = lambda keys: { k: Offsets(o) for k, o in keys.items() }
         return { ns: repack(keys) for ns, keys in tags.items() }
 
-    def _getTags(self, namespace:str, key:str):
+    def _getTags(self, namespace:str, key:str) -> list:
         # Try to fetch the *namespace* and *key* values or create new ones.
         if namespace in self._tags:
             ns = self._tags[namespace]
@@ -241,20 +270,22 @@ class AnnotatedContent:
         return tags
 
 
-class Binary(bytes, AnnotatedContent):
+class Binary(bytes, Annotated):
     """
     A specialized `bytes` class for binary (ie., encoded) text
-    and implementing :class:`.AnnotatedContent`.
+    and implementing :class:`.Annotated`.
 
     Contrary to regular `bytes` objects, it also stores the encoding of
     itself, plus the annotation tags.
     """
 
+    L = getLogger('Binary')
+
     def __new__(cls, *args):
         if isinstance(args[0], str):
             return super(Binary, cls).__new__(cls, *args)
         else:
-            # get rid of the encoding argument to bytes...
+            # get rid of the encoding argument when instantiating bytes...
             return super(Binary, cls).__new__(cls, args[0])
 
 
@@ -268,170 +299,204 @@ class Binary(bytes, AnnotatedContent):
         same procedure as for a regular `bytes` object. See
         :func:`bytearray` for details about creating `bytes`.
 
-        **To emphasize:** the second argument **must** be the encoding.
+        .. note::
+
+            **To emphasize:** the second argument **must** be the encoding,
+            unlike the behaviour of the `bytes` "constructor function".
+
+        :param args: Minimally, a `bytes` or `str` text and a encoding `str`.
+            If the first (text) argument is a `str`, encoding behaviour may
+            be set, too (errors: ``'strict'``, ``'replace'``, or ``'ignore'``).
         """
-        AnnotatedContent.__init__(self)
+        Annotated.__init__(self)
         self._digest = None
-        self._encoding = str(args[1])
+        self._encoding = str(args[1]).lower()
         self._str_alignment = dict()
 
     @staticmethod
-    def load(db:Database, doc_id:str, filename:str=None):
+    def fromDocument(doc:dict):
         """
-        Load a text from a CouchDB.
+        Create a new UTF-8-encoded :class:`.Binary` instance from a CouchDB
+        document.
 
-        :param db: The Couch :class:`.Database`.
-        :param doc_id: The document ID to load.
-        :param filename: The name of the text attachment to load; if None,
-            the document is checked for its ``textfile`` value.
-        :return: A :class:`.Binary` text.
-        :raise KeyError: If no document with that ID exists.
-        :raise ValueError: If no file with that name exists or if the
-            name of the file cannot be established.
+        The document must have the field ``text`` with the actual text, may
+        have ``tags``, while all other fields are stored as :attr:`.metadata`.
+
+        :param doc: The document; A `dict` or :class:`.Document` instance.
+        :return: A :class:`.Binary` object.
+        :raise KeyError: If the document has no ``text`` field.
+        :raise AttributeError: If the document has a ``tags`` dictionary,
+            but it is not in the correct format.
         """
-        doc = db[doc_id]
+        text = Binary(doc['text'], 'utf-8')
+        text.metadata = dict(doc)
+        del text.metadata['text']
 
-        try:
-            if not filename: filename = doc["textfile"]
-        except KeyError:
-            msg = "cannot determine text attachment for {}".format(doc_id)
-            raise ValueError(msg)
+        if 'tags' in doc:
+            if isinstance(doc['tags'], dict):
+                text_len = len(text)
+                text.tags = doc['tags']
 
-        att = db.getAttachment(doc, filename)
+                # cast offset values from lists to immutable tuples
+                for keys in text._tags.values():
+                    for offsets in keys.values():
+                        for i in range(len(offsets)):
+                            assert offsets[i][-1] <= text_len, \
+                                'out of range offsets: {}'.format(offsets[i])
+                            offsets[i] = tuple(offsets[i])
 
-        if att is None:
-            msg = "{} has no {} filename".format(doc_id, filename)
-            raise ValueError(msg)
+            del text.metadata['tags']
 
-        binary = Binary(att.data, att.encoding)
-        binary._tags = doc["tags"]
-        del doc["tags"]
-        binary.metadata = doc
-
-        # cast offset values from lists to immutable tuples
-        for keys in binary._tags.values():
-            for offsets in keys.values():
-                for i in range(len(offsets)):
-                    offsets[i] = tuple(offsets[i])
-
-        return binary
+        return text
 
     @property
     def encoding(self) -> str:
         """
-        The encoding value (read-only).
+        The encoding of the text `bytes` (read-only).
         """
         return self._encoding
 
     @property
+    def base64digest(self) -> str:
+        """
+        The base64-encoded ASCII string of the :attr:`.digest` without the
+        redundant ``=`` padding characters (read-only).
+
+        Instead of regular base64 encoding, the characters ``+`` and ``/``
+        are mapped to a **CouchDB-URL**\ -safe versions via :func:`.b64encode`.
+        """
+        return b64encode(self.digest)[:-2].decode('ASCII')
+
+    @property
     def digest(self) -> bytes:
         """
-        The SHA256 digest (ie., as `bytes`) of the content (read-only).
+        The hash digest `bytes` of the content (read-only).
+
+        The hash digest is based on the MD5 algorithm.
         """
-        if self._digest is None:
-            self._digest = sha256(self).digest()
+        if not self._digest:
+            self._digest = md5(self).digest()
 
         return self._digest
-    
-    @property
-    def hexdigest(self) -> str:
+
+    def toDocument(self, id_or_doc=None) -> Document:
         """
-        The SHA256 hexdigest (ie., as `str`) of the content (read-only).
+        Create a Couch :class:`.Document` from this text with the fields
+        ``created``, ``modified``, ``text``, ``tags``, and an ``_id``.
+
+        .. note::
+
+            The instance should be encoded in UTF-8, or have no tags, otherwise
+            the tags first need to be converted to UTF-8 conform offsets. This
+            is required because text in CouchDB is stored as UTF-8.
+
+        Additionally, any values in :attr:`.metadata` are set as their own
+        fields on the document.
+
+        The parameter *id_or_doc* is optional and can be a string representing
+        the ``_id`` to assign the Document, which will be used even if the
+        text's metadata has such a key.
+
+        In addition, *id_or_doc* can be a `Document` instance to update
+        with the values of this text object. If the original document had
+        tags and, most importantly, both texts match, each tag namespace
+        gets its keys updated separately. If the text do not match, is not the
+        case, the entire ``tags`` in the document get overwritten with the
+        :attr:`.tags` of the text.
+
+        The updating of tags is done as follows: To preserve as much of the
+        keys on the document, if only ``doc['tags'].update(text.tags)`` were
+        used, updates could "delete" keys on the document that do not exist
+        on the text. Therefore, instead, tags get updated as::
+
+            doc_tags = doc['tags']
+
+            for ns, keys in self.tags.items():
+                if ns in doc_tags:
+                    doc_tags[ns].update(keys)
+                else:
+                    doc_tags[ns] = keys
+
+        which preserves existing keys in namespaces of the document that are
+        not set in the same namespace on the text. In addition, the entire
+        document gets updated with the :attr:`.metadata` of the text. Ie.,
+        any metadata that coincides with a field on the document, it will
+        overwrite that field (including the ``_id`` value, if set on the
+        metadata). The ``created`` date and time is always used from the
+        supplied document (otherwise, :func:`datetime.now` is set)
+
+        The fields ``text``, ``modified`` are always written, even if they are
+        already set on a supplied document, to ensure consistency.
         """
-        return "".join('%02x' % b for b in self.digest)
-
-    def save(self, db:Database, doc_id:str=None, update:bool=False,
-             filename:str="binary.txt") -> (str, str):
-        """
-        Store this text in a Couch *DB*, overwriting any existing document,
-        unless *update* is used.
-
-        To create the actual document, :meth:`.toDocument` is used, and, if
-        this text already existed, the original version is first fetched from
-        the database.
-
-        :param db: The Couch :class:`.Database`.
-        :param doc_id: The document ID to use; if not set, use the ``_id`` in
-            metadata if set or finally the :attr:`.hexdigest` otherwise.
-        :param update: Use dictionary updates instead of overwriting existing
-            content (if the text already exists in the DB).
-        :param filename: The name to use for the text attachment.
-        :return: An ``(id, rev)`` tuple of the saved document.
-        """
-        if not doc_id:
-            doc_id = self.metadata['_id'] if '_id' in self.metadata else \
-                     self.hexdigest
-
-        old = db[doc_id] if doc_id in db else None
-
-        if update and old:
-            doc = self.toDocument(old, filename)
+        if self._tags and self.encoding != 'utf-8':
+            tags = self.toUnicode().toBinary('utf-8')._tags
         else:
-            doc = self.toDocument(doc_id, filename)
+            tags = self.tags
 
-        if not update and old:
-            doc.rev = old.rev
+        if id_or_doc:
+            if isinstance(id_or_doc, str):
+                doc = Document(self.metadata)
+                doc['_id'] = id_or_doc
+                doc['tags'] = tags
+            else:
+                doc = id_or_doc
 
-        return db.save(doc)
+                if 'tags' in self.metadata:
+                    self.L.warn('pruning "tags" from metadata')
+                    del self.metadata['tags']
 
-    def toDocument(self, id_or_doc=None, filename:str="binary.txt") -> Document:
-        """
-        Convert this text to a CouchDB :class:`.Document`.
+                if 'created' in doc:
+                    created = doc['created']
+                elif 'created' in self.metadata:
+                    created = self.metadata['created']
+                else:
+                    created = datetime.now()
 
-        The document ID will be either the one given in the *id or doc*, or, if
-        set, the ``_id`` in :attr:`.metadata`, or, finally, the
-        :attr:`.hexdigest` string. The document itself is made up of the
-        :attr:`.metadata` as initial dictionary to base the document on, the
-        :attr:`.tags` added as key with the same name, and a key ``textfile``
-        to store the name of the attachment containing the tagged text.
+                doc.update(self.metadata)
+                doc['created'] = created
+                doc_tags = None
 
-        :param id_or_doc: Use the given ID as ``_id``, or, if a `Document` or
-            dictionary, use it instead of creating a new document, updating it
-            with the text's `metadata` and `tags`, while attaching the text,
-            and return the updated document.
-        :param filename: The name of the text file attachment.
-        """
-        assert "tags" not in self.metadata
+                if 'tags' in doc:
+                    doc_md5 = md5(doc['text'].encode('utf-8')).digest()
 
-        if id_or_doc and isinstance(id_or_doc, str):
-            self.metadata["_id"] = id_or_doc
-        elif not id_or_doc and "_id" not in self.metadata:
-            self.metadata["_id"] = self.hexdigest
+                    if doc_md5 == self.digest:
+                        doc_tags = doc['tags'] # update tags
 
-        if id_or_doc and isinstance(id_or_doc, dict):
-            doc = id_or_doc
-            doc.update(self.metadata)
+                        for ns, keys in tags.items():
+                            if ns in doc_tags:
+                                doc_tags[ns].update(keys)
+                            else:
+                                doc_tags[ns] = keys
+                    else:
+                        self.L.info('doc %s and Binary %s text mismatch',
+                                    doc['_id'], self.base64digest)
+
+                if doc_tags is None:
+                    doc['tags'] = tags # overwrite tags
         else:
             doc = Document(self.metadata)
+            doc['tags'] = tags  # overwrite tags
 
-        if "tags" in doc and isinstance(doc["tags"], dict):
-            doc["tags"].update(self._tags)
-        else:
-            doc["tags"] = self.tags
-
-        atts = doc.get('_attachments', {})
-        atts[filename] = {
-            'content_type': 'text/plain; charset={}'.format(self.encoding),
-            'data': b64encode(self).decode('ASCII')
-        }
-        doc['_attachments'] = atts
-        doc['textfile'] = filename
+        doc['modified'] = datetime.now()
+        if 'created' not in doc: doc['created'] = doc['modified']
+        if '_id' not in doc: doc['_id'] = self.base64digest
         return doc
 
     def toUnicode(self, errors:str="strict"):
         """
         Return the :class:`.Unicode` view of this document, with
-        any tag offsets mapped to the positions in the decoded Unicode.
+        any tag offsets mapped to the positions in the decoded Unicode string.
 
         :raise UnicodeDecodeError: If any tag key is illegal.
         :return: :class:`.Unicode`
         """
+        #noinspection PyArgumentList
         text = Unicode(self.decode(self._encoding, errors))
 
         if self._tags:
             mapper = lambda offsets: [ tuple( self._strpos(pos, errors)
                                               for pos in o ) for o in offsets]
-            text._tags = AnnotatedContent._copyTags(self._tags, mapper)
+            text._tags = Annotated._copyTags(self._tags, mapper)
 
         text.metadata = dict(self.metadata)
         return text
@@ -446,34 +511,30 @@ class Binary(bytes, AnnotatedContent):
         return self._str_alignment[offset]
 
 
-class Unicode(str, AnnotatedContent):
+class Unicode(str, Annotated):
     """
-    A specialized :func:`str` class for text as Unicode (ie., decoded)
-    and implementing :class:`.AnnotatedContent`.
+    A specialized :func:`str` (ie., "decoded") implementation of
+    :class:`.Annotated`.
+
+    Instantiate just as any other string.
     """
 
-    #noinspection PyUnusedLocal
-    def __init__(self, *args):
-        """
-        Instantiate just as you would any other string.
-        """
-        AnnotatedContent.__init__(self)
+    L = getLogger('Unicode')
 
-    def __str__(self) -> str:
+    def __init__(self, *_):
+        Annotated.__init__(self)
+
+    def __repr__(self) -> str:
         """
         If not tagged, just return the string, otherwise, if tags have been
         set, it returns a XML-like tagging of the string.
 
         .. warning::
 
-            Note that if any tags have partial overlaps, this will produce XML
-            that is invalid.
+            Note that if any tags have partial overlaps, this will produce
+            markup that is invalid.
         """
         if self._tags:
-            if __debug__:
-                overlaps = self.firstPartiallyOverlappingTags()
-                assert not overlaps, overlaps
-
             buffer = StringIO()
             close_tags = defaultdict(list)
             GetTag = self._getTagHelper() # a function returning tags in order
@@ -511,9 +572,21 @@ class Unicode(str, AnnotatedContent):
 
             return buffer.getvalue()
         else:
-            return str.__str__(self)
+            return str.__repr__(self)
 
-    def getMultispan(self, offsets:tuple([int])) -> list([str]):
+    @staticmethod
+    def fromDocument(doc:dict):
+        """
+        Create a new :class:`.Unicode` instance from a CouchDB document.
+
+        .. seealso::
+
+            A convenience wrapper for :meth:`.Binary.fromDocument`\ .
+        """
+        text = Binary.fromDocument(doc)
+        return text.toUnicode()
+
+    def getMultispan(self, offsets:tuple) -> list:
         """
         Get the text of a multi-span offsets (ie., key length is an even value,
         but can also be just a single pair), as a `list` of strings, using the
@@ -525,12 +598,15 @@ class Unicode(str, AnnotatedContent):
         return [ self[offsets[i]:offsets[i + 1]]
                  for i in range(0, len(offsets), 2) ]
 
-    def firstPartiallyOverlappingTags(self) -> bool:
+    def firstPartiallyOverlappingTags(self) -> list:
         """
         Return a list of two ``(namespace, key, start, end)`` tuples of
-        the first two tags that were found to partially overlap.
+        the first two tags that were found to partially overlap, or ``None``
+        if no tag **partially** overlaps with any other.
 
-        Return ``None`` if no tag **partially** overlaps with any other.
+        Very simplified, this detects tag overlaps such as this one:
+
+            <tag1>text..<tag2>text...</tag1>text...</tag2>
         """
         state = [] # stores the last tags iterated
 
@@ -559,18 +635,32 @@ class Unicode(str, AnnotatedContent):
         Return the raw :class:`.Binary` view of the text, with
         any tag's offsets aligned to the encoded `bytes`.
 
-        :raise UnicodeEncodeError: If any tag's offsets are illegal.
+        :raise UnicodeEncodeError: If any tag's offsets are illegal or if the
+            text cannot be represented in the chosen *encoding*.
         """
-        doc = Binary(self, encoding, errors)
+        text = Binary(self, encoding, errors)
 
         if self._tags:
             alignment = self._mapping(encoding, errors)
             mapper = lambda offsets: [ tuple( alignment[pos] for pos in o )
                                        for o in offsets ]
-            doc._tags = AnnotatedContent._copyTags(self._tags, mapper)
+            text._tags = Annotated._copyTags(self._tags, mapper)
 
-        doc.metadata = dict(self.metadata)
-        return doc
+        text.metadata = dict(self.metadata)
+        if 'encoding' in text.metadata: text.metadata['encoding'] = encoding
+        return text
+
+    def toDocument(self, id_or_doc=None) -> Document:
+        """
+        Create a Couch :class:`.Document` from this text with the fields
+        ``created``, ``modified``, ``text``, ``tags``, and an ``_id``.
+
+        .. seealso::
+
+            A convenience wrapper for :meth:`.Binary.toDocument`\ .
+        """
+        binary = self.toBinary('utf-8')
+        return binary.toDocument(id_or_doc)
 
     @staticmethod
     def _strTag(close_tags:defaultdict, pos:int, tag:namedtuple) -> str:
@@ -608,7 +698,7 @@ class Unicode(str, AnnotatedContent):
 
         return GetTag
 
-    def _mapping(self, encoding:str, errors:str) -> list([int]):
+    def _mapping(self, encoding:str, errors:str) -> list:
         # Return a list of integers, one for each position in the content
         # string. The value at each position corresponds to the offset of
         # that position in the encoded bytes representation of the text.
@@ -625,9 +715,10 @@ class Unicode(str, AnnotatedContent):
                 pos += len(char.encode(encoding, errors))
                 idx += 1
             except UnicodeEncodeError:
+                # Maybe a surrogate pair from the SMP
                 if idx + 1 < strlen:
-                    char = self[idx:idx + 2]
-                    pos += len(char.encode(encoding, errors))
+                    pair = self[idx:idx + 2]
+                    pos += len(pair.encode(encoding, errors))
                     idx += 2
                 else:
                     raise
