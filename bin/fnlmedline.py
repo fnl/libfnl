@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Create PubMed/MEDLINE documents with attached abstracts in a Couch DB."""
+from _socket import error
 
 import logging
 import os
@@ -31,7 +32,12 @@ def main(pmids:list, action:int=CREATE, couch_db:str=COUCHDB_URL,
     logging.info("%sing %i %s%s in %s/%s", ACTIONS[action], len(pmids),
                  'PMIDs' if action else 'files',
                  ' (forced)' if force else '', couch_db, database)
-    db = Server(couch_db)[database]
+    try:
+        db = Server(couch_db)[database]
+    except error:
+        logging.error('cannot connect to %s', couch_db)
+        return 1
+    
     checked = False
     processed_docs = 0
 
@@ -121,11 +127,11 @@ if __name__ == '__main__':
     )
     parser.add_option(
         "--couch-db", default=COUCHDB_URL,
-        help="URL of the Couch Server [%default]"
+        help="COUCHDB_URL [%default]"
     )
     parser.add_option(
         "--database", default='medline',
-        help="name of the Couch DB to use [%default]"
+        help="Couch DB name [%default]"
     )
     parser.add_option(
         "--error", action="store_const", const=logging.ERROR,
@@ -173,12 +179,13 @@ if __name__ == '__main__':
 
                 try:
                     with open(item) as file:
-                        pm_ids.extend(pmid for pmid in file if pmid.isdigit())
+                        pm_ids.extend(pmid.strip() for pmid in file if
+                                      pmid.strip().isdigit())
                 except IOError:
                     parser.error("could not read {}".format(item))
 
                 found = len(pm_ids) - found
-                if not found: parser.error('no PMIDs in ()'.format(item))
+                if not found: parser.error('no PMIDs in {}'.format(item))
                 else: logging.info('read %s PMIDs from %s', found, item)
             elif item.isdigit():
                 pm_ids.append(item)

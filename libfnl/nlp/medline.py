@@ -48,7 +48,7 @@ Number of records that can be fetched from eUtils in one request.
 """
 
 SKIPPED_ELEMENTS = ('OtherID', 'OtherAbstract', 'SpaceFlightMission',
-                    'GeneralNote', 'NameID', 'ELocationID')
+                    'GeneralNote', 'NameID', 'ELocationID', 'CitationSubset')
 'Ignored tags in MedlineCitation elements that are never parsed.'
 
 ABSTRACT_ELEMENTS = [
@@ -89,16 +89,16 @@ def Dump(pmids:list([str]), db:Database, update:bool=False,
     processed_docs = 0
 
     for idx in range(0, len(pmids), FETCH_SIZE):
-        if force:
-            updated = { p: db[p].rev for p in pmids[idx:idx + FETCH_SIZE]
-                        if p in db }
-            query = pmids[idx:idx + FETCH_SIZE]
-        elif update:
+        if update:
             existing = { p: db[p] for p in pmids[idx:idx + FETCH_SIZE]
                          if p in db }
-            updated = dict(filter(NeedsUpdate, existing.items()))
-            query = [ p for p in pmids[idx:idx + FETCH_SIZE]
-                      if (p in updated or p not in existing) ]
+            if force:
+                updated = existing
+                query = pmids[idx:idx + FETCH_SIZE]
+            else:
+                updated = dict(filter(NeedsUpdate, existing.items()))
+                query = [ p for p in pmids[idx:idx + FETCH_SIZE]
+                          if (p in updated or p not in existing) ]
         else:
             updated = {}
             query = [ p for p in pmids[idx:idx + FETCH_SIZE] if p not in db ]
@@ -118,7 +118,7 @@ def NeedsUpdate(item:(str, dict)) -> bool:
     one_week = timedelta(7)
     today = date.today()
     doc = item[1]
-    created = date(*strptime(doc['created'], '%Y-%m-%d')[0:3])
+    created = date(*strptime(doc['created'], '%Y-%m-%dT%H:%M:%S')[:3])
 
     if today - created < one_week:
         return False
@@ -129,7 +129,7 @@ def NeedsUpdate(item:(str, dict)) -> bool:
         return True
 
     one_year = timedelta(365)
-    created = date(*strptime(medline['DateCreated'], '%Y-%m-%d')[0:3])
+    created = date(*strptime(medline['DateCreated'], '%Y-%m-%d')[:3])
 
     if today - created > one_year:
         # select records that are one year old, but not more than ten
@@ -261,10 +261,6 @@ def ParseElement(element):
         return ParseDateElement(element)
     elif tag == 'MeshHeading':
         return ParseMeshHeading(element)
-    elif tag == 'Author':
-        return ParseAuthor(element)
-    elif tag == 'Investigator':
-        return ParseAuthor(element)
     elif tag == 'Abstract':
         return ParseAbstract(element)
     elif tag == 'PMID':
@@ -339,9 +335,8 @@ def ParseDateElement(date_element):
             return date(year, month, 1)
     except (AttributeError, TypeError, ValueError):
         if date_element.find('MedlineDate') is None:
-            msg = 'ParseDateElement: {} not recognized'.format(date_element.tag)
-            LOGGER.exception(msg)
-            assert False, '{}; XML:\n{}'.format(msg, tostring(date_element))
+            msg = 'ParseDateElement: %s not recognized; XML:\n%s'
+            LOGGER.warn(msg, date_element.tag, tostring(date_element).strip())
 
         return dict(ParseChildren(date_element))
 
@@ -363,46 +358,6 @@ def ParseArticleIdList(element):
 
     assert articles, 'Empty ArticleIdList; XML:\n{}'.format(tostring(element))
     return articles
-
-
-def ParseAuthor(element):
-    a_tags = ('Initials', 'ForeName', 'LastName', 'Suffix')
-    name = [ element.find(tag) for tag in a_tags ]
-
-    if name[2] is not None:
-        clean = { n.tag: n.text.strip() for n in name
-                  if n is not None and n.text.strip() }
-
-        if 'Initials' in clean:
-            init = ''.join(clean['Initials'].split())
-
-            if 'ForeName' in clean:
-                # remove ForeNames that repeat Initials
-                # and Initials that are repetitions of ForeNames
-                split = clean['ForeName'].split()
-
-                if ''.join(split) == init:
-                    del clean['Initials']
-                    clean['ForeName'] = '{}.'.format('. '.join(split))
-                else:
-                    if len(split) == len(init) and all(
-                        split[i][0] == init[i] for i in range(len(split))
-                    ):
-                        del clean['Initials']
-
-            if 'Initials' in clean:
-                clean['Initials'] = '{}.'.format('. '.join(i for i in init))
-
-        author = ' '.join(clean[n] for n in a_tags if n in clean)
-    else:
-        try:
-            author = element.find('CollectiveName').text.strip()
-        except AttributeError:
-            assert False, tostring(element)
-            raise
-
-    assert author, tostring(element)
-    return author
 
 
 def ParseMeshHeading(element):
