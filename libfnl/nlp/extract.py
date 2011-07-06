@@ -18,7 +18,7 @@ from logging import getLogger
 from mimetypes import guess_type
 from socket import gethostname
 from unicodedata import category, normalize
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 
 def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Unicode:
@@ -67,6 +67,7 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Unicode:
             'format': html.format_tags
         }
         text.metadata['source'] = html.url or MakeSource(filename)
+        text.metadata['html_attributes'] = html.tag_attributes
     elif mime_type == 'text/plain':
         plain_text = open(filename, 'rb').read()
         text = Unicode(plain_text)
@@ -155,10 +156,11 @@ class HtmlExtractor(HTMLParser):
     All such elements are treated as elements w/o special section or format
     annotations; they are:
 
-    * ``br`` (replaced by a newline, but not annotated)
-    * ``hr`` (replaced by two newlines, but not annotated)
-    * ``img`` (replaced by the object replacement character or the content of
-      its title attribute, if present)
+    * ``br`` (replaced by a newline, but not annotated as tags)
+    * ``hr`` (replaced by two newlines, but not annotated as tags)
+    * ``img`` (replaced by the object replacement character -- note that the
+      title attribute, if present, will be preserved, just as with all other
+      tags)
     * ``meta`` (if it has a name and content attribute, those are added to the
       text, before the body section itself starts, as ``<name>: <content>\\n``)
     """
@@ -172,8 +174,6 @@ class HtmlExtractor(HTMLParser):
     #############
     # == Tag == #
     #############
-
-    Tag = namedtuple('Tag', 'name type id classes href title')
 
     TAG_INDEX = {
         'a': INLINE,
@@ -320,12 +320,14 @@ class HtmlExtractor(HTMLParser):
     :exc:`RuntimeError`\ .
     """
 
+    Tag = namedtuple('Tag', 'name type id classes href title')
+
     @classmethod
-    def _Tag(cls, name:str, attrs:tuple, url:str) -> Tag:
+    def _Tag(cls, name:str, attrs:tuple, url:namedtuple) -> Tag:
         # Create a new tag.
         tag_id = ""
         classes = ""
-        href = None
+        href = ""
         title = None
 
         for att, val in attrs:
@@ -343,7 +345,7 @@ class HtmlExtractor(HTMLParser):
         try:
             tag_type = cls.TAG_INDEX[name]
         except KeyError:
-            cls.L.warn('HTML name %s unknown; ignoring content', name)
+            cls.L.warn('HTML element %s unknown; ignoring content', name)
             tag_type = cls.IGNORE
 
         if name in cls.NORMAL_TAG:
@@ -352,20 +354,17 @@ class HtmlExtractor(HTMLParser):
         return cls.Tag(name, tag_type, tag_id, classes, href, title)
 
     @classmethod
-    def _makeHrefLink(cls, url:str, val:str) -> str:
-        parsed = urlparse(url)
-
+    def _makeHrefLink(cls, url:namedtuple, val:str) -> str:
         if val[0] == '#':
-            return '%s://%s%s%s' % (parsed.scheme, parsed.netloc,
-                                    parsed.path, val)
+            return ';{0.scheme}://{0.netloc}{0.path}{1}'.format(parsed, val)
         elif val[0] == '/':
-            return '%s://%s%s' % (parsed.scheme, parsed.netloc, val)
+            return ';{0.scheme}://{0.netloc}{1}'.format(parsed, val)
         elif cls.URL_LIKE.match(val):
-            return val
+            return ';{}'.format(val)
         else:
             path = parsed.path.split('/')
             path = '/'.join(path[1:-1])
-            return '%s://%s/%s/%s' % (parsed.scheme, parsed.netloc, path, val)
+            return ';{0.scheme}://{0.netloc}/{1}/{2}'.format(parsed, path, val)
 
     ##############################
     # == TAG CHECKING METHODS == #
@@ -407,6 +406,7 @@ class HtmlExtractor(HTMLParser):
         self.__chunks = self.__root[1]
         self.format_tags = None
         self.section_tags = None
+        self.tag_attributes = None
 
     def reset(self):
         """
@@ -422,6 +422,7 @@ class HtmlExtractor(HTMLParser):
         self.__chunks = self.__root[1]
         self.format_tags = None
         self.section_tags = None
+        self.tag_attributes = None
 
     #noinspection PyMethodOverriding
     def feed(self, data:str, url:str=None):
@@ -436,7 +437,7 @@ class HtmlExtractor(HTMLParser):
             fully qualified URLs; If the HTML has a base element with the href
             attribute set, that is used unless set here explicitly.
         """
-        self.__url = url
+        self.__url = urlparse(url)
         super(HtmlExtractor, self).feed(data)
 
     ######################
@@ -448,7 +449,7 @@ class HtmlExtractor(HTMLParser):
         """
         Return any URL set or found for this document (or ``None``).
         """
-        return self.__url
+        return urlunparse(self.__url)
 
     @property
     def string(self) -> str:
@@ -462,6 +463,7 @@ class HtmlExtractor(HTMLParser):
             self.__string = ['']
             self.format_tags = defaultdict(list)
             self.section_tags = defaultdict(list)
+            self.tag_attributes = defaultdict(dict)
             strlen = self._toOffsets(self.__root, 0)
             self.__string = ''.join(self.__string).replace(
                 HtmlExtractor.LINE_SEP, '\n'
@@ -469,6 +471,7 @@ class HtmlExtractor(HTMLParser):
             assert strlen == len(self.__string)
             self.format_tags = dict(self.format_tags)
             self.section_tags = dict(self.section_tags)
+            self.tag_attributes = dict(self.tag_attributes)
 
         return self.__string
 
@@ -495,14 +498,15 @@ class HtmlExtractor(HTMLParser):
             else:
                 if tag.name != 'pre':
                     chunk = self.MULTI_WS.sub(' ', chunk)
-                    chunk = chunk.replace(HtmlExtractor.PARA_SEP, '\n')
+                    chunk = chunk.replace(HtmlExtractor.PARA_SEP, '\n\n')
                     last = self.__string[-1]
 
                     if last in HtmlExtractor.SPACES and chunk.startswith(' '):
                         chunk = chunk[1:]
 
                 if chunk:
-                    self.__string.append(normalize('NFC', chunk))
+                    chunk = normalize('NFC', chunk)
+                    self.__string.append(chunk)
                     end += len(chunk)
 
         if tag.title:
@@ -519,13 +523,14 @@ class HtmlExtractor(HTMLParser):
     def _createTag(self, tag:Tag, start:int, end:int) -> int:
         offset = (start, end)
 
+        if tag.classes or tag.id or tag.href:
+            attributes = '{}{}{}'.format(tag.id, tag.classes, tag.href)
+            self.tag_attributes[tag.name][repr(offset)] = attributes
+
         if HtmlExtractor.isInlined(tag):
-            key = '{}{}'.format(tag.name, tag.classes)
-            if tag.href: key = '{}:{}'.format(key, tag.href)
-            self.format_tags[key].append(offset)
+            self.format_tags[tag.name].append(offset)
         elif HtmlExtractor.isContent(tag):
-            key = '{}{}{}'.format(tag.name, tag.id, tag.classes)
-            self.section_tags[key].append(offset)
+            self.section_tags[tag.name].append(offset)
 
             if tag.name != 'body':
                 if tag.name in HtmlExtractor.MINOR_CONTENT:
@@ -535,7 +540,7 @@ class HtmlExtractor(HTMLParser):
                     self.__string.append('\n\n')
                     end += 2
         else:
-            msg = 'unexpected tag type {}'.format(tag)
+            msg = 'unexpected tag {}'.format(tag)
             raise RuntimeError(msg)
         return end
 
@@ -657,13 +662,15 @@ class HtmlExtractor(HTMLParser):
         elif tag.name == 'br':
             self.__chunks.append(HtmlExtractor.LINE_SEP)
         elif tag.name == 'img':
-            if tag.title: self.__chunks.append(' {} '.format(tag.title))
-            else:         self.__chunks.append(HtmlExtractor.OBJECT_CHAR)
+            # append as 'mini-node' by simulating it were an inline tag
+            self.__chunks.append((tag._replace(type=HtmlExtractor.INLINE),
+                                  [HtmlExtractor.OBJECT_CHAR]))
         elif tag.name == 'hr':
             self.__chunks.append(HtmlExtractor.PARA_SEP)
         elif tag.name == 'base':
             if tag.href and not self.__url and \
-               HtmlExtractor.URL_LIKE.match(tag.href): self.__url = tag.href
+               HtmlExtractor.URL_LIKE.match(tag.href):
+                self.__url = urlparse(tag.href)
         else:
             msg = 'replacement for tag {} undefined'.format(tag.name)
             raise RuntimeError(msg)
