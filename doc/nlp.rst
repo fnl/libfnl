@@ -90,6 +90,19 @@ Binary
 Unicode
 -------
 
+Unicode classes can be transformed to :meth:`.Unicode.markup` strings, ie., XML. This transforms tags to elements with "<namespace>:<key>" names, for example producing the rather verbose ``<strtok:alnum>abc123</strtok:alnum>`` from a tag ``('strtok', 'alnum', (0, 6))`` on the text "abc123". A tag with a single offset value is represented as the empty element (``<namespace:key />``).
+
+Multispan-tags are transformed to elements that have an "offsets" attribute added, with a space-separated list of colon-separated offset spans *of* **code-points** (NB: not bytes!) *relative to the text (PCDATA) the element encloses*, such as ``offsets="0:3 7:8 10:20"`` for a tag with offsets ``(50, 53, 57, 58, 60, 70)``. Note that this means (a) that the first span always starts at zero, (b) that there are at least two such spans if this attribute is present, and (c) if using a *narrow build* of Python, **surrogate pairs** in the element's text are correctly measured as single code-points (and not two).
+
+The element nesting of tags with the same start and end value can be influenced by two special attributes on the **class**: :attr:`.Unicode.ns_weights` and :attr:`.Unicode.key_weights`. Both are dictionaries that should hold integer weights of a specific namespace (NS) or key. By default, tags that have the same start and end are just nested in the alphabetical order of their NS, then their keys, and finally sorted by the offset tuple (and very different to :meth:`.Annotated.ordered`). However, this sorting can be influenced by assigning integer values to a NS or key in those two dictionaries. By default, each NS and key has a weight of ``int(sqrt(sys.maxsize))``, and all element with the same start and end offset (no matter if an empty, single- or multi-span tag), is ordered by NS times key weight. In the simplest case, if you set a NS or key weight to 0, it will always be added before all other elements at that position. However, because of the use of multiplication, it is possible to model complex keys and/or namespaces nesting.
+
+The namespaces (but not the keys!) can also be mangled via the **class** attribute :attr:`.Unicode.ns_map`, a dictionary of ``NS: mangled`` strings. For example, the namespaces ``section`` and ``format`` set by the HTML extractor can be replaced with ``html`` by setting ``ns_map['section'] = 'html'`` (and idem for format), producing ``html:<key>`` element names for both namespaces. Furthermore, an entire namespace can be "suppressed" by setting the value to ``None`` or the empty string, producing ``<key>`` (only) element names for that NS.
+
+.. warning::
+
+    Note that if any tags have partial overlaps, this will produce
+    markup that is invalid.
+
 .. autoclass:: libfnl.nlp.text.Unicode
    :members:
    :special-members:
@@ -104,52 +117,33 @@ extract -- Text extraction from documents
 Extract
 -------
 
-Extract the contents of the file at *filename*, assuming the given
-*encoding* for the file, and returning a :class:`.Binary` text object.
+Extract the contents of the file at *filename*, assuming the given *encoding* for the file, and returning a :class:`.Binary` text object.
 
-If the file-type contains HTML markup, this markup is preserved as much as
-possible. A plain-text file simply gets read into `Binary`, but no
-annotations are made. If the MIME type isn't set and cannot be guessed
-(from the file's extension), 'text/plain' is assumed automatically.
-
-Currently supported MIME-types (ie., file-types) are:
+If the file-type contains HTML markup, this markup is preserved as much as possible. A plain-text file simply gets read into `Binary`, but no annotations are made. If the MIME type isn't set and cannot be guessed (from the file's extension), 'text/plain' is assumed automatically. Currently supported MIME-types (ie., file-types) are:
 
 * text/html, application/xhtml (.htm, .html, .xhtml)
 * text/plain (.txt) [defaulted if not set and guessing fails]
+
+HTML text is extracted by the :class:`.HtmlExtractor`. The extractor's ``section_tags`` get set as tags in the namespace ``section``, the ``format_tags`` in the namespace ``format``. And the ``tag_attributes`` dictionary gets added as metadata, using the key ``html_attributes``.
 
 .. autofunction:: libfnl.nlp.extract.Extract
 
 HtmlExtractor
 -------------
 
-Converts HTML files to plain text files as close as possible to the way
-these files would be shown in a browser without any formatting directives.
+Converts HTML files to plain text files as close as possible to the way these files would be shown in a browser without any formatting directives.
 
 .. warning::
 
     This extractor relies on :mod:`html.parser` and therefore is not especially robust when used on noisy HTML. Therefore, it is recommended you install the lxml_ package wrapping **libxml2** and first clean HTML documents with :func:`lxml.html.clean.clean_html` before feeding the HTML to this extractor.
 
-Any section (ie., a HTML element that would separate a piece of text from
-another -- not just ``p``, but also things such as ``dl``, ``li``, ``h3``,
-or ``div``) are separated by one or two line feeds (\\n), any entity (eg.,
-&nbsp) or character reference (eg., &#x0123) is converted to the
-corresponding character, while any such reference that would be invalid
-gets replaced by the replacement (U+FFFD) character.
+Any section (ie., a HTML element that would separate a piece of text from another -- not just ``p``, but also things such as ``dl``, ``li``, ``h3``, or ``div``) are separated by one or two line feeds (\\n), any entity (eg., &nbsp) or character reference (eg., &#x0123) is converted to the corresponding character, while any such reference that would be invalid gets replaced by the replacement (U+FFFD) character.
 
-All the elements that can be handled by the extractor are listed in
-:attr:`.HtmlExtractor.TAG_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped
-entirely, including any elements or text they might contain.
+All the elements that can be handled by the extractor are listed in :attr:`.HtmlExtractor.TAG_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped entirely, including any elements or text they might contain.
 
-A few elements follow special replacement procedures -- see
-:attr:`.HtmlExtractor.REPLACE`\ .
+A few elements follow special replacement procedures -- see :attr:`.HtmlExtractor.REPLACE`\ .
 
-All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or
-section (:attr:`.HtmlExtractor.CONTENT_BLOCK`) tags and are annotated on the resulting
-string with offsets, preserving as much of their attributes as sensible --
-see :class:`.HtmlExtractor.Tag`\ . Both of these kind of elements encountered are converted
-to text tags, available from the attributes ``format_tags`` and
-``section_tags``, respectively, **after** the HTMLs extracted
-:attr:`.HtmlExtractor.string` has been fetched the first time.
+All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or section (:attr:`.HtmlExtractor.CONTENT_BLOCK`) tags and are annotated on the resulting string with offsets. Inline and content block elements are converted to text tags (as ``{str(<tag name>): [tuple(<offsets>), ...]}`` dictinaries), available from the attributes ``format_tags`` and ``section_tags``, respectively, **after** the HTMLs extracted :attr:`.HtmlExtractor.string` has been fetched the first time. Some of the attributes are preserved, too, in a separate dictionary ``tag_attributes``, set as an attribute on the extractor instance after fetching the :attr:`.HtmlExtractor.string` -- see :class:`.HtmlExtractor.Tag`\ .
 
 The parser should be initialized, then the HTML :meth:`.feed` sent to it,
 which has to be :meth:`.HtmlExtractor.close`\ d if has been fed in several rounds.
@@ -190,25 +184,25 @@ True
 
 .. py:class:: libfnl.nlp.extract.HtmlExtractor.Tag
 
-    Text annotation tag keys created are from elements by using this `namedtuple` class.
+    Text annotation tag keys are simply the elements' name.
 
-    Tags always start with the element's name. The following attributes on
-    an element are appended to the tag, too:
+    The following attributes are preserved in ``tag_attributes``. This is a dictionary of the form::
 
-    * The ``id`` gets appended as ``#<id>`` to section tag keys.
-    * The ``class`` values get appended as ``.<class>`` (repetitive) to both
-      section and format tag keys.
-    * The ``href`` values get appended as ``:<href>`` to format keys **if**
-      an URL is supplied to the :meth:`.feed` call **or** the document has a
-      ``base`` element in the header with a ``href`` URL attribute.
-    * The ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the
-      **text** (not the tag key!) content of that element (except ``img``
-      elements, that are handled specially -- see :attr:`.REPLACE`\ ).
+        {   '<tag name>': { '(<start>, <end>)': '<attributes>' } }
+
+     Note that the **representation** (ie., a string) of the offsets tuple is used as dictionary key, not the tuple itself, to ensure it can be serialized to JSON. The attributes string is concatenated from, and this order, these attributes (and only if set on the element):
+
+    * The ``id``, appended as ``#<id>`` to the string.
+    * The actual ``class`` values get appended as ``.<class>`` strings (eg., ``class="class1 class2 class3"`` gets appended as ``.class1.class2.class3``.
+    * The ``href`` values get appended as ``;<href>`` **if** an URL is supplied to the :meth:`.feed` call **or** the document has a *base* element in the header with a ``href`` URL attribute. Note that the reference stored will always be an absolute URL, even if the original attribute was a partial URL, by using the supplied URL or href attribute in *base*.
+
+    Should it happen that a tag with the same name has the exact same offset as another, eg., ``<div id=1><div id=2>bla</div></div>``, only the attributes on the inner element (here, ``#2``) are preserved.
+
+    In addition, if set, the ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the **text** (ie., not the ``tag_attributes``\ !) content of that element.
 
     Any other attributes not mentioned are dropped.
 
-    For more information on text annotation and tags, see
-    :mod:`libfnl.nlp.text`.
+    For general information on text annotation and tags, see :mod:`libfnl.nlp.text`.
 
 .. _lxml: http://lxml.de
 

@@ -9,7 +9,11 @@ from collections import defaultdict, namedtuple
 from datetime import datetime
 from hashlib import md5
 from io import StringIO
+from itertools import count
 from logging import getLogger
+from math import sqrt
+from sys import maxsize, maxunicode
+from unicodedata import category
 from libfnl.couch.broker import Document
 from libfnl.couch.serializer import b64encode
 from types import FunctionType
@@ -47,9 +51,9 @@ class Annotated:
 
         .. doctest::
 
-            >>> offsets = [(1, 2, 3, 5), (1, 3), (2,), (1, 2, 4, 5)]
+            >>> offsets = [(1, 2, 3, 5), (1, 2), (1, 5), (2,), (1, 2, 4, 5)]
             >>> list(Annotated.sorted(offsets))
-            [(1, 2, 3, 5), (1, 2, 4, 5), (1, 3), (2,)]
+            [(1, 5), (1, 2, 3, 5), (1, 2, 4, 5), (1, 2), (2,)]
         """
         return sorted(offset_list, key=lambda k: (k[0], k[-1] * -1, k))
 
@@ -170,13 +174,16 @@ class Annotated:
         Yield each tag as a ``(namespace, key, offsets)`` tuple.
 
         :param ordered: Yield the tuples in order of the offset values **over
-            all namespaces**.
-        :param block: If *ordered* is ``True``, all tags with the same offset
-            tuple can be emitted at once -- ie., then the iterator returns
-            lists of ``(ns, key, offsets)`` tuples.
+            all namespaces**. See :meth:`.Annotated.sorted` for offset order.
+        :param block: If *ordered* is ``True``, all tags with the same start
+            and end (``offset[-1]``) can be emitted at once -- then, the
+            iterator returns lists of tag tuples instead of the individual
+            tuples; the tuples inside each list will also be in sort order.
         """
         if ordered:
             all_tags = defaultdict(list)
+            rng = (None, None)
+            grp = None
 
             for ns, keys in self._tags.items():
                 for key, offset_list in keys.items():
@@ -185,7 +192,14 @@ class Annotated:
 
             for offset in Annotated.sorted(all_tags.keys()):
                 if block:
-                    yield all_tags[offset]
+                    if rng[0] == offset[0] and rng[1] == offset[-1]:
+                        grp.extend(all_tags[offset])
+                        continue
+                    elif grp:
+                        yield grp
+
+                    grp = all_tags[offset]
+                    rng = (offset[0], offset[-1])
                 else:
                     for item in all_tags[offset]:
                         yield item
@@ -211,7 +225,8 @@ class Annotated:
 
     def offsets(self, namespace:str, key:str, sort:bool=False) -> list:
         """
-        Get a list of all tag offsets (int-tuples) in *namespace*, *key*.
+        Get a list of all tag offsets (integer tuples) in a *namespace* and for
+        a *key*.
 
         :param sort: If ``True``, return an iterator that yields the offsets
             sorted according to :meth:`.sorted()`.
@@ -223,6 +238,62 @@ class Annotated:
             extract = list
 
         return extract(self._tags[namespace][key])
+
+    def slice(self, start:int=None, end:int=None):
+        """
+        Return the requested text slice of this instance as as a new text class
+        instance and with the tags and their offsets correctly added (if there
+        are any in that particular slice).
+
+        At least either the *start* or the *end* must be specified. The *end*
+        can be a negative integer, just as in ``seq[:-10]``, while only
+        providing *start* results in a ``self[<start>:]`` slice call.
+
+        .. note::
+
+            Tags that do not cover the entire length of the slice are not
+            preserved! Also, metadata is not copied to the new instance.
+
+        :param start: The start position of the slice.
+        :param end: The end position of the slice.
+        :return: The text slice, either :class:`.Unicode` or :class:`.Binary`.
+        :raise IndexError: If the provided *start* or *end* value is illegal.
+        """
+        if start is None:
+            start = 0
+            slice = self[:end]
+        elif end is None:
+            end = len(self)
+            slice = self[start:]
+        else:
+            slice = self[start:end]
+
+        if end < 0: end += len(self)
+        tags = dict()
+
+        for ns, keys in self._tags.items():
+            ns_dict = dict()
+
+            for key, offsets in keys.items():
+                key_dict = defaultdict(list)
+
+                for o in offsets:
+                    if o[0] >= start and o[-1] <= end:
+                        key_dict[key].append(tuple(i - start for i in o))
+
+                if key_dict:
+                    ns_dict[key] = dict(key_dict)
+
+            if ns_dict:
+                tags[ns] = ns_dict
+
+        if isinstance(slice, bytes):
+            text = Binary(slice, self._encoding)
+        else:
+            text = Unicode(slice)
+
+        text._tags = tags
+        return text
 
     def sort(self, namespace:str=None, key:str=None):
         """
@@ -450,7 +521,7 @@ class Binary(bytes, Annotated):
                 elif 'created' in self.metadata:
                     created = self.metadata['created']
                 else:
-                    created = datetime.now()
+                    created = datetime.now().replace(microsecond=0)
 
                 doc.update(self.metadata)
                 doc['created'] = created
@@ -477,7 +548,8 @@ class Binary(bytes, Annotated):
             doc = Document(self.metadata)
             doc['tags'] = tags  # overwrite tags
 
-        doc['modified'] = datetime.now()
+        doc['modified'] = datetime.now().replace(microsecond=0)
+        doc['text'] = self.decode(self.encoding)
         if 'created' not in doc: doc['created'] = doc['modified']
         if '_id' not in doc: doc['_id'] = self.base64digest
         return doc
@@ -521,58 +593,27 @@ class Unicode(str, Annotated):
 
     L = getLogger('Unicode')
 
+    key_weights = {}
+    """
+    A dictionary of key weights for element nesting order in the :meth:`.markup`
+    representation of a tagged text.
+    """
+
+    ns_weights = {}
+    """
+    A dictionary of namespace weights for element nesting order in the
+    :meth:`.markup` representation of a tagged text.
+    """
+
+    ns_map = {}
+    """
+    A dictionary of ``namespace: mangled_ns`` mappings to change or drop
+    (empty value string or ``None``) namespaces of element names in text
+    :meth:`.markup` representation.
+    """
+
     def __init__(self, *_):
         Annotated.__init__(self)
-
-    def __repr__(self) -> str:
-        """
-        If not tagged, just return the string, otherwise, if tags have been
-        set, it returns a XML-like tagging of the string.
-
-        .. warning::
-
-            Note that if any tags have partial overlaps, this will produce
-            markup that is invalid.
-        """
-        if self._tags:
-            buffer = StringIO()
-            close_tags = defaultdict(list)
-            GetTag = self._getTagHelper() # a function returning tags in order
-            tag = GetTag()                # of their offsets, as named tuples
-
-            for pos, char in enumerate(self):
-                if pos in close_tags:
-                    for closer in reversed(close_tags[pos]):
-                        buffer.write(closer)
-
-                while tag.start == pos:
-                    # get the (XML-like) open tag string and add end tags to
-                    # the close_tags dictionary:
-                    tag_str = Unicode._strTag(close_tags, pos, tag)
-                    buffer.write(tag_str)
-                    try: tag = GetTag()
-                    except StopIteration: tag = tag._replace(start=-1)
-
-                buffer.write(char)
-
-            # append remaining closers and possible positional tags at the
-            # very end of the Unicode string
-            if len(self) in close_tags: # remaining closers at end
-                for closer in reversed(close_tags[len(self)]):
-                    buffer.write(closer)
-
-            if tag.start == len(self): # remaining (single-offset) tags at end
-                while True:
-                    # no more close_tags should be set here - if, we'd get an
-                    # error for trying to do something dict-like with ``None``
-                    tag_str = Unicode._strTag(None, len(self), tag)
-                    buffer.write(tag_str)
-                    try: tag = GetTag()
-                    except StopIteration: break
-
-            return buffer.getvalue()
-        else:
-            return str.__repr__(self)
 
     @staticmethod
     def fromDocument(doc:dict):
@@ -585,18 +626,6 @@ class Unicode(str, Annotated):
         """
         text = Binary.fromDocument(doc)
         return text.toUnicode()
-
-    def getMultispan(self, offsets:tuple) -> list:
-        """
-        Get the text of a multi-span offsets (ie., key length is an even value,
-        but can also be just a single pair), as a `list` of strings, using the
-        integer values of each pair in the key as start and end positions.
-
-        :param offsets: a tuple of 2\ ``n`` integer values, where ``n > 0``.
-        """
-        assert len(offsets) % 2 == 0, "odd number of offsets"
-        return [ self[offsets[i]:offsets[i + 1]]
-                 for i in range(0, len(offsets), 2) ]
 
     def firstPartiallyOverlappingTags(self) -> list:
         """
@@ -630,6 +659,59 @@ class Unicode(str, Annotated):
 
         return None
 
+    def markup(self) -> str:
+        """
+        If not tagged, return the regular string; otherwise, if tags
+        have been set, return a markup view of the string with the
+        tags transformed to proper markup elements.
+        """
+        if self._tags:
+            buffer = StringIO()
+            close_tags = defaultdict(list)
+            GetBlock = self._getElementHelper()
+            start, block = GetBlock()
+
+            for pos, char in enumerate(self):
+                if pos in close_tags:
+                    for closer in reversed(close_tags[pos]):
+                        buffer.write(closer)
+
+                if start == pos:
+                    start, block = Unicode.__blockRepr(
+                        GetBlock, block, buffer, close_tags
+                    )
+
+                buffer.write(char)
+
+            # append remaining closers and possible positional tags at the
+            # very end of the Unicode string
+            if len(self) in close_tags: # remaining closers at end
+                for closer in reversed(close_tags[len(self)]):
+                    buffer.write(closer)
+
+            if start == len(self): # remaining (single-offset) tags at end
+                Unicode.__blockRepr(GetBlock, block, buffer, close_tags)
+
+            return buffer.getvalue()
+        else:
+            return str(self)
+
+    def multispan(self, offsets:tuple) -> list:
+        """
+        Get the text of any kind of offsets, as a `list` of strings, using the
+        integer values of each pair in the key as start and end positions.
+
+        The empty tag with a single offset value will return a list with a
+        single empty string. An empty tuple would return an empty list.
+
+        :param offsets: a tuple of offsets.
+        """
+        if len(offsets) % 2 == 0:
+            return [ self[offsets[i]:offsets[i + 1]]
+                     for i in range(0, len(offsets), 2) ]
+        else:
+            return [ '' ]
+
     def toBinary(self, encoding:str, errors:str="strict") -> Binary:
         """
         Return the raw :class:`.Binary` view of the text, with
@@ -662,42 +744,6 @@ class Unicode(str, Annotated):
         binary = self.toBinary('utf-8')
         return binary.toDocument(id_or_doc)
 
-    @staticmethod
-    def _strTag(close_tags:defaultdict, pos:int, tag:namedtuple) -> str:
-        # Create the opening tag string representation of *tag* at *pos*, and
-        # add the closing tag to the *close_tags* defaultdict(list).
-        # This is a helper for __str__().
-        if len(tag.offsets) == 1: # Positional tag
-            tag_str = '<{} id={} />'.format(tag.name, tag.id)
-        else:
-            close_tags[tag.offsets[-1]].append('</{}>'.format(tag.name))
-
-            if len(tag.offsets) == 2: # Single-span tag
-                tag_str = '<{} id={}>'.format(tag.name, tag.id)
-            else: # Multi-span tag
-                o = tag.offsets
-                spans = ' '.join('{}:{}'.format(str(o[i]     - pos),
-                                                  str(o[i + 1] - pos))
-                                 for i in range(len(o), step=2))
-
-                tag_str = '<{} id={} spans="{}">'.format(
-                    tag.name, tag.id, spans,
-                )
-
-        return tag_str
-
-    def _getTagHelper(self) -> FunctionType:
-        # Get the next tag (in offset order) with a unique ID for it.
-        # This is a helper for __str__().
-        Tag = namedtuple("Tag", "id name start offsets")
-        ordered_tags = enumerate(self.iterTags(True))
-
-        def GetTag():
-            id, (ns, key, offs) = next(ordered_tags)
-            return Tag(id, "{}:{}".format(ns, key), offs[0], offs)
-
-        return GetTag
-
     def _mapping(self, encoding:str, errors:str) -> list:
         # Return a list of integers, one for each position in the content
         # string. The value at each position corresponds to the offset of
@@ -725,3 +771,109 @@ class Unicode(str, Annotated):
 
         alignment[idx] = pos
         return alignment
+
+    def _getElementHelper(self) -> FunctionType:
+        # Get the next block of elements in namespace-key weighted order, the
+        # namespaces replaced as as required, and any attributes "prepared".
+        # The return value is the GetBlock function at the end.
+        # This is a helper for markup representations of text.
+        Element = namedtuple("Element", "name attributes end")
+        ordered_blocks = self.iterTags(True, True)
+        attributes = self.metadata.get('html_attributes', {})
+        sort_key = WeightedSort if (Unicode.ns_weights or
+                                    Unicode.key_weights) else None
+
+        def Name(ns, key):
+            if ns in self.ns_map:
+                ns = '{}:'.format(self.ns_map[ns]) if self.ns_map[ns] else ''
+            else:
+                ns = '{}:'.format(ns)
+
+            return '{}{}'.format(ns, key)
+
+        def Attributes(ns, key, offsets):
+            attrs = ''
+
+            if ns in attributes and key in attributes[ns]:
+                attrs = attributes[ns][key].get(repr(offsets), None)
+
+                if attrs:
+                    id, classes, href = '', '', ''
+
+                    if ';' in attrs:
+                        attrs, href = attrs.split(';', 1)
+                        href = ' href="{}"'.format(href)
+
+                    if '.' in attrs:
+                        attrs, classes = attrs.split('.', 1)
+                        classes = ' class="{}"'.format(
+                            ' '.join(classes.split('.'))
+                        )
+
+                    if attrs and attrs[0] == '#':
+                        id = ' id="{}"'.format(attrs[1:])
+
+                    attrs = '{}{}{}'.format(key, id, classes, href)
+
+            if len(offsets) > 2:
+                start = offsets[0]
+                rel_off = [ o - start for o in offsets ]
+
+                if maxunicode == 0xFFFF:
+                    test = self[start:offsets[-1]]
+                    src = [ i for i in enumerate(test)
+                            if category(test[i]) == 'Cs' ]
+
+                    if src: # surrogate range character(s) detected...
+                        assert len(src) % 2 == 0, "lone surrogate range char"
+                        src = [ src[i] for i in range(1, len(src), 2) ]
+                        pos = count()
+                        mapped = [ next(pos) if (i not in src) else None
+                                   for i in range(len(test)) ]
+                        rel_off = [ mapped[o] for o in rel_off ]
+
+                spans = ' '.join('{:d}:{:d}'.format(rel_off[i], rel_off[i + 1])
+                                 for i in range(len(offsets), step=2))
+                attrs = '{} offsets="{}"'.format(attrs, spans)
+
+            return attrs
+
+        def GetBlock():
+            block = next(ordered_blocks)
+            return block[0][1], (
+                Element(Name(tag[0], tag[1]), Attributes(*tag),
+                        tag[2][-1] if len(tag[2]) > 1 else None)
+                for tag in sorted(block, key=sort_key)
+            )
+
+        return GetBlock
+
+    @staticmethod
+    def __blockRepr(GetBlock, block, buffer, close_tags):
+        # This is a private helper for markup representations of text.
+        for element in block:
+            e_str = Unicode.__strElement(close_tags, element)
+            buffer.write(e_str)
+
+        try:
+            return GetBlock()
+        except StopIteration:
+            return -1, None
+
+    @staticmethod
+    def __strElement(close_tags:defaultdict, elem:namedtuple) -> str:
+        # Create the opening elem string representation of *elem*, and
+        # add the closing elem to the *close_tags* defaultdict(list).
+        # This is a private helper for markup representations of text.
+        if elem.end is not None:
+            close_tags[elem.end].append('</{}>'.format(elem.name))
+            return '<{}{}>'.format(elem.name, elem.attributes)
+        else:  # empty elem
+            return '<{}{} />'.format(elem.name, elem.attributes)
+
+DEFAULT_WEIGHT = int(sqrt(maxsize))
+
+def WeightedSort(tag):
+    # This is the sort-key of elements in markup representations of text.
+    return Unicode.ns_weights.get(tag[0], DEFAULT_WEIGHT) * \
+           Unicode.key_weights.get(tag[1], DEFAULT_WEIGHT), tag
