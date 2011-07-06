@@ -145,13 +145,29 @@ def NeedsUpdate(item:(str, dict)) -> bool:
     return False
 
 
-def MakeDocuments(stream, old_revisions:dict) -> iter([dict]):
+def MakeDocuments(stream, old_revisions:dict=None) -> iter([dict]):
+    """
+    Parse MEDLINE records from an XML stream.
+
+    The resulting iterator can simply be sent to :meth:`.couch.Database.bulk`
+    to be inserted in a database. However, note that if you try to bulk load
+    too many records at once, this might be rather dangerous. A few 100s or
+    even up to about 10k records should not matter, although.
+
+    :param stream: A readable, file-like object with the raw XML containing
+        Medline Citations.
+    :param old_revisions: A dictionary of CouchDB MEDLINE documents that are
+        to be updated if found on the incoming XML stream. The dictionary's
+        keys should be the PMIDs of the document, the values the document
+        itself. Optional.
+    :return: A document iterator.
+    """
     for medline in Parse(stream):
         text = MakeUnicode(medline)
         text.metadata['medline'] = medline
         pmid = medline['PMID'][0]
 
-        if pmid in old_revisions:
+        if old_revisions and pmid in old_revisions:
             pmid = old_revisions[pmid]
 
         yield text.toDocument(pmid)
@@ -239,9 +255,6 @@ def Parse(xml_stream) -> iter([dict]):
 def ParseElement(element):
     tag = element.tag
 
-    if __debug__ and tag == 'PMID':
-        LOGGER.debug('Parse: PMID=%s', element.text)
-
     if tag.endswith('List'):
         return ParseElementList(element)
     elif tag.startswith('Date') or tag.endswith('Date'):
@@ -255,6 +268,7 @@ def ParseElement(element):
     elif tag == 'Abstract':
         return ParseAbstract(element)
     elif tag == 'PMID':
+        LOGGER.debug('parsing PMID=%s', element.text)
         return element.text.strip(), int(element.get('Version', 1))
     elif tag == 'ISSN':
         return element.get('IssnType'), element.text.strip()

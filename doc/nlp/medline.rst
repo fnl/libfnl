@@ -72,7 +72,11 @@ Records already existing in a MEDLINE CouchDB can be checked if they are ripe fo
 
 This "filtered" update mechanism can be overridden and the update can be *force*\ d for all existing records.
 
+.. warning:: Do not call this function multiple times (eg., in parallel) to speed things up. The limiting factor is NLM's eUtils service, which allow queries only every three seconds. The time needed to fetch, parse, and dump records to CouchDB is far lower than that, as only a limited number of records (about 100) can be fetched in a single request. However, this also means, the time needed to dump N records can easily be estimated to N / 33 seconds. So 100 thousand records would need, approximately, one hour. If you are in possession of the raw XML files from MEDLINE, you can instead directly parse the records to CouchDB documents via :func:`.MakeDocuments`.
+
 .. autofunction:: libfnl.nlp.medline.Dump
+
+.. autofunction:: libfnl.nlp.medline.MakeDocuments
 
 Attach -- Additional Binary text records
 ----------------------------------------
