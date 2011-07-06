@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from io import StringIO
 import os
 import unittest
@@ -164,17 +164,19 @@ class TestMedline(unittest.TestCase):
         }}
         docs = iter(MakeDocuments(self.xml_stream, revs))
         d = next(docs)
+        now = datetime.now().replace(minute=0, second=0, microsecond=0)
         self.assertTrue('medline' in d, d)
         self.assertEqual(d['medline']['PMID'][0], d['_id'])
         self.assertTrue('_rev' not in d, d)
-        self.assertEqual(date.today(), d['created'])
-        self.assertEqual(date.today(), d['modified'])
+        self.assertEqual(now, d['created'].replace(minute=0, second=0))
+        self.assertEqual(now, d['modified'].replace(minute=0, second=0))
         d = next(docs)
+        now = datetime.now().replace(minute=0, second=0, microsecond=0)
         self.assertNotEqual('gone', d['medline'])
         self.assertEqual(d['medline']['PMID'][0], d['_id'])
         self.assertEqual('maintain', d['_rev'])
         self.assertEqual('keep me', d['created'])
-        self.assertEqual(date.today(), d['modified'])
+        self.assertEqual(now, d['modified'].replace(minute=0, second=0))
         self.assertNotEqual('clear me', d['text'])
         self.assertTrue('clear' not in d['tags'])
         self.assertRaises(StopIteration, next, docs)
