@@ -7,7 +7,7 @@
 """
 from collections import defaultdict, namedtuple
 from datetime import datetime
-from hashlib import md5
+from hashlib import md5 as digest
 from io import StringIO
 from itertools import count
 from logging import getLogger
@@ -442,11 +442,9 @@ class Binary(bytes, Annotated):
     def digest(self) -> bytes:
         """
         The hash digest `bytes` of the content (read-only).
-
-        The hash digest is based on the MD5 algorithm.
         """
         if not self._digest:
-            self._digest = md5(self).digest()
+            self._digest = digest(self).digest()
 
         return self._digest
 
@@ -528,9 +526,9 @@ class Binary(bytes, Annotated):
                 doc_tags = None
 
                 if 'tags' in doc:
-                    doc_md5 = md5(doc['text'].encode('utf-8')).digest()
+                    doc_digest = digest(doc['text'].encode('utf-8')).digest()
 
-                    if doc_md5 == self.digest:
+                    if doc_digest == self.digest:
                         doc_tags = doc['tags'] # update tags
 
                         for ns, keys in tags.items():
@@ -550,6 +548,8 @@ class Binary(bytes, Annotated):
 
         doc['modified'] = datetime.now().replace(microsecond=0)
         doc['text'] = self.decode(self.encoding)
+        assert digest.__name__.endswith('md5'), digest.__name__
+        doc['MD5'] = self.base64digest
         if 'created' not in doc: doc['created'] = doc['modified']
         if '_id' not in doc: doc['_id'] = self.base64digest
         return doc
@@ -659,43 +659,6 @@ class Unicode(str, Annotated):
 
         return None
 
-    def markup(self) -> str:
-        """
-        If not tagged, return the regular string; otherwise, if tags
-        have been set, return a markup view of the string with the
-        tags transformed to proper markup elements.
-        """
-        if self._tags:
-            buffer = StringIO()
-            close_tags = defaultdict(list)
-            GetBlock = self._getElementHelper()
-            start, block = GetBlock()
-
-            for pos, char in enumerate(self):
-                if pos in close_tags:
-                    for closer in reversed(close_tags[pos]):
-                        buffer.write(closer)
-
-                if start == pos:
-                    start, block = Unicode.__blockRepr(
-                        GetBlock, block, buffer, close_tags
-                    )
-
-                buffer.write(char)
-
-            # append remaining closers and possible positional tags at the
-            # very end of the Unicode string
-            if len(self) in close_tags: # remaining closers at end
-                for closer in reversed(close_tags[len(self)]):
-                    buffer.write(closer)
-
-            if start == len(self): # remaining (single-offset) tags at end
-                Unicode.__blockRepr(GetBlock, block, buffer, close_tags)
-
-            return buffer.getvalue()
-        else:
-            return str(self)
-
     def multispan(self, offsets:tuple) -> list:
         """
         Get the text of any kind of offsets, as a `list` of strings, using the
@@ -743,6 +706,43 @@ class Unicode(str, Annotated):
         """
         binary = self.toBinary('utf-8')
         return binary.toDocument(id_or_doc)
+
+    def toMarkup(self) -> str:
+        """
+        If not tagged, return the regular string; otherwise, if tags
+        have been set, return a markup view of the string with the
+        tags transformed to proper markup elements.
+        """
+        if self._tags:
+            buffer = StringIO()
+            close_tags = defaultdict(list)
+            GetBlock = self._getElementHelper()
+            start, block = GetBlock()
+
+            for pos, char in enumerate(self):
+                if pos in close_tags:
+                    for closer in reversed(close_tags[pos]):
+                        buffer.write(closer)
+
+                if start == pos:
+                    start, block = Unicode.__blockRepr(
+                        GetBlock, block, buffer, close_tags
+                    )
+
+                buffer.write(char)
+
+            # append remaining closers and possible positional tags at the
+            # very end of the Unicode string
+            if len(self) in close_tags: # remaining closers at end
+                for closer in reversed(close_tags[len(self)]):
+                    buffer.write(closer)
+
+            if start == len(self): # remaining (single-offset) tags at end
+                Unicode.__blockRepr(GetBlock, block, buffer, close_tags)
+
+            return buffer.getvalue()
+        else:
+            return str(self)
 
     def _mapping(self, encoding:str, errors:str) -> list:
         # Return a list of integers, one for each position in the content
