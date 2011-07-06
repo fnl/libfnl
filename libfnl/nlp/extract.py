@@ -323,7 +323,7 @@ class HtmlExtractor(HTMLParser):
     Tag = namedtuple('Tag', 'name type id classes href title')
 
     @classmethod
-    def _Tag(cls, name:str, attrs:tuple, url:namedtuple) -> Tag:
+    def _Tag(cls, name:str, attrs:tuple, url:namedtuple):
         # Create a new tag.
         tag_id = ""
         classes = ""
@@ -356,15 +356,15 @@ class HtmlExtractor(HTMLParser):
     @classmethod
     def _makeHrefLink(cls, url:namedtuple, val:str) -> str:
         if val[0] == '#':
-            return ';{0.scheme}://{0.netloc}{0.path}{1}'.format(parsed, val)
+            return ';{0.scheme}://{0.netloc}{0.path}{1}'.format(url, val)
         elif val[0] == '/':
-            return ';{0.scheme}://{0.netloc}{1}'.format(parsed, val)
+            return ';{0.scheme}://{0.netloc}{1}'.format(url, val)
         elif cls.URL_LIKE.match(val):
             return ';{}'.format(val)
         else:
-            path = parsed.path.split('/')
+            path = url.path.split('/')
             path = '/'.join(path[1:-1])
-            return ';{0.scheme}://{0.netloc}/{1}/{2}'.format(parsed, path, val)
+            return ';{0.scheme}://{0.netloc}/{1}/{2}'.format(url, path, val)
 
     ##############################
     # == TAG CHECKING METHODS == #

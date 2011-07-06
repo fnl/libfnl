@@ -706,7 +706,7 @@ class Unicode(str, Annotated):
 
         :param offsets: a tuple of offsets.
         """
-        if len(offsets) % 2 == 0:
+        if not len(offsets) % 2:
             return [ self[offsets[i]:offsets[i + 1]]
                      for i in range(0, len(offsets), 2) ]
         else:
