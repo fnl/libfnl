@@ -124,7 +124,7 @@ If the file-type contains HTML markup, this markup is preserved as much as possi
 * text/html, application/xhtml (.htm, .html, .xhtml)
 * text/plain (.txt) [defaulted if not set and guessing fails]
 
-HTML text is extracted by the :class:`.HtmlExtractor`. The extractor's ``section_tags`` get set as tags in the namespace ``section``, the ``format_tags`` in the namespace ``format``. And the ``tag_attributes`` dictionary gets added as metadata, using the key ``html_attributes``.
+HTML text is extracted by the :class:`.HtmlExtractor`. The extractor's ``section_tags`` get set as tags in the namespace ``section``, the ``format_tags`` in the namespace ``format``. And the ``tag_attributes`` dictionary gets added as metadata, using the key ``attributes``, and splitting the attribute tags into their namespaces ``section`` and ``format``, as required for `nlp.text` instances.
 
 .. autofunction:: libfnl.nlp.extract.Extract
 
@@ -139,18 +139,13 @@ Converts HTML files to plain text files as close as possible to the way these fi
 
 Any section (ie., a HTML element that would separate a piece of text from another -- not just ``p``, but also things such as ``dl``, ``li``, ``h3``, or ``div``) are separated by one or two line feeds (\\n), any entity (eg., &nbsp) or character reference (eg., &#x0123) is converted to the corresponding character, while any such reference that would be invalid gets replaced by the replacement (U+FFFD) character.
 
-All the elements that can be handled by the extractor are listed in :attr:`.HtmlExtractor.TAG_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped entirely, including any elements or text they might contain.
+All the elements that can be handled by the extractor are listed in :attr:`.HtmlExtractor.ELEM_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped entirely, including any elements or text they might contain.
 
 A few elements follow special replacement procedures -- see :attr:`.HtmlExtractor.REPLACE`\ .
 
-All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or section (:attr:`.HtmlExtractor.CONTENT_BLOCK`) tags and are annotated on the resulting string with offsets. Inline and content block elements are converted to text tags (as ``{str(<tag name>): [tuple(<offsets>), ...]}`` dictinaries), available from the attributes ``format_tags`` and ``section_tags``, respectively, **after** the HTMLs extracted :attr:`.HtmlExtractor.string` has been fetched the first time. Some of the attributes are preserved, too, in a separate dictionary ``tag_attributes``, set as an attribute on the extractor instance after fetching the :attr:`.HtmlExtractor.string` -- see :class:`.HtmlExtractor.Tag`\ .
+All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or section (:attr:`.HtmlExtractor.CONTENT`) tags and are annotated on the resulting string with offsets. Inline and content block elements are converted to text tags (as ``{str(<tag name>): [tuple(<offsets>), ...]}`` dictinaries), available from the attributes ``format_tags`` and ``section_tags``, respectively, **after** the HTMLs extracted :attr:`.HtmlExtractor.string` has been fetched the first time. Most of the attributes are preserved, too, in a separate dictionary ``tag_attributes``, set as an attribute on the extractor instance after fetching the :attr:`.HtmlExtractor.string` -- see :class:`.HtmlExtractor.Tag`\ .
 
-The parser should be initialized, then the HTML :meth:`.feed` sent to it,
-which has to be :meth:`.HtmlExtractor.close`\ d if has been fed in several rounds.
-Now, the :attr:`.HtmlExtractor.string` of the extracted content can be fetched, whence
-the two tag dictionaries will become available as :attr:`.HtmlExtractor.format_tags` and
-:attr:`.HtmlExtractor.section_tags`. To reuse the same instance, call :meth:`.HtmlExtractor.reset`
-before feeding new content. An example:
+The parser should be initialized, then the HTML :meth:`.feed` sent to it, which has to be :meth:`.HtmlExtractor.close`\ d if has been fed in several rounds. Now, the :attr:`.HtmlExtractor.string` of the extracted content can be fetched, whence the two tag dictionaries will become available as :attr:`.HtmlExtractor.format_tags` and :attr:`.HtmlExtractor.section_tags`. To reuse the same instance, call :meth:`.HtmlExtractor.reset` before feeding new content. An example:
 
 >>> from libfnl.nlp.extract import HtmlExtractor
 >>> html = HtmlExtractor()
@@ -167,40 +162,36 @@ before feeding new content. An example:
 >>> html.close()
 >>> html.string
 'meta: content\\n\\nThis is the text\\nof this weird\u00a0document.\\n\\n'
->>> html.section_tags['div#div.a.b']
+>>> html.section_tags['div']
 [(15, 55)]
 >>> print(html.string[15:55]) # &nbsp in div is represented as U+00A0
 This is the text
 of this weird\u00a0document.
 >>> list(sorted(html.section_tags.keys()))
-['body', 'div#div.a.b', 'head']
+['body', 'divb', 'head']
 >>> html.format_tags
 {'strong': [(27, 31)]}
+>>> html.tag_attributes
+{}
 >>> len(html.string) == html.section_tags['body'][-1][1]
 True
 
 .. autoclass:: libfnl.nlp.extract.HtmlExtractor
-    :members: feed, reset, close, string, TAG_INDEX, MINOR_CONTENT, CONTENT_BLOCK, INLINE, REPLACE, IGNORE
+    :members: feed, reset, close, string, TAG_INDEX, MINOR_CONTENT, CONTENT, INLINE, REPLACE, IGNORE
 
 .. py:class:: libfnl.nlp.extract.HtmlExtractor.Tag
 
     Text annotation tag keys are simply the elements' name.
 
-    The following attributes are preserved in ``tag_attributes``. This is a dictionary of the form::
+    The element attributes are preserved in ``tag_attributes``. This is a dictionary of the form::
 
-        {   '<tag name>': { '(<start>, <end>)': '<attributes>' } }
+        {   '<tag name>': { '(<start>, <end>)': <attributes> } }
 
-     Note that the **representation** (ie., a string) of the offsets tuple is used as dictionary key, not the tuple itself, to ensure it can be serialized to JSON. The attributes string is concatenated from, and this order, these attributes (and only if set on the element):
-
-    * The ``id``, appended as ``#<id>`` to the string.
-    * The actual ``class`` values get appended as ``.<class>`` strings (eg., ``class="class1 class2 class3"`` gets appended as ``.class1.class2.class3``.
-    * The ``href`` values get appended as ``;<href>`` **if** an URL is supplied to the :meth:`.feed` call **or** the document has a *base* element in the header with a ``href`` URL attribute. Note that the reference stored will always be an absolute URL, even if the original attribute was a partial URL, by using the supplied URL or href attribute in *base*.
+     Note that the **representation** (ie., a string) of the offsets tuple is used as dictionary key, not the tuple itself, to ensure it can be serialized to JSON. The attributes dictionary contains most attributes except those listed in :class:`HtmlExtractor.SKIPPED_ATTRIBUTES` as well as ``alt`` and ``title``, which are integrated into the extracted text. The ``href`` values get joined as absolute URLs **if** an absolute URL is supplied to the :meth:`.feed` call **or** the document has a *base* element in the header with an absolute ``href`` URL attribute.
 
     Should it happen that a tag with the same name has the exact same offset as another, eg., ``<div id=1><div id=2>bla</div></div>``, only the attributes on the inner element (here, ``#2``) are preserved.
 
-    In addition, if set, the ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the **text** (ie., not the ``tag_attributes``\ !) content of that element.
-
-    Any other attributes not mentioned are dropped.
+    In addition, if set, the ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the **text** (ie., not the ``tag_attributes``\ !) content of that element, and ``alt`` values relplace ``img`` and ``area`` tags. Furthermore, if the ``alt`` value maps extactly to the latin written form of a greek letter (alpha, beta, gamma, ...), the actual greek letter is used, upper-cased if the written form is capitalized, and lower-cased otherwise.
 
     For general information on text annotation and tags, see :mod:`libfnl.nlp.text`.
 
