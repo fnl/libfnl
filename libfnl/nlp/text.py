@@ -5,18 +5,21 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+import re
+from cgi import escape
 from collections import defaultdict, namedtuple
 from datetime import datetime
 from hashlib import md5 as digest
 from io import StringIO
 from itertools import count
+from libfnl.couch.broker import Document
+from libfnl.couch.serializer import b64encode
 from logging import getLogger
 from math import sqrt
 from sys import maxsize, maxunicode
-from unicodedata import category
-from libfnl.couch.broker import Document
-from libfnl.couch.serializer import b64encode
 from types import FunctionType
+from unicodedata import category
+from urllib.parse import quote
 
 class Annotated:
     """
@@ -36,11 +39,12 @@ class Annotated:
         raise NotImplementedError('abstract')
 
     @staticmethod
-    def sorted(offset_list:list) -> list:
+    def sorted(offsets:set, block:bool=False) -> list:
         """
-        Return a sorted iterator over a *list of offsets*.
+        Return a sorted iterator over the *offsets* (a `set` or iterable of
+        offsets).
 
-        The offsets are sorted by the values of their offsets. Offset sorting
+        The offsets are sorted by their positional values. Offset sorting
         is in order of the offset's start (lowest first), end (last offset
         value, highest first), and then the rest of the offset values. For
         example:
@@ -54,13 +58,80 @@ class Annotated:
             >>> offsets = [(1, 2, 3, 5), (1, 2), (1, 5), (2,), (1, 2, 4, 5)]
             >>> list(Annotated.sorted(offsets))
             [(1, 5), (1, 2, 3, 5), (1, 2, 4, 5), (1, 2), (2,)]
+
+        :param block: If ``True``, the offsets are faster sorted only by their
+            lowest first and highest last element (ie., not regarding
+            other positional values an offset might have, as above).
+
+        .. doctest::
+
+            >>> # Example including an overlapping tag pair: (1, 2), (2, 3)
+            >>> offsets = [(1, 5), (1, 2), (2, 3), (1, 2, 3, 4)]
+            >>> list(Annotated.sorted(offsets, True))
+            [(1, 5), (1, 2, 3, 4), (1, 2), (2, 3)]
         """
-        return sorted(offset_list, key=lambda k: (k[0], k[-1] * -1, k))
+        if block:
+            return sorted(offsets, key=lambda k: (k[0], k[-1] * -1))
+        else:
+            return sorted(offsets, key=lambda k: (k[0], k[-1] * -1, k))
 
     @staticmethod
     def fromDocument(doc:dict):
         # Convert CouchDB documents to text.
         raise NotImplementedError('abstract')
+
+    @staticmethod
+    def attrOffset(offset:str) -> tuple:
+        """
+        Convert a string representation of an offset for the attributes
+        dictionary to a real tuple.
+
+        :param offset: A offset representation, eg., ``"(1, 2)"``.
+        :return: The real `tuple`, eg., ``(1, 2)``.
+        """
+        return tuple(int(i) for i in offset[1:-1].split(','))
+
+    @property
+    def attributes(self) -> dict:
+        """
+        Get the dictionary of ``metadata['attributes']`` or ``None``.
+        """
+        if 'attributes' not in self.metadata:
+            return None
+
+        attr_dict = dict(self.metadata['attributes'])
+
+        for ns, keys in attr_dict.items():
+            keys_dict = {}
+
+            for k, offsets in keys.items():
+                offsets_dict = {}
+
+                for o, attrs in offsets.items():
+                    if isinstance(o, str):
+                        offsets_dict[Annotated.attrOffset(o)] = attrs
+                    else:
+                        offsets_dict[o] = attrs
+
+                keys_dict[k] = offsets_dict
+
+            attr_dict[ns] = keys_dict
+
+        return attr_dict
+
+    @attributes.setter
+    def attributes(self, attributes:dict):
+        """
+        Set or replace the entire attributes dictionary.
+        """
+        for keys in attributes.values():
+            for offsets in keys.values():
+                for o, attrs in offsets.items():
+                    if isinstance(o, tuple):
+                        offsets[repr(o)] = attrs
+                        del offsets[o]
+
+        self.metadata['attributes'] = attributes
 
     @property
     def tags(self) -> dict:
@@ -77,7 +148,48 @@ class Annotated:
         """
         self._tags = Annotated._copyTags(tags)
 
-    def addTag(self, namespace:str, key:str, offsets:tuple):
+    def addAttributes(self, namespace:str, key:str, offset:tuple, attrs:dict):
+        """
+        Add an *attrs* dictionary for the given tag, saved in the
+        :attr:`metadata` key ``attributes``, overwriting any that might exist
+        there.
+        """
+        if 'attributes' not in self.metadata:
+            self.metadata['attributes'] = {
+                namespace: { key: { repr(offset): attrs } }
+            }
+        else:
+            attributes = self.metadata['attributes']
+
+            if namespace not in attributes:
+                ns = attributes['namespace'] = {}
+            else:
+                ns = attributes['namespace']
+
+            if key not in ns:
+                k = ns[key] = {}
+            else:
+                k = ns[key]
+
+            k[repr(offset)] = attrs
+
+    def addOffsets(self, namespace:str, key:str, offsets:set):
+        """
+        Overwrite any *offsets* stored in *namespace*, *key* with this new
+        `set` (or iterable).
+
+        If the *namespace* or *key* do not exist, they are created.
+
+        .. note::
+
+            No safety checks are made to ensure the offsets are conforming to
+            the specification. It is the sole responsibility of the user
+            to ensure the tags thus set are correct.
+        """
+        if namespace not in self._tags: self._tags[namespace] = {}
+        self._tags[namespace][key] = set(offsets)
+
+    def addTag(self, namespace:str, key:str, offset:tuple):
         """
         Add a new tag.
 
@@ -86,50 +198,34 @@ class Annotated:
 
         The *namespace* and *key* may not be ``None`` or the empty string.
 
-        The *offsets* may not be ``None`` or an empty tuple.
+        The *offset* may not be ``None`` or an empty tuple.
 
         :param namespace: The namespace this tag belongs to.
         :param key: The identifier for that tag in the given namespace.
-        :param offsets: The position of this tag; either a single offset value
+        :param offset: The position of this tag; either a single position
             for tags pointing to just one location in the content, or paired
-            integers in increasing order indicating the offsets (start, end) of
-            one or more spans (ie., each offset must be larger than its former).
+            integers in increasing order indicating the offset (start, end) of
+            one or more spans (ie., each value must be larger than its former).
         :raise AssertionError: If the input is malformed.
         """
         # assert all elements are given and not empty
         assert namespace, "namespace missing"
         assert key, "key missing"
-        assert offsets, "offsets missing"
+        assert offset, "offset missing"
         tags = self._getTags(namespace, key)
-        # assertions that the offsets are well-formed
-        assert offsets[0] >= 0 and offsets[-1] <= len(self), \
-            "offsets {} invalid (max: {})".format(offsets, len(self))
+        # assertions that the offset are well-formed
+        assert offset[0] >= 0 and offset[-1] <= len(self), \
+            "offset {} invalid (max: {})".format(offset, len(self))
 
-        if len(offsets) > 1:
-            assert len(offsets) % 2 == 0, \
-                "odd number of offsets: {}".format(offsets)
-            assert all(offsets[i-1] < offsets[i]
-                       for i in range(1, len(offsets))), \
-                "offsets {} not successive".format(offsets)
+        if len(offset) > 1:
+            assert len(offset) % 2 == 0, \
+                "odd number of positions: {}".format(offset)
+            assert all(offset[i-1] < offset[i]
+                       for i in range(1, len(offset))), \
+                "offset positions {} not successive".format(offset)
 
         # all ok, append the tag
-        tags.append(tuple(offsets))
-
-    def addOffsets(self, namespace:str, key:str, offset_list:list):
-        """
-        Overwrite any offsets stored in *namespace*, *key* with this new
-        *offset_list*.
-
-        If the *namespace* or *key* do not exist, they are created.
-
-        .. note::
-
-            No safety checks are made to ensure the tags are conforming to
-            the specification. It is the sole responsibility of the user
-            to ensure the tags thus set are correct.
-        """
-        if namespace not in self._tags: self._tags[namespace] = {}
-        self._tags[namespace][key] = list(offset_list)
+        tags.append(tuple(offset))
 
     def delNamespace(self, namespace:str):
         """
@@ -151,63 +247,63 @@ class Annotated:
         # also clean up the namespace if empty
         if not self._tags[namespace]: del self._tags[namespace]
 
-    def delOffset(self, namespace:str, key:str, offsets:tuple):
+    def delOffset(self, namespace:str, key:str, offset:tuple):
         """
-        Delete a *offsets* `tuple` in the *namespace* of *key*.
+        Delete a *offset* `tuple` in the *namespace* of *key*.
 
         Also deletes the *key* it it happens to be empty after that, as well
         as the *namespace*, if empty, too.
 
         :raise KeyError: If the *namespace* or *key* doesn't exist.
-        :raise ValueError: If a tag at those *offsets* doesn't exist.
+        :raise ValueError: If a tag at those *offset* doesn't exist.
         """
         ns = self._tags[namespace]
-        ns[key].remove(offsets)
+        ns[key].remove(offset)
 
         # also clean up the key and namespace if empty
         if not ns[key]:
             del ns[key]
             if not ns: del self._tags[namespace]
 
-    def iterTags(self, ordered:bool=False, block:bool=False) -> iter([tuple]):
+    def iterTags(self, sort:bool=False, block:bool=False) -> iter([tuple]):
         """
-        Yield each tag as a ``(namespace, key, offsets)`` tuple.
+        Yield each tag as a ``(namespace, key, offset)`` tuple.
 
-        :param ordered: Yield the tuples in order of the offset values **over
+        :param sort: Yield the tuples in order of the offset values **over
             all namespaces**. See :meth:`.Annotated.sorted` for offset order.
-        :param block: If *ordered* is ``True``, all tags with the same start
-            and end (``offset[-1]``) can be emitted at once -- then, the
+        :param block: If *sort* is ``True``, all tags with the same start
+            and end (``offset[-1]``) can be emitted as one block -- then, the
             iterator returns lists of tag tuples instead of the individual
-            tuples; the tuples inside each list will also be in sort order.
+            tuples; the tuples inside each list will only be in coarse *block*
+            sort order, not the fine-grained `sorted` order.
         """
-        if ordered:
+        if sort:
             all_tags = defaultdict(list)
             rng = (None, None)
             grp = None
 
             for ns, keys in self._tags.items():
-                for key, offset_list in keys.items():
-                    for offset in offset_list:
-                        all_tags[offset].append((ns, key, offset))
+                for key, offsets in keys.items():
+                    for o in offsets:
+                        all_tags[o].append((ns, key, o))
 
-            for offset in Annotated.sorted(all_tags.keys()):
-                if block:
-                    if rng[0] == offset[0] and rng[1] == offset[-1]:
-                        grp.extend(all_tags[offset])
-                        continue
-                    elif grp:
-                        yield grp
-
-                    grp = all_tags[offset]
-                    rng = (offset[0], offset[-1])
-                else:
-                    for item in all_tags[offset]:
+            if block:
+                for o in Annotated.sorted(all_tags.keys(), block):
+                    if rng[0] == o[0] and rng[1] == o[-1]:
+                        grp.extend(all_tags[o])
+                    else:
+                        if grp: yield grp
+                        grp = all_tags[o]
+                        rng = (o[0], o[-1])
+            else:
+                for o in Annotated.sorted(all_tags.keys()):
+                    for item in all_tags[o]:
                         yield item
         else:
             for ns, keys in self._tags.items():
-                for key, offset_list in keys.items():
-                    for offsets in offset_list:
-                        yield ns, key, offsets
+                for key, offsets in keys.items():
+                    for o in offsets:
+                        yield ns, key, o
 
     def namespaces(self) -> iter([str]):
         """
@@ -223,9 +319,9 @@ class Annotated:
         """
         return self._tags[namespace].keys()
 
-    def offsets(self, namespace:str, key:str, sort:bool=False) -> list:
+    def offsets(self, namespace:str, key:str, sort:bool=False) -> set:
         """
-        Get a list of all tag offsets (integer tuples) in a *namespace* and for
+        Get a `set` of all tag offsets (integer tuples) in a *namespace* and for
         a *key*.
 
         :param sort: If ``True``, return an iterator that yields the offsets
@@ -235,15 +331,15 @@ class Annotated:
         if sort:
             extract = Annotated.sorted
         else:
-            extract = list
+            extract = set
 
         return extract(self._tags[namespace][key])
 
     def slice(self, start:int=None, end:int=None):
         """
         Return the requested text slice of this instance as as a new text class
-        instance and with the tags and their offsets correctly added (if there
-        are any in that particular slice).
+        instance and with the tags and their changed offsets correctly added
+        (if there are any in that particular slice).
 
         At least either the *start* or the *end* must be specified. The *end*
         can be a negative integer, just as in ``seq[:-10]``, while only
@@ -275,11 +371,11 @@ class Annotated:
             ns_dict = dict()
 
             for key, offsets in keys.items():
-                key_dict = defaultdict(list)
+                key_dict = defaultdict(set)
 
                 for o in offsets:
                     if o[0] >= start and o[-1] <= end:
-                        key_dict[key].append(tuple(i - start for i in o))
+                        key_dict[key].add(tuple(i - start for i in o))
 
                 if key_dict:
                     ns_dict[key] = dict(key_dict)
@@ -295,32 +391,14 @@ class Annotated:
         text._tags = tags
         return text
 
-    def sort(self, namespace:str=None, key:str=None):
-        """
-        Order any tags' offset lists, in place, and according to
-        :meth:`.sorted`.
-
-        :param namespace: The *namespace* to sort or all if ``None``.
-        :param key: The *key* to sort or all if ``None``.
-        :raise KeyError: If the given *namespace* or *key* doesn't exist.
-        """
-        ns_iter = (namespace,) if namespace else self._tags.keys()
-
-        for ns in ns_iter:
-            ns_dict = self._tags[ns]
-            key_iter = (key,) if key else ns_dict.keys()
-
-            for k in key_iter:
-                ns_dict[k] = list(Annotated.sorted(ns_dict[k]))
-
     def toDocument(self, id_or_doc=None) -> Document:
         # Convert instance to a CouchDB document.
         raise NotImplementedError('abstract')
 
     @staticmethod
-    def _copyTags(tags, Offsets=list) -> dict:
+    def _copyTags(tags, Offsets=set) -> dict:
         # Make a 'deep copy' of the *tags*.
-        # *Offsets* can be any function to copy the list of offsets (tuples).
+        # *Offsets* can be any function to copy the set of offsets.
         repack = lambda keys: { k: Offsets(o) for k, o in keys.items() }
         return { ns: repack(keys) for ns, keys in tags.items() }
 
@@ -335,7 +413,7 @@ class Annotated:
         if key in ns:
             tags = ns[key]
         else:
-            tags = list()
+            tags = set()
             ns[key] = tags
 
         return tags
@@ -405,16 +483,7 @@ class Binary(bytes, Annotated):
 
         if 'tags' in doc:
             if isinstance(doc['tags'], dict):
-                text_len = len(text)
                 text.tags = doc['tags']
-
-                # cast offset values from lists to immutable tuples
-                for keys in text._tags.values():
-                    for offsets in keys.values():
-                        for i in range(len(offsets)):
-                            assert offsets[i][-1] <= text_len, \
-                                'out of range offsets: {}'.format(offsets[i])
-                            offsets[i] = tuple(offsets[i])
 
             del text.metadata['tags']
 
@@ -566,21 +635,21 @@ class Binary(bytes, Annotated):
         text = Unicode(self.decode(self._encoding, errors))
 
         if self._tags:
-            mapper = lambda offsets: [ tuple( self._strpos(pos, errors)
-                                              for pos in o ) for o in offsets]
+            mapper = lambda offsets: { tuple( self._strpos(pos, errors)
+                                              for pos in o ) for o in offsets }
             text._tags = Annotated._copyTags(self._tags, mapper)
 
         text.metadata = dict(self.metadata)
         return text
 
-    def _strpos(self, offset:int, errors:str) -> int:
-        # Return the offset of that (bytes) *offset* in a decoded string.
-        if offset not in self._str_alignment:
-            self._str_alignment[offset] = len(
-                self[:offset].decode(self._encoding, errors)
+    def _strpos(self, pos:int, errors:str) -> int:
+        # Return the (str) pos of that (bytes) *pos* in a decoded string.
+        if pos not in self._str_alignment:
+            self._str_alignment[pos] = len(
+                self[:pos].decode(self._encoding, errors)
             )
 
-        return self._str_alignment[offset]
+        return self._str_alignment[pos]
 
 
 class Unicode(str, Annotated):
@@ -627,20 +696,22 @@ class Unicode(str, Annotated):
         text = Binary.fromDocument(doc)
         return text.toUnicode()
 
-    def firstPartiallyOverlappingTags(self) -> list:
+    def firstOverlappingTagPair(self) -> list:
         """
-        Return a list of two ``(namespace, key, start, end)`` tuples of
-        the first two tags that were found to partially overlap, or ``None``
-        if no tag **partially** overlaps with any other.
+        Return a list of two ``(namespace, key, start, end)`` tuples.
 
-        Very simplified, this detects tag overlaps such as this one:
+        These are the first two tags that were found to overlap. Return ``None``
+        if no tag overlaps with any other.
+
+        Very simplified, this detects situations such as the following one,
+        leading to invalid markup:
 
             <tag1>text..<tag2>text...</tag1>text...</tag2>
         """
         state = [] # stores the last tags iterated
 
         # iterate over the tags, ordered by lowest start and then highest end
-        for tag in self.iterTags(True):
+        for tag in self.iterTags(True, True):
             current = (tag[0], tag[1], tag[2][0], tag[2][-1])
             # pop tags where the end is before or at the current tag's start
             while state and state[-1][3] <= current[2]: state.pop()
@@ -659,19 +730,19 @@ class Unicode(str, Annotated):
 
         return None
 
-    def multispan(self, offsets:tuple) -> list:
+    def multispan(self, offset:tuple) -> list:
         """
-        Get the text of any kind of offsets, as a `list` of strings, using the
+        Get the text of any kind of offset, as a `list` of strings, using the
         integer values of each pair in the key as start and end positions.
 
         The empty tag with a single offset value will return a list with a
         single empty string. An empty tuple would return an empty list.
 
-        :param offsets: a tuple of offsets.
+        :param offset: a tuple of integers.
         """
-        if not len(offsets) % 2:
-            return [ self[offsets[i]:offsets[i + 1]]
-                     for i in range(0, len(offsets), 2) ]
+        if not len(offset) % 2:
+            return [ self[offset[i]:offset[i + 1]]
+                     for i in range(0, len(offset), 2) ]
         else:
             return [ '' ]
 
@@ -687,8 +758,8 @@ class Unicode(str, Annotated):
 
         if self._tags:
             alignment = self._mapping(encoding, errors)
-            mapper = lambda offsets: [ tuple( alignment[pos] for pos in o )
-                                       for o in offsets ]
+            mapper = lambda offsets: { tuple( alignment[pos] for pos in o )
+                                       for o in offsets }
             text._tags = Annotated._copyTags(self._tags, mapper)
 
         text.metadata = dict(self.metadata)
@@ -712,6 +783,12 @@ class Unicode(str, Annotated):
         If not tagged, return the regular string; otherwise, if tags
         have been set, return a markup view of the string with the
         tags transformed to proper markup elements.
+
+        .. note::
+
+            It is well advised to check for any overlapping tags by calling
+            :meth:`.firstOverlappingTagPair` to check for such situations
+            before using this transformation.
         """
         if self._tags:
             buffer = StringIO()
@@ -779,66 +856,70 @@ class Unicode(str, Annotated):
         # This is a helper for markup representations of text.
         Element = namedtuple("Element", "name attributes end")
         ordered_blocks = self.iterTags(True, True)
-        attributes = self.metadata.get('html_attributes', {})
+        attributes = self.metadata.get('attributes', {})
         sort_key = WeightedSort if (Unicode.ns_weights or
                                     Unicode.key_weights) else None
+        NAME = re.compile(r'[:\w][:\-\.\w]*')
+
+        def Check(name):
+            # Ensure names are (of elements and attributes) are valid
+            if not NAME.match(name):
+                raise ValueError('invalid name "{}"'.format(name))
 
         def Name(ns, key):
+            # Create the element's name (Element.name)
             if ns in self.ns_map:
                 ns = '{}:'.format(self.ns_map[ns]) if self.ns_map[ns] else ''
             else:
                 ns = '{}:'.format(ns)
 
-            return '{}{}'.format(ns, key)
+            return Check('{}{}'.format(ns, key))
 
-        def Attributes(ns, key, offsets):
+        def NarrowPython(offset, rel_off, start):
+            # Correct offset values on narrow python builds for SMP characters
+            test = self[start:offset[-1]]
+            src = [i for i in enumerate(test)
+                   if category(test[i]) == 'Cs']
+
+            if src: # surrogate range character(s) detected...
+                assert len(src) % 2 == 0, "lone surrogate range char"
+                src = [src[i] for i in range(1, len(src), 2)]
+                pos = count()
+                mapped = [next(pos) if (i not in src) else None
+                          for i in range(len(test))]
+                rel_off = [mapped[o] for o in rel_off]
+
+            return rel_off
+
+        def Attributes(ns, key, offset):
+            # Create an 'attribute string' for a tag (Element.attributes)
             attrs = ''
 
             if ns in attributes and key in attributes[ns]:
-                attrs = attributes[ns][key].get(repr(offsets), None)
+                attrs = attributes[ns][key].get(repr(offset), None)
 
                 if attrs:
-                    id, classes, href = '', '', ''
+                    clean = lambda string: quote(escape(string, True),
+                                                 " !#$'()*+,/:;=?@[/]^`{|}~")
+                    attrs = ' '.join('{}="{}"'.format(Check(name), clean(value))
+                                     for name, value in attrs.items())
 
-                    if ';' in attrs:
-                        attrs, href = attrs.split(';', 1)
-                        href = ' href="{}"'.format(href)
-
-                    if '.' in attrs:
-                        attrs, classes = attrs.split('.', 1)
-                        classes = ' class="{}"'.format(
-                            ' '.join(classes.split('.'))
-                        )
-
-                    if attrs and attrs[0] == '#':
-                        id = ' id="{}"'.format(attrs[1:])
-
-                    attrs = '{}{}{}'.format(key, id, classes, href)
-
-            if len(offsets) > 2:
-                start = offsets[0]
-                rel_off = [ o - start for o in offsets ]
+            if len(offset) > 2:
+                start = offset[0]
+                rel_off = [ o - start for o in offset ]
 
                 if maxunicode == 0xFFFF:
-                    test = self[start:offsets[-1]]
-                    src = [ i for i in enumerate(test)
-                            if category(test[i]) == 'Cs' ]
-
-                    if src: # surrogate range character(s) detected...
-                        assert len(src) % 2 == 0, "lone surrogate range char"
-                        src = [ src[i] for i in range(1, len(src), 2) ]
-                        pos = count()
-                        mapped = [ next(pos) if (i not in src) else None
-                                   for i in range(len(test)) ]
-                        rel_off = [ mapped[o] for o in rel_off ]
+                    rel_off = NarrowPython(offset, rel_off, start)
 
                 spans = ' '.join('{:d}:{:d}'.format(rel_off[i], rel_off[i + 1])
-                                 for i in range(len(offsets), step=2))
+                                 for i in range(len(offset), step=2))
                 attrs = '{} offsets="{}"'.format(attrs, spans)
 
             return attrs
 
         def GetBlock():
+            # Return the start of the next block of elements and an iterator
+            # over the Element tuples at that position
             block = next(ordered_blocks)
             return block[0][1], (
                 Element(Name(tag[0], tag[1]), Attributes(*tag),
