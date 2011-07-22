@@ -5,9 +5,8 @@
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
-from collections import defaultdict
-from libfnl.nlp.text import Unicode
 from io import StringIO
+from libfnl.nlp.text import Text
 from types import FunctionType
 from unicodedata import category
 
@@ -441,32 +440,28 @@ class Tokenizer:
         """
         self.namespace = namespace
 
-    def tag(self, text:Unicode, metamorph:str="morphology"):
+    def tag(self, text:Text, metamorph:str="morphology") -> dict:
         """
         Tag the given :class:`.Unicode` *text* with tokens and store them
         in the defined `namespace` and `key`. The morphology of each token,
         in the order they appear in the text, is stored in the ``metadata``
         dictionary of the *text*, using *metamorph* as key.
 
-        .. warning::
-
-            Any existing tags in the defined :attr:`namespace` and
-            :attr:`key` on the *text* will be erased.
-
         :param text: The text to tag.
-        :param metamorph: The key to store the list of morphology strings in
-            the :attr:`Annotated.metadata` dictionary of the text.
+        :param metamorph: The key name for the morphology strings in the
+            attribute dictionaries of the tags.
+        :return: A dictionary of ``{tag: attrs}`` values that can be added or
+            set on the text.
         """
         assert len(text), "empty text"
-        tokens = defaultdict(list)
-        morphology = []
+        tokens = dict()
         start = 0
         cats = None
         last_cat = None
         State = lambda c: False
         findState = self._findState
 
-        for end, cat in CharIter(text):
+        for end, cat in enumerate(CategoryIter(text)):
             if State(cat):
                 if not cats:
                     cats = StringIO()
@@ -475,9 +470,9 @@ class Tokenizer:
                 cats.write(chr(cat))
             else:
                 if end:
-                    tokens[State.__name__].append((start, end))
-                    if not cats: morphology.append(last_cat)
-                    else: morphology.append(cats.getvalue())
+                    tag = (NAMESPACE, State.__name__, (start, end))
+                    last_cat = cats.getvalue() if cats else last_cat
+                    tokens[tag] = {metamorph: last_cat}
 
                 cats = None
                 start = end
@@ -485,12 +480,11 @@ class Tokenizer:
                 last_cat = chr(cat)
 
         if cats or last_cat:
-            tokens[State.__name__].append((start, len(text)))
-            if not cats: morphology.append(last_cat)
-            else: morphology.append(cats.getvalue())
+            tag = (NAMESPACE, State.__name__, (start, len(text)))
+            last_cat = cats.getvalue() if cats else last_cat
+            tokens[tag] = {metamorph: last_cat}
 
-        text._tags[self.namespace] = dict(tokens)
-        text.metadata[metamorph] = morphology
+        return tokens
 
     @staticmethod
     def _findState(cat:int) -> FunctionType:
@@ -584,28 +578,13 @@ class AlnumTokenizer(Tokenizer):
             raise RuntimeError("no tests for cat='%s'" % chr(cat))
 
 
-def CharIter(text:str) -> iter([(int, int)]):
+def CategoryIter(text:Text) -> iter:
     """
     Yields (offset, category) pairs for any *text* string, one per (real -
     wrt. surrogate pairs) character in the *text*.
     """
-    pos = 0
-    strlen = len(text)
-
-    while pos < strlen:
-        cat = GetCharCategoryValue(text[pos])
-        char_len = 1
-
-        if cat == Category.Cs and pos + 1 < strlen:
-            try:
-                cat = GetSurrogateCategoryValue(text[pos:pos + 2])
-                char_len = 2
-            except TypeError:
-                pass
-
-        yield pos, cat
-        pos += char_len
-
+    for char in text.string:
+        yield GetCharCategoryValue(char)
 
 def GetCharCategoryValue(character:chr) -> int:
     """
@@ -622,22 +601,6 @@ def GetCharCategoryValue(character:chr) -> int:
             else:                  return Category.LG
     elif cat in REMAPPED_CHARACTERS and character in REMAPPED_CHARACTERS[cat]:
         cat = REMAPPED_CHARACTERS[cat][character]
-
-    return cat
-
-
-def GetSurrogateCategoryValue(surrogate_pair:str) -> int:
-    """
-    Return the (remapped) category value of a *surrogate pair*.
-
-    :raises: TypeError If the *surrogate pair* can not be mapped by
-                       :func:`unicodedata.category`
-    """
-    cat = CATEGORY_MAP[category(surrogate_pair)]
-
-    if cat in REMAPPED_CHARACTERS and \
-       surrogate_pair in REMAPPED_CHARACTERS[cat]:
-        cat = REMAPPED_CHARACTERS[cat][surrogate_pair]
 
     return cat
 

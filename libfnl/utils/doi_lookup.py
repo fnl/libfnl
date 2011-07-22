@@ -12,7 +12,7 @@ from urllib.request import urlopen
 
 LOGGER = getLogger('doi_lookup')
 
-def lookup(credentials:str, **keys:{str: str}) -> {str, str}:
+def Lookup(credentials:str, **keys:{str: str}) -> {str, str}:
     """
     Lookup DOI of articles in journals or conference proceedings, as well
     as the DOIs for books.
@@ -93,3 +93,4 @@ def lookup(credentials:str, **keys:{str: str}) -> {str, str}:
     response = urlopen(url)
     result = response.read()
     return dict(zip(fields, unquote_plus(result).split('|')))
+

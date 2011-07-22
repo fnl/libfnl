@@ -8,14 +8,14 @@
 
 __version__ = (0, 0, 1) # MAJOR, MINOR, RELEASE
 
-def _PyEncoding() -> str:
+def _UTF16() -> bool:
     from sys import maxunicode
-    if maxunicode == 0xFFFF: return 'utf-16'
-    elif maxunicode == 0x10FFFF: return 'utf-32'
+    if maxunicode == 0xFFFF: return True
+    elif maxunicode == 0x10FFFF: return False
     else: raise RuntimeError('Python\'s Unicode encoding unknown')
 
-Py_ENCODING = _PyEncoding()
+PyUTF16 = _UTF16()
 """
 The **real** encoding of "Python Unicode" strings given the build used (and
-ignoring the UCS-2 vs. UTF-16 issue).
+ignoring the UCS-2 vs. UTF-16 issue...).
 """

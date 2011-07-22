@@ -8,7 +8,7 @@ A simple usage example:
 
 >>> from libfnl.nlp.medline import Fetch, Parse
 >>> for record in Parse(Fetch((11700088, 11748933))):
-...     print("PMID", record["_id"], "Title:", record["Article"]["ArticleTitle"])
+...     print("PMID", record["PMID"][0], "Title:", record["Article"]["ArticleTitle"])
 PMID 11700088 Title: Proton MRI of (13)C distribution by J and chemical shift editing.
 PMID 11748933 Title: Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).
 
@@ -86,18 +86,48 @@ The file names must consist of the PMID and the proper file-type extension, eg.,
 
 The created documents are provided with a field ``pmids``, to list the MEDLINE records they map to (as it is possible for the same PMID to have several articles, and vice versa). A DB map view then should be installed to find the reverse mapping::
 
-    { "map":
-        "function(rec) {
-            if (rec.pmids) {
-                for (var i in rec.pmids) {
-                    emit(rec.pmids[i])
-                }
-            }
-        }"
+    function(doc) {
+      if (doc.pmids) {
+        for (var i in doc.pmids) {
+           emit(doc.pmids[i]);
+        }
+      }
     }
 
 The extraction is handled by :func:`.nlp.extract.Extract` and therefore file formats must conform to one of the formats this function can handle and be distinguishable by the file's extension.
 
 .. autofunction:: libfnl.nlp.medline.Attach
 
+================================================
+Appendix: Useful Functions for a MEDLINE CouchDB
+================================================
 
+medline/article_ids
+-------------------
+
+Map alternate ``ArticleIds`` of MEDLINE records as ``[type, id]`` keys, eg.,
+``["doi", "10.1002/gcc.10321"]``::
+
+    function(doc) {
+      if (doc.medline) {
+        if ('ArticleIds' in doc.medline) {
+          article_ids = doc.medline['ArticleIds'];
+          for (id in article_ids) {
+            emit([id, article_ids[id]]);
+          }
+        }
+      }
+    }
+
+fulltext/pmids
+--------------
+
+Map the PMIDs stored in attached articles::
+
+    function(doc) {
+      if (doc.pmids) {
+        for (var i in doc.pmids) {
+           emit(doc.pmids[i]);
+        }
+      }
+    }

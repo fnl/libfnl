@@ -30,84 +30,6 @@ you are running a wide build [#f2]_.
          UTF-32/UCS-4 encoded strings would when no Supplementary Plane
          characters are involved).
 
-==================================
-text -- Text-Annotation Data Types
-==================================
-
-.. automodule:: libfnl.nlp.text
-
-This NLP packages uses offset annotations on text to manage the tagging of text spans. To make this simple, Python's `bytes` and `str` implementations are extended with functions to add, retrieve, and delete annotations on these two data types. In addition, the API provides a method on each type to convert to the other without loosing or mangling the (offsets of) annotations.
-
-Managing text and their annotations can be a hassle if there is no abstraction in the way this is handled. Therefore, this module provides two classes to manage text as abstract documents: one for the binary representation (ie., encoded) and another for the decoded Unicode view of the text. Both data types can be transformed from one to the other, including any (offset-based) annotations (called *tags*) made on the text. Thereby, **byte-offset-based** annotations made in one specific encoding can be transformed to the Unicode view where it is easy to work with them in Python with a **character-based offset**, and then converted back into any desired encoding, all without ever loosing track of the right offsets for the given view. This makes it possible for the user of this API to not have to worry about the encoding- and programming language-dependency of offsets.
-
-The following two classes exist to represent text: :py:class:`.Binary` and :py:class:`.Unicode`, holding a `bytes` or a `str` view of the content, respectively.
-
-A **tag** consists of a *namespace*, a *key* and an *offset*. The namespace and key can be any string, the offset is a [immutable!] tuple of integer values (one, two, or any multiple of two integers for multi-span annotations). Therefore, a few minimum requirements are enforced:
-
-#. All tags consist of a (string) **namespace** and **key**, and have some (integer tuple) **offsets**.
-#. A position ``P`` is a tuple of integers, of length 1, 2, or 2\ ``m`` (for any ``m > 1``).
-#. The key ``K`` holds a list of offsets where this tag annotated on the text; A single value position annotates an exact point in the text, a two-value position a given span, and a 2\ ``m``\ -value multiple (consecutive, see next) text segments.
-#. The ``P`` of length ``n`` annotating text ``T`` must pass the following conditions (where ``len`` is the Python `len` function applied to the text's content), that is each offset in ``P`` must be within the text's boundaries and consecutive:
-
-  *    P\ :sub:`1` >= 0 ∧
-  *    P\ :sub:`n` <= len(T) ∧
-  *    P\ :sub:`i` < P\ :sub:`j` ∀ i =: {1, ..., n-1}, j =: i + 1
-
-6. By transforming between :class:`.Binary` and :class:`.Unicode`, any illegal offsets (eg., offsets inside a multi-byte character (for `Binary` `bytes`) or inside a surrogate pair (for `Unicode` strings on narrow Python builds) result in UnicodeErrors.
-
-The *tags* attribute of text, in a nutshell, is a dictionary of this form::
-
-    {
-        ...
-        'some_namespace': {
-            ...
-            'some_key': [ ... (10, 20), (24), (25, 28, 30, 33), ... ],
-            ...
-        },
-        ...
-    }
-
-The text views also provide a **meta-data dictionary** to store any kind of :attr:`.metadata`\ , useful to maintain information otherwise contained in a CouchDB document that is used to store the text (for example, metadata from MEDLINE records). Therefore, ensure this dictionary can be encoded to a JSON string (ie., only use strings as dictionary keys and better not to use tuples, as they are transformed to lists, anyways) -- at least if you plan to store the text objects in a CouchDB. This metadata dictionary will form the basis of the Couch :class:`.Document`, that will use the fields ``tags`` and ``text`` to store the text -- so it is adviseable to not add any metadata keys with those names, either. Finally, two datetime values are set on those `Document`\ s: ``created`` and ``modified``, that would also overwrite any metadata of the same name.
-
-Both text views (`Binary` and `Unicode`) share the same methods for manipulating the tags inherited from their abstract parent :class:`.Annotated`\ :
-
-Annotated
-----------------
-
-.. autoclass:: libfnl.nlp.text.Annotated
-   :members:
-
-.. py:attribute:: libfnl.nlp.text.Annotated.metadata
-
-    A dictionary to store any number of values. Note it is recommended not to use the keys that coincide with the fields used when casting the text to a Couch document, namely ``text``, ``encoding``, and ``tags``.
-
-Binary
-------
-
-.. autoclass:: libfnl.nlp.text.Binary
-   :members:
-
-Unicode
--------
-
-Unicode classes can be transformed to :meth:`.Unicode.markup` strings, ie., XML. This transforms tags to elements with "<namespace>:<key>" names, for example producing the rather verbose ``<strtok:alnum>abc123</strtok:alnum>`` from a tag ``('strtok', 'alnum', (0, 6))`` on the text "abc123". A tag with a single offset value is represented as the empty element (``<namespace:key />``).
-
-Multispan-tags are transformed to elements that have an "offsets" attribute added, with a space-separated list of colon-separated offset spans *of* **code-points** (NB: not bytes!) *relative to the text (PCDATA) the element encloses*, such as ``offsets="0:3 7:8 10:20"`` for a tag with offsets ``(50, 53, 57, 58, 60, 70)``. Note that this means (a) that the first span always starts at zero, (b) that there are at least two such spans if this attribute is present, and (c) if using a *narrow build* of Python, **surrogate pairs** in the element's text are correctly measured as single code-points (and not two).
-
-The element nesting of tags with the same start and end value can be influenced by two special attributes on the **class**: :attr:`.Unicode.ns_weights` and :attr:`.Unicode.key_weights`. Both are dictionaries that should hold integer weights of a specific namespace (NS) or key. By default, tags that have the same start and end are just nested in the alphabetical order of their NS, then their keys, and finally sorted by the offset tuple (and very different to :meth:`.Annotated.ordered`). However, this sorting can be influenced by assigning integer values to a NS or key in those two dictionaries. By default, each NS and key has a weight of ``int(sqrt(sys.maxsize))``, and all element with the same start and end offset (no matter if an empty, single- or multi-span tag), is ordered by NS times key weight. In the simplest case, if you set a NS or key weight to 0, it will always be added before all other elements at that position. However, because of the use of multiplication, it is possible to model complex keys and/or namespaces nesting.
-
-The namespaces (but not the keys!) can also be mangled via the **class** attribute :attr:`.Unicode.ns_map`, a dictionary of ``NS: mangled`` strings. For example, the namespaces ``section`` and ``format`` set by the HTML extractor can be replaced with ``html`` by setting ``ns_map['section'] = 'html'`` (and idem for format), producing ``html:<key>`` element names for both namespaces. Furthermore, an entire namespace can be "suppressed" by setting the value to ``None`` or the empty string, producing ``<key>`` (only) element names for that NS.
-
-.. warning::
-
-    Note that if any tags have partial overlaps, this will produce
-    markup that is invalid.
-
-.. autoclass:: libfnl.nlp.text.Unicode
-   :members:
-   :special-members:
-
-
 =========================================
 extract -- Text extraction from documents
 =========================================
@@ -161,20 +83,14 @@ The parser should be initialized, then the HTML :meth:`.feed` sent to it, which 
 ... </html>''')
 >>> html.close()
 >>> html.string
-'meta: content\\n\\nThis is the text\\nof this weird\u00a0document.\\n\\n'
->>> html.section_tags['div']
-[(15, 55)]
->>> print(html.string[15:55]) # &nbsp in div is represented as U+00A0
+'meta: content\n\nThis is the text\nof this weird\xa0document.\n\n'
+>>> print(html.string[15:55]) # &nbsp; in div is represented as U+00A0
 This is the text
-of this weird\u00a0document.
->>> list(sorted(html.section_tags.keys()))
-['body', 'divb', 'head']
->>> html.format_tags
-{'strong': [(27, 31)]}
->>> html.tag_attributes
-{}
->>> len(html.string) == html.section_tags['body'][-1][1]
-True
+of this weird\xa0document.
+>>> list(sorted(html.tags))
+[('html', 'body', (15, 57)), ('html', 'div', (15, 55)), ('html', 'head', (0, 13)), ('html', 'meta', (0, 13)), ('html', 'strong', (27, 31))]
+>>> len(html.string)
+57
 
 .. autoclass:: libfnl.nlp.extract.HtmlExtractor
     :members: feed, reset, close, string, TAG_INDEX, MINOR_CONTENT, CONTENT, INLINE, REPLACE, IGNORE
@@ -213,22 +129,22 @@ As a sidenote, these tokenizers all tag the entire string, they do not mysteriou
 
 Here is a straight-forward usage example:
 
->>> from libfnl.nlp.text import Unicode
->>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
->>> text = Unicode("A simple example sentence.")
+>>> from libfnl.nlp.text import Text
+>>> from libfnl.nlp.strtok import WordTokenizer
+>>> text = Text("A simple example sentence.")
 >>> tok = WordTokenizer()
->>> tok.tag(text)
->>> for offset, value in text.iterTags(NAMESPACE):
-...     print(offset, value, sep='\t')
+>>> text.tags = tok.tag(text)
+>>> for tag, attrs in text:
+...     print(tag.offsets, tag.id, attrs['morphology'])
 ...
-(0, 1)	A
-(1, 2)	M
-(2, 8)	DDDDDD
-(8, 9)	M
-(9, 16)	DDDDDDD
-(16, 17)	M
-(17, 25)	DDDDDDDD
-(25, 26)	o
+(0, 1) letter A
+(1, 2) space M
+(2, 8) letter DDDDDD
+(8, 9) space M
+(9, 16) letter DDDDDDD
+(16, 17) space M
+(17, 25) letter DDDDDDDD
+(25, 26) glyph o
 
 .. autodata:: libfnl.nlp.strtok.NAMESPACE
 

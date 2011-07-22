@@ -53,6 +53,7 @@ Contents
 
    couch
    nlp
+   nlp/text
    nlp/genia
    nlp/medline
    stat

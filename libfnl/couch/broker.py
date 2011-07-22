@@ -61,7 +61,7 @@ Built-in DB names not matching the :data:`.VALID_DB_NAME` RegEx.
 """
 
 
-Attachment = namedtuple("Attachment", "content_type encoding data")
+Attachment = namedtuple("Attachment", "content_type encoding data stream")
 """
 The returned named tuple for :meth:`.Database.getAttachment`.
 
@@ -71,12 +71,16 @@ The returned named tuple for :meth:`.Database.getAttachment`.
 
 .. attribute:: encoding
 
-    The ``charset`` value in the ``Content-Type`` header (or ``None``).
+    The ``charset`` value of `data` or ``None``.
 
 .. attribute:: data
 
-    The attachment itself, as a `bytes` (binary files) or `str` (text files)
-    object.
+    The attachment itself, as a `bytes`, or ``None`` if streamed.
+
+.. attribute:: stream
+
+    A :class:`.network.ResponseStream` object if CouchDB sends the attachment
+    as a chunked response or ``None`` if not streamed.
 """
 
 
@@ -90,10 +94,10 @@ def CallViewlike(resource:network.Resource, doc_ids:list,
 
     if doc_ids:
         keys = {'keys': list(doc_ids)}
-        return resource.postJson(json=keys, **options)
+        return resource.postJson(json=keys, chunked=True, **options)
     else:
         assert "keys" not in options, "for keys, use the doc_ids method param"
-        return resource.getJson(**options)
+        return resource.getJson(chunked=True, **options)
 
 
 def DesignPathFromName(name:str, type:str) -> [str]:
@@ -270,7 +274,7 @@ class Row(dict):
 
 class ViewResults:
     """
-    Manager for parametrized view (either permanent or temporary) results.
+    A Manager for parametrized view (either permanent or temporary) results.
 
     This class allows re-evaluating the view using either the ``key`` option
     in index notation on it, or the ``startkey`` and ``endkey`` options using
@@ -322,11 +326,7 @@ class ViewResults:
         self.doc_ids = list(doc_ids) if doc_ids else None
         self.options = options
         self._rows = self._total_rows = self._offset = None
-        self.__open_stream = None
-
-    def __del__(self):
-        if self.__open_stream and not self.__open_stream.closed:
-            self.__open_stream.close()
+        self.__refetch = False
 
     def __repr__(self) -> str:
         return '<%s %r %r>' % (type(self).__name__, self.view, self.options)
@@ -345,45 +345,62 @@ class ViewResults:
             options['key'] = key
             return ViewResults(self.view, self.doc_ids, options)
 
-    def __iter__(self) -> iter([Row]):
+    def __iter__(self) -> iter:
         return iter(self.rows)
 
     def __len__(self) -> int:
-        if self._rows is None: self._fetch()
-        if isinstance(self._rows, list):
-            return len(self._rows)
-        elif self._total_rows > -1:
-            return self._total_rows
-        else:
-            return sum(1 for _ in self.rows)
+        return len(list(self.rows))
 
-    def _fetch(self):
+    def __fetch(self):
         data = self.view._exec(self.doc_ids, self.options)
         wrapper = self.view.wrapper
 
-        if hasattr(data, "read"): #and not isinstance(self.view, TemporaryView):
-            self.__open_stream = data
-            stream = iter(data)
+        if isinstance(data, network.ResponseStream):
+            if not self.__refetch: self._rows = []
+            stream = self.__genstream(data, self.__refetch)
+            self.__refetch = True
             first_line = next(stream)
             self._total_rows = self._getTotal(first_line)
             self._offset = self._getOffset(first_line)
-            return map(wrapper,
-                       map(serializer.Decode,
-                           filter(lambda l: len(l) > 5, stream)))
+            rval = stream
         else:
-#            if hasattr(data, "read"):
-#                encoding = data.charset
-#                data = data.read()
-#                data = data.decode(encoding or "utf-8")
-#                data = serializer.Decode(data)
-            
             self._rows = [wrapper(row) for row in data['rows']]
             self._total_rows = data.get('total_rows', -1)
             self._offset = data.get('offset', 0)
-            return self._rows
+            rval = self._rows
+
+        return rval
+
+
+    def __genstream(self, response:network.ResponseStream, noappend:bool):
+        charset = response.charset
+        wrapper = self.view.wrapper
+        stream = iter(response)
+        yield next(stream).decode(charset) # pop the first line
+
+        for line in stream:
+            if len(line) > 5: # skip lines that contain  row separators
+                # remove trailing comma and make the line a list in case
+                # more than one JSON object is present on the line
+                line = line.decode(charset)
+                if line[-1] == ',': line = line[:-1]
+                line = '[{}]'.format(line)
+
+                try:
+                    json = serializer.Decode(line)
+                except ValueError:
+                    msg = 'not valid JSON: "{}"'.format(line)
+                    raise ValueError(msg)
+                
+                for obj in json:
+                    row = wrapper(obj)
+                    if not noappend: self._rows.append(row)
+                    yield row
+
+        response.close()
 
     @staticmethod
-    def _getIntValue(regex:re, line:str) -> int:
+    def _getIntValue(regex, line:str) -> int:
         try:
             return int(regex.search(line).group(1))
         except (ValueError, AttributeError):
@@ -392,7 +409,8 @@ class ViewResults:
 
     @classmethod
     def _getTotal(cls, line:str) -> int:
-        return cls._getIntValue(cls.TOTAL_RE, line) or -1
+        total = cls._getIntValue(cls.TOTAL_RE, line)
+        return total if total is not None else -1
 
     @classmethod
     def _getOffset(cls, line:str) -> int:
@@ -409,9 +427,15 @@ class ViewResults:
         the rows are stored locally; if it is an `iter`, they are fetched
         via HTTP streaming.
         """
-        if self._rows is None:
-            return self._fetch()
-        return self._rows
+        if not self._rows:
+            if self._rows is None:
+                return self.__fetch()
+            elif self.__refetch:
+                return self.__fetch()
+            else:
+                return self._rows
+        else:
+            return self._rows
 
     @property
     def total_rows(self) -> int:
@@ -420,7 +444,7 @@ class ViewResults:
 
         This value is ``-1`` for reduce views or views with unknown sizes.
         """
-        if self._total_rows is None: self._fetch()
+        if self._total_rows is None: self.__fetch()
         return self._total_rows
 
     @property
@@ -430,7 +454,7 @@ class ViewResults:
 
         This value is ``0`` for reduce views.
         """
-        if self._offset is None: self._fetch()
+        if self._offset is None: self.__fetch()
         return self._offset
 
 
@@ -506,11 +530,18 @@ class TemporaryView(View):
         if self.reduce_fun: json['reduce'] = self.reduce_fun
         if doc_ids: json['keys'] = doc_ids
         else: assert "keys" not in options, "for keys, set the doc_ids list"
-        response = self.resource.postJson(json=json,
+        response = self.resource.postJson(json=json, chunked=True,
                                           **EncodeViewOptions(options))
-        return response.data
+        if isinstance(response.data, network.ResponseStream):
+            # temp view data cannot be iterated, because the last element is
+            # not cleanly separated from the entire rest
+            # TODO: check if CouchDB finally fixed streaming of TempView data
+            raw = response.data.read()
+            return serializer.Decode(raw.decode(response.charset))
+        else:
+            return response.data
 
-    
+
 class Database(object):
     """
     Representation of a database on a CouchDB server.
@@ -670,6 +701,21 @@ class Database(object):
         if self._name is None: self.info()
         return self._name
 
+    @property
+    def revs_limit(self) -> int:
+        """
+        Get the revision limit of the database.
+        """
+        return self.resource.getJson('_revs_limit').data
+
+    @revs_limit.setter
+    def revs_limit(self, revs_limit:int):
+        """
+        Set the revision limit of the database.
+        """
+        response = self.resource.putJson('_revs_limit', json=revs_limit)
+        assert response.data['ok']
+
     def cleanup(self) -> bool:
         """
         Clean up old design document indexes (aka. "view cleanup").
@@ -690,10 +736,7 @@ class Database(object):
 
         :return: A `bool` indicating success.
         """
-        response = self.resource.postJson(
-            '_ensure_full_commit'#,
-            #headers={'Content-Type': 'application/json'}
-        )
+        response = self.resource.postJson('_ensure_full_commit')
         return response.data['ok']
 
     def compact(self, ddoc:str=None) -> bool:
@@ -708,7 +751,7 @@ class Database(object):
             successfully.
         """
         if ddoc: response = self.resource.postJson('_compact', ddoc)
-        else:    response = self.resource.postJson('_compact')
+        else: response = self.resource.postJson('_compact')
 
         return response.data.get('ok', False)
 
@@ -732,6 +775,7 @@ class Database(object):
         else:
             response = self.resource.getJson()
             self._name = response.data['db_name']
+
         return response.data
 
     # DOCUMENT API
@@ -768,7 +812,7 @@ class Database(object):
             documents to memory to achieve higher throughput. To flush the
             memory immediately, use :meth:`.Database.commit()`. Be aware that
             ``batch`` is not a safe approach and should never be used for
-            critical data.
+            critical data. 
         :return: A `tuple` of the updated ``(id, rev)`` values of the document.
         :raise libfnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
@@ -811,12 +855,7 @@ class Database(object):
         response = self.resource._request('COPY', DocPath(src),
                                           headers={'Destination': dest})
 
-        if isinstance(response.data, network.ResponseStream):
-            data = str(response.data)
-        else:
-            data = response.data
-
-        data = serializer.Decode(data)
+        data = serializer.Decode(response.data.decode(response.charset))
         return data['rev']
 
     def delete(self, doc:dict):
@@ -882,8 +921,8 @@ class Database(object):
                               after a failed strict `bulk()` use ``'all'``;
                               Otherwise, use ``['rev1', 'rev2', ...]`` to
                               specifiy exactly which. Returns a list of
-                              dictionaries, being either ``{'missing': 'revX'}``
-                              or as ``{'ok': {THE_DOCUMENT}}``
+                              dictionaries, either ``{'missing': 'revX'}`` or
+                              ``{'ok': {THE_DOCUMENT}}``.
          * ``conflicts=True``: Add the ``_conflicts`` key listing conflicting
                                revisions of the document.
 
@@ -910,15 +949,10 @@ class Database(object):
         except network.ResourceNotFound:
             return default
 
-        data = response.data
-
-        if isinstance(data, network.ResponseStream):
-            data = serializer.Decode(str(data))
-
-        if isinstance(data, dict):
-            return Document(data)
+        if isinstance(response.data, dict):
+            return Document(response.data)
         else:
-            return data
+            return response.data
 
     #noinspection PyExceptionInherit
     def revisions(self, id:str, **options) -> iter([Document]):
@@ -942,10 +976,10 @@ class Database(object):
             #noinspection PyArgumentList
             raise network.ResourceNotFound("document {}".format(id))
 
-        revisions = doc["_revisions"]
-        del doc["_revisions"]
+        revisions = doc['_revisions']
+        del doc['_revisions']
         num_revs = revisions['start']
-        del options["revs"]
+        del options['revs']
 
         yield doc
 
@@ -993,7 +1027,7 @@ class Database(object):
         path.append(filename)
         response = self.resource.deleteJson(*path, rev=rev)
 
-        if not isinstance(id_or_doc, str):
+        if isinstance(id_or_doc, dict):
             id_or_doc['_rev'] = response.data['rev']
 
         return response.data['ok']
@@ -1006,16 +1040,11 @@ class Database(object):
         string and a file-like object.
 
         :param id_or_doc: Either a document ID, a dictionary or a `Document`
-                          object representing the document that the attachment
-                          belongs to.
+            object representing the document that the attachment belongs to.
         :param filename: The name of the attachment file.
         :param default: A default value to return when the document or
-                        attachment is not found.
-        :return: An :class:`.Attachment` names tuple consisting of the
-                 ``content_type`` and the ``data`` as `bytes` or `str`
-                 if the Content-Type is ``text/*`` or has a ``charset``
-                 value. If the requested attachment can not be found, the value
-                 of the *default* argument (``None``) is returned.
+            attachment is not found.
+        :return: An :class:`.Attachment`\, possibly streamed.
         """
         if isinstance(id_or_doc, str):
             id = id_or_doc
@@ -1026,16 +1055,13 @@ class Database(object):
         path.append(filename)
 
         try:
-            response = self.resource.get(*path)
+            response = self.resource.get(*path, chunked=True)
             ctype = response.headers.get('Content-Type')
-            charset = None
 
-            if "charset" in ctype:
-                for block in ctype.split(";"):
-                    if "charset" in block and "=" in block:
-                        charset = block.split("=")[1].strip().lower()
-
-            return Attachment(ctype, charset, response.data)
+            if isinstance(response.data, network.ResponseStream):
+                return Attachment(ctype, response.charset, None, response.data)
+            else:
+                return Attachment(ctype, response.charset, response.data, None)
         except network.ResourceNotFound:
             return default
 
@@ -1120,7 +1146,7 @@ class Database(object):
         response = resource.put(filename, body=content,
                                 headers={'Content-Type': content_type},
                                 rev=rev)
-        data = serializer.Decode(response.data)
+        data = serializer.Decode(response.data.decode(response.charset))
         assert data['ok']
 
         # update the document's revision (if id_or_doc was not a string)
@@ -1132,7 +1158,7 @@ class Database(object):
             doc = self[id_or_doc['_id']]
             id_or_doc['_attachments'][filename] = doc['_attachments'][filename]
 
-        return data["id"], data["rev"]
+        return data['id'], data['rev']
 
     # BULK DOCUMENT API
 
@@ -1175,6 +1201,7 @@ class Database(object):
         documents = list(documents)
         content = dict(docs=documents)
         if strict: content['all_or_nothing'] = True
+        # TODO: would it pay off making this a chunked request?
         response = self.resource.postJson('_bulk_docs', json=content)
         results = []
 
@@ -1243,7 +1270,11 @@ class Database(object):
 
         >>> del server['python-tests']
 
-        Query (temporary) view options:
+        View functions are made available at:
+
+            /\ **db**\ /\ _temp_view
+
+        Temporary view request options:
 
          * ``descending=True`` Order descending.
          * ``include_docs=True`` Include the full documents.
@@ -1270,9 +1301,6 @@ class Database(object):
         :return: The query's results.
         :rtype: :class:`.ViewResults`
         """
-        if "chunked_response" not in options:
-            options["chunked_response"] = True
-
         return TemporaryView(self.resource('_temp_view'), map_fun,
                              reduce_fun, language=language,
                              wrapper=wrapper)(doc_ids, **options)
@@ -1280,7 +1308,7 @@ class Database(object):
     def view(self, name, doc_ids:[str]=None, wrapper=Row,
              **options) -> ViewResults:
         """
-        Execute a predefined view.
+        Execute a predefined view:
 
         >>> server = Server()
         >>> db = server.create('python-tests')
@@ -1292,7 +1320,11 @@ class Database(object):
 
         >>> del server['python-tests']
 
-        Permanent view options:
+        View functions are made available at:
+
+            /\ **db**\ /\ _design/\ **design-doc**\ /\ _view/\ **view-name**
+
+        Permanent view request options:
 
          * ``descending=True`` Order descending.
          * ``include_docs=True`` Include the full documents.
@@ -1309,7 +1341,7 @@ class Database(object):
          * ``reduce=False`` If exists, do not use the reduce function.
 
         :param name: The name of the view; for custom views, use the format
-                     ``design_docid/viewname``, that is, the document ID of the
+                     ``design-doc/view-name``, that is, the document ID of the
                      design document and the name of the view, separated by a
                      slash.
         :param doc_ids: A list of document IDs to limit the view to.
@@ -1320,10 +1352,6 @@ class Database(object):
         :rtype: :class:`.ViewResults`
         """
         path = DesignPathFromName(name, '_view')
-
-        if "chunked_response" not in options:
-            options["chunked_response"] = True
-
         return PermanentView(self.resource(*path), '/'.join(path),
                              wrapper=wrapper)(doc_ids, **options)
 
@@ -1333,23 +1361,23 @@ class Database(object):
 
         Show functions are made available at:
 
-        /\ **db**\ /\ _design/\ **design-doc**\ /\ _show/\ **show-name**\ [/\ **doc-id**\ ]
+            /\ **db**\ /\ _design/\ **design-doc**\ /\ _show/\ **show-name**\ [/\ **doc-id**\ ]
 
-        Show view query *options*:
+        Show request *options*:
 
          * ``format='...'`` File format to show the document it.
          * ``details=True`` Show document details.
 
         :param name: The name of the show handler in the format
-                     ``design-doc/show-name``.
+            ``design-doc/show-name``.
         :param doc_id: Optional ID of a document to pass to the show function.
         :param options: Optional query parameters.
-        :return: A :class:`.network.Response` named tuple, where the
-                 ``data`` field is a string as defined by the show function.
+        :return: A :class:`.network.Response` named tuple, where ``data`` is a
+            `bytes` object or a :class:`.network.ResponseStream`.
         """
         path = DesignPathFromName(name, '_show')
         if doc_id: path.append(doc_id)
-        return self.resource.get(*path, **options)
+        return self.resource.get(*path, chunked=True, **options)
 
     def list(self, name:str, view:str, doc_ids:[str]=None,
              **options:{str:object}) -> network.Response:
@@ -1359,9 +1387,9 @@ class Database(object):
 
         List functions are made available at:
 
-        /\ **db**\ /\ _design/\ **design-doc**\ /\ _list/\ **list-name**\ /[\ **other-design-doc/**\ ]\ **view-name**
+            /\ **db**\ /\ _design/\ **design-doc**\ /\ _list/\ **list-name**\ /[\ **other-design-doc/**\ ]\ **view-name**
 
-        List handler options:
+        List handler request options:
 
          * ``descending=True`` Order descending.
          * ``include_docs=True`` Include the full documents.
@@ -1378,23 +1406,16 @@ class Database(object):
          * ``reduce=False`` If exists, do not use the reduce function.
 
         :param name: The name of the list function in the format
-                     ``design-doc/list-name``.
+             ``design-doc/list-name``.
         :param view: The name of the view in the format
-                     ``other-design-doc/view-name`` or just ``view-name``.
+             ``other-design-doc/view-name`` or just ``view-name``.
         :param doc_ids: A list of document IDs to limit the list function to.
         :param options: Optional query parameters.
         :return: A :class:`.network.Response` named tuple, where ``data`` is
-                 an `iter()`able and :class:`.network.ResponseStream`
-                 containing the output as defined by the list function. By
-                 iterating the ``data``, the list items are streamed over HTTP,
-                 one item at a time, until exhausted.
+             an `iter`\ able and :class:`.network.ResponseStream`\ .
         """
         path = DesignPathFromName(name, '_list')
         path.extend(view.split('/', 1))
-
-        if "chunked_response" not in options:
-            options["chunked_response"] = True
-
         response = CallViewlike(self.resource(*path), doc_ids, options)
         return response
 
@@ -1410,7 +1431,7 @@ class Database(object):
 
         Update handlers are made available at:
 
-        /\ **db**\ /\ _design/\ **design-doc**\ /\ _update/\ **update-name**\ [/\ **doc-id**\ ]
+            /\ **db**\ /\ _design/\ **design-doc**\ /\ _update/\ **update-name**\ [/\ **doc-id**\ ]
 
         Update handlers options:
 
@@ -1461,29 +1482,22 @@ class Database(object):
         if opts.get('feed') == 'continuous':
             return self._streamingChanges(**opts)
 
-        # chunked = ("feed" in opts and opts["feed"] is "longpoll")
-        response = self.resource.getJson('_changes', chunked_response=True,
-                                         **opts)
-
-        if isinstance(response.data, network.ResponseStream):
-            json = serializer.Decode(str(response.data))
-            return json['last_seq'], json['results']
-        else:
-            return response.data
+        response = self.resource.getJson('_changes', **opts)
+        return response.data['last_seq'], response.data['results']
 
     def _streamingChanges(self, **opts:{str:object}):
-        response = self.resource.get('_changes', chunked_response=True, **opts)
-        lines = iter(response.data)
+        response = self.resource.get('_changes', chunked=True, **opts)
+        assert isinstance(response.data, network.ResponseStream)
+        stream = iter(response.data)
 
-        for ln in lines:
-            if not ln: # skip heartbeats
-                continue
+        for raw in stream:
+            line = raw.decode(response.charset)
+            if 'last_seq' in line: response.data.close()
 
-            if 'last_seq' in ln: # consume the rest of the response if this
-                for _ in lines:  # was the last line, allows conn reuse
-                    pass
-
-            yield serializer.Decode(ln)
+            try:
+                yield serializer.Decode(line)
+            except ValueError:
+                raise ValueError('not valid JSON: "{}"'.format(line))
 
 
 class Server:
@@ -1650,6 +1664,13 @@ class Server:
         response = self.resource.getJson()
         return response.data['version']
 
+    def restart(self) -> bool:
+        """
+        Restart the CouchDB.
+        """
+        response = self.resource.postJson('_restart')
+        return response.data['ok']
+
     def stats(self, name:str=None) -> dict:
         """
         Server statistics.
@@ -1662,23 +1683,17 @@ class Server:
          * ``httpd_status_codes``
 
         :param name: Name of single statistic separated by a slash, e.g.
-                     ``"httpd/requests"`` (``None`` -- return all statistics).
+            ``"httpd/requests"`` (``None`` -- return all statistics).
+        :return: The dictionary of statistics, one key per first part of
+            *name* (even if *name* was not ``None``).
         :raise ValueError: If the *name* isn't separable into two parts.
         """
-        group_stat = None
-
         if name:
-            group_stat = name.split('/', 1)
-            response = self.resource.getJson('_stats', *group_stat)
+            response = self.resource.getJson('_stats', *name.split('/', 1))
         else:
             response = self.resource.getJson('_stats')
 
-        data = response.data
-
-        if group_stat:
-            for domain in group_stat: data = data[domain]
-
-        return data
+        return response.data
 
     def tasks(self) -> list:
         """

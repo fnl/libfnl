@@ -25,7 +25,7 @@ def read(encoding, update, reader, corpus, file_name):
             basename = os.path.basename(file_name)
             logging.info("parsing %s", basename)
 
-            for article in reader.toUnicode(stream):
+            for article in reader.toText(stream):
                 binary = article.toBinary("utf-8")
                 binary.metadata["source"] = basename
                 result = binary.save(db, update=update)

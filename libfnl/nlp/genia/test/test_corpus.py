@@ -50,17 +50,13 @@ class PosReaderTests(TestCase):
         count = 0
         sentences = [2, 4]
         pos_tags = [44, 86] # second: one less for joined "didn't"!
-        for text in self.reader.toUnicode(self.file):
-            self.assertEqual(1, len(text.offsets(self.reader.section_ns,
-                                                 self.reader.abstract_tag)))
-            self.assertEqual(1, len(text.offsets(self.reader.section_ns,
-                                                 self.reader.title_tag)))
-            self.assertEqual(sentences[count],
-                             len(text.offsets(self.reader.section_ns,
-                                              self.reader.sentence_tag)))
-            self.assertEqual(pos_tags[count],
-                             sum(len(tags) for tags in
-                             text.tags[self.reader.pos_tag_ns].values()))
+
+        for text in self.reader.toText(self.file):
+            tags = text.tagtree
+            self.assertEqual(1, len(tags[self.reader.section_ns][self.reader.abstract_tag]))
+            self.assertEqual(1, len(tags[self.reader.section_ns][self.reader.title_tag]))
+            self.assertEqual(sentences[count], len(tags[self.reader.section_ns][self.reader.sentence_tag]))
+            self.assertEqual(pos_tags[count], sum(map(len, tags[self.reader.pos_tag_ns].values())))
             count += 1
 
         self.assertEqual(2, count)

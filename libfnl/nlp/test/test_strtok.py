@@ -4,7 +4,7 @@ from random import randint
 from time import time
 from unicodedata import category
 from unittest import main, TestCase
-from libfnl.nlp.text import Unicode
+from libfnl.nlp.text import Text
 
 class TokenizerTests(TestCase):
 
@@ -13,26 +13,26 @@ class TokenizerTests(TestCase):
         "αˀⅣlllƻƻƻ8"
         "²88\u0903\u0488\u0300_\u002D"
         ")\u00BB\u00AB,($\u005E+@!"
-        "\n\u2029\uD800\u0007\u00AD\u0092"
+        "\n\u2029\u0007\u00AD\u0092"
     )
     TAGS = (
         "AAABBBMBEE" # 10 (10)
         "EGJDDDHHHI" # 10 (20)
         "NIIabcde"   #  8 (28)
         "fghijklmno" # 10 (38)
-        "KL_^`["     #  6 (44)
+        "KL^`["     #   5 (43)
     )
 
     def setUp(self):
-        self.text = Unicode(self.EXAMPLE)
+        self.text = Text(self.EXAMPLE)
 
     def assertResult(self, tokenizer, offsets):
-        tokenizer.tag(self.text)
-        morph = self.text.metadata["morphology"]
+        self.text.tags = tokenizer.tag(self.text)
 
-        for idx, key in enumerate(self.text.iterTags(True)):
-            self.assertSequenceEqual(offsets[idx], key[2])
-            self.assertSequenceEqual(self.TAGS[key[2][0]:key[2][1]], morph[idx])
+        for idx, (tag, attrs) in enumerate(self.text):
+            self.assertSequenceEqual(offsets[idx], tag.offsets)
+            self.assertSequenceEqual(self.TAGS[tag.offsets[0]:tag.offsets[1]],
+                                     attrs['morphology'])
 
     def testSeparator(self):
         offsets = [
@@ -40,7 +40,7 @@ class TokenizerTests(TestCase):
             (6, 7),
             (7, 38),
             (38, 40),
-            (40, 44),
+            (40, 43),
         ]
         tokenizer = S.Separator()
         self.assertResult(tokenizer, offsets)
@@ -51,7 +51,7 @@ class TokenizerTests(TestCase):
                 (20, 21), (21, 23), (23, 24), (24, 25), (25, 26), (26, 27),
                 (27, 28), (28, 29), (29, 30), (30, 31), (31, 32), (32, 33),
                 (33, 34), (34, 35), (35, 36), (36, 37), (37, 38), (38, 40),
-                (40, 41), (41, 42), (42, 43), (43, 44),
+                (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.WordTokenizer()
         self.assertResult(tokenizer, offsets)
@@ -62,7 +62,6 @@ class TokenizerTests(TestCase):
                 (24, 25), (25, 26), (26, 27), (27, 28), (28, 29), (29, 30),
                 (30, 31), (31, 32), (32, 33), (33, 34), (34, 35), (35, 36),
                 (36, 37), (37, 38), (38, 40), (40, 41), (41, 42), (42, 43),
-                (43, 44),
         ]
         tokenizer = S.AlnumTokenizer()
         self.assertResult(tokenizer, offsets)
@@ -74,18 +73,18 @@ class TokenizerTests(TestCase):
         # string = "".join(chr(randint(1, 127)) for i in range(100000))
         string = "The fox jumped over - uhm, what? Hell, whatever. " * 2000
         # ^^ 50*2k = 100k chars, 22*2k = 44k tokens (one long article) ^^
-        text = Unicode(string)
+        text = Text(string)
         # This tokenizer is slightly faster than the others:
         # tokenizer = S.Separator()
-        # the two tokenizers take about the same as long, word is a tad slower
+        # these two tokenizers take about the same as long, word a tad slower
         tokenizer = S.WordTokenizer()
         # tokenizer = S.AlnumTokenizer()
         start = time()
         # Tagging without morphology (None) is about 30% faster, obviously.
-        tokenizer.tag(text)
+        tags = tokenizer.tag(text)
+        # text.tags = tags
         # tokenizer.tag(text, None)
         end = time()
-        tags = text.tags
         # on an average MBP (2.66 GHz) this should take less than half a sec
         # using the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
@@ -93,23 +92,19 @@ class TokenizerTests(TestCase):
 
         # make sure they are all good start/end-positioned
         last = 0
-        morph = text.metadata["morphology"]
 
-        for idx, key in enumerate(text.iterTags(True)):
-            self.assertEqual(key[2][0], last)
-            self.assertTrue(len(morph[idx]) <= key[2][1] - key[2][0])
-            last = key[2][1]
+        for idx, tag in enumerate(sorted(tags, key=lambda t: t[2])):
+            self.assertEqual(last, tag[2][0])
+            attrs = tags[tag]
+            self.assertTrue(len(attrs['morphology']) == tag[2][1] - tag[2][0])
+            last = tag[2][1]
 
 
 class CharIterTests(TestCase):
 
     def testSurrogateCharacter(self):
-        result = list(S.CharIter("ab\uD800\uDC00cd"))
-        expected = [
-                (0, ord('D')), (1, ord('D')),
-                (2, ord('H')),
-                (4, ord('D')), (5, ord('D'))
-        ]
+        result = list(S.CategoryIter(Text('ab\uD800\uDC00cd')))
+        expected = [ ord('D'), ord('D'), ord('H'), ord('D'), ord('D') ]
         self.assertListEqual(expected, result)
 
 
@@ -144,9 +139,10 @@ if __name__ == '__main__':
 
     if len(sys.argv) > 1 and sys.argv[1] == "profile":
         string = "".join(chr(randint(1, 0xD7FE)) for dummy in range(100000))
-        text = Unicode(string)
+        text = Text(string)
         tokenizer = S.WordTokenizer()
-        tokenizer.tag(text)
-        print("tagged 100k chars with %i tokens" % len(text.tags()))
+        tags = tokenizer.tag(text)
+        text.tags = tags
+        print("tagged", len(text), "chars with", len(tags), "tokens")
     else:
         main()

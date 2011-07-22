@@ -49,7 +49,9 @@ def IsoformatSerializer(obj):
     Serialization of any object that has a `isformat()` method to JSON,
     particularly for date and time objects.
     """
-    if hasattr(obj, 'isoformat'):
+    if isinstance(obj, set):
+        return repr(list(obj))
+    elif hasattr(obj, 'isoformat'):
         return obj.isoformat()
     else:
         raise TypeError(repr(obj) + " is not JSON serializable")

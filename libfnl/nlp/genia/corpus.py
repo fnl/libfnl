@@ -5,9 +5,8 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
-from collections import defaultdict
 from io import TextIOBase
-from libfnl.nlp.text import Unicode
+from libfnl.nlp.text import Text
 from libfnl.nlp.penn import AMBIGUITY_SEP, AMBIGUOUS, TAGSET, REMAPPED
 import logging
 from xml.etree.ElementTree import iterparse, Element
@@ -53,18 +52,18 @@ class Reader:
         :param abstract_tag: The name of the XML tag containing an abstract.
         :param article_tag:  The name of the XML tag containing an article.
         """
-        self.section_ns = section_ns
         self.pos_tag_ns = pos_tag_ns
-        self.pos_tags = None # will be: { pos_tag: [(start, end)] }
-        self.token_tag = token_tag
-        self.pos_attr = pos_attribute
-        self.sentence_tag = sentence_tag
-        self.sentence_tags = None # will be: [(start, end)]
-        self.title_tag = title_tag
+        self.pos_tags = None # will be a list of PoS tags
+        self.section_ns = section_ns
+        self.section_tags = None # will a list of sentence tags
         self.abstract_tag = abstract_tag
         self.article_tag = article_tag
+        self.pos_attr = pos_attribute
+        self.sentence_tag = sentence_tag
+        self.title_tag = title_tag
+        self.token_tag = token_tag
 
-    def toUnicode(self, stream:TextIOBase) -> iter([Unicode]):
+    def toText(self, stream:TextIOBase) -> iter([Text]):
         """
         Read an open XML stream, yielding :class:`.Unicode` text instances,
         one per article.
@@ -75,25 +74,18 @@ class Reader:
         namespace, keyed by their XML tag name (ie., "title", "abstract", and
         "sentence").
         """
-        for event, element in iterparse(stream, events=("end",)):
+        for event, element in iterparse(stream, events=('end',)):
             if element.tag == self.article_tag:
                 self.article = []
-                self.tags = {
-                    self.section_ns: {
-                        self.sentence_tag: [],
-                    },
-                    self.pos_tag_ns: defaultdict(list)
-                }
-                self.pos_tags = self.tags[self.pos_tag_ns]
-                self.sentence_tags = \
-                    self.tags[self.section_ns][self.sentence_tag]
-                
+                self.section_tags = []
+                self.pos_tags = []
+
                 length = self._parseArticle(element)
 
                 if length:
-                    text = Unicode(''.join(self.article))
+                    text = Text(''.join(self.article), self.section_tags)
                     assert len(text) == length
-                    text.tags = self.tags
+                    text.add(self.pos_tags)
                     yield text
 
     def _parseArticle(self, element:Element) -> int:
@@ -112,7 +104,8 @@ class Reader:
                 if section:
                     if self.article: self.article.append("\n")
                     self.article.extend(section)
-                    self.tags[self.section_ns][section_name] = [(start, offset)]
+                    self.section_tags.append((self.section_ns, section_name,
+                                              (start, offset)))
                 elif self.article:
                     offset -= 1
 
@@ -147,7 +140,8 @@ class Reader:
 
         if sentence:
             start += inc
-            self.sentence_tags.append((start, offset))
+            self.section_tags.append((self.section_ns, self.sentence_tag,
+                                     (start, offset)))
 
         return offset, sentence
 
@@ -190,29 +184,36 @@ class Reader:
             for idx, word in enumerate(elements):
                 if word.text:
                     if word.text == "n't":
+                        start = None
                         offset += 3
                         words.append(word.text)
 
+                        if len(tags[idx - 1]) > 1: self.pos_tags.pop()
+
+                        for _ in tags[idx - 1]:
+                            tag = self.pos_tags.pop()
+                            start = tag[2][0]
+
                         for tag in tags[idx - 1]:
-                            start, _ = self.pos_tags[tag].pop()
-                            self.pos_tags[tag].append((start, offset))
+                            self.pos_tags.append((self.pos_tag_ns, tag,
+                                                  (start, offset)))
 
                         if len(tags[idx - 1]) > 1:
-                            start, _ = self.pos_tags[AMBIGUOUS].pop()
-                            self.pos_tags[AMBIGUOUS].append((start, offset))
+                            self.pos_tags.append((self.pos_tag_ns, AMBIGUOUS,
+                                                  (start, offset)))
                     else:
                         start = offset
                         offset += len(word.text)
                         words.append(word.text)
 
                         for tag in tags[idx]:
-                            if tag in REMAPPED:
-                                tag = REMAPPED[tag]
-
-                            self.pos_tags[tag].append((start, offset))
+                            if tag in REMAPPED: tag = REMAPPED[tag]
+                            self.pos_tags.append((self.pos_tag_ns, tag,
+                                                  (start, offset)))
 
                         if len(tags[idx]) > 1:
-                            self.pos_tags[AMBIGUOUS].append((start, offset))
+                            self.pos_tags.append((self.pos_tag_ns, AMBIGUOUS,
+                                                  (start, offset)))
 
                 if word.tail:
                     words.append(word.tail)

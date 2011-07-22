@@ -1,7 +1,8 @@
-from datetime import date, datetime
-from io import StringIO
 import os
 import unittest
+from datetime import date, datetime
+from hashlib import md5
+from io import StringIO
 
 from libfnl.nlp.medline import Fetch, Parse, MakeDocuments, TextFromAbstract
 
@@ -15,14 +16,14 @@ PARSED_SAMPLE = [
         'Affiliation': 'Dipartimento di Scienze Ambientali, Università degli Studi della Tuscia, 01100 Viterbo, Italy.',
         'ArticleTitle': 'Is cryopreservation a homogeneous process? Ultrastructure and motility of untreated, prefreezing, and postthawed spermatozoa of Diplodus puntazzo (Cetti).',
         'AuthorList': [
-            'A. R. Taddei',
-            'F. Barbato',
-            'L. Abelli',
-            'S. Canese',
-            'F. Moretti',
-            'K. J. Rana',
-            'A. M. Fausto',
-            'M. Mazzini'
+            {'ValidYN': 'Y', 'LastName': 'Taddei', 'Initials': 'AR', 'ForeName': 'A R'},
+            {'ValidYN': 'Y', 'LastName': 'Barbato', 'Initials': 'F', 'ForeName': 'F'},
+            {'ValidYN': 'Y', 'LastName': 'Abelli', 'Initials': 'L', 'ForeName': 'L'},
+            {'ValidYN': 'Y', 'LastName': 'Canese', 'Initials': 'S', 'ForeName': 'S'},
+            {'ValidYN': 'Y', 'LastName': 'Moretti', 'Initials': 'F', 'ForeName': 'F'},
+            {'ValidYN': 'Y', 'LastName': 'Rana', 'Initials': 'KJ', 'ForeName': 'K J'},
+            {'ValidYN': 'Y', 'LastName': 'Fausto', 'Initials': 'AM', 'ForeName': 'A M'},
+            {'ValidYN': 'Y', 'LastName': 'Mazzini', 'Initials': 'M', 'ForeName': 'M'},
         ],
         'Journal': {
             'ISOAbbreviation': 'Cryobiology',
@@ -48,7 +49,6 @@ PARSED_SAMPLE = [
         'pii': 'S0011-2240(01)92328-4',
         'pubmed': '11748933'
     },
-    'CitationSubset': 'IM',
     'DateCompleted': date(2002, 3, 4),
     'DateCreated': date(2001, 12, 25),
     'DateRevised': date(2006, 11, 15),
@@ -87,12 +87,12 @@ PARSED_SAMPLE = [
         'Affiliation': "INFM and Department of Physics, University of L'Aquila, I-67100 L'Aquila, Italy.",
         'ArticleTitle': 'Proton MRI of (13)C distribution by J and chemical shift editing.' ,
         'AuthorList': [
-            'C. Casieri',
-            'C. Testa',
-            'G. Carpinelli',
-            'R. Canese',
-            'F. Podo',
-            'F. De Luca'
+            {'ForeName': 'C', 'Initials': 'C', 'LastName': 'Casieri', 'ValidYN': 'Y'},
+            {'ForeName': 'C', 'Initials': 'C', 'LastName': 'Testa', 'ValidYN': 'Y'},
+            {'ForeName': 'G', 'Initials': 'G', 'LastName': 'Carpinelli', 'ValidYN': 'Y'},
+            {'ForeName': 'R', 'Initials': 'R', 'LastName': 'Canese', 'ValidYN': 'Y'},
+            {'ForeName': 'F', 'Initials': 'F', 'LastName': 'Podo', 'ValidYN': 'Y'},
+            {'ForeName': 'F', 'Initials': 'F', 'LastName': 'De Luca', 'ValidYN': 'Y'}
         ],
         'Journal': {
             'ISOAbbreviation': 'J. Magn. Reson.',
@@ -151,16 +151,40 @@ class TestMedline(unittest.TestCase):
 
     def testParser(self):
         for record in Parse(self.xml_stream):
+            expected = PARSED_SAMPLE[self.count]
+
+            for key, value in expected.items():
+                if key not in record:
+                    self.fail('missing key {}'.format(key))
+
+                if isinstance(value, list):
+                    self.assertListEqual(value, record[key])
+                elif isinstance(value, tuple):
+                    self.assertTupleEqual(value, record[key])
+                elif isinstance(value, str):
+                    self.assertSequenceEqual(value, record[key])
+                elif isinstance(value, dict):
+                    for k2, v2 in value.items():
+                        if k2 not in record[key]:
+                            self.fail('missing key {}/{}'.format(key, k2))
+
+                        self.assertEqual(v2, record[key][k2])
+
             self.assertDictEqual(PARSED_SAMPLE[self.count], record)
             self.count += 1
 
         self.assertEqual(len(PARSED_SAMPLE), self.count)
 
     def testMakeDocuments(self):
+        tag = (('keep', 'me', (1,2)), None)
+        title = PARSED_SAMPLE[1]['Article']['ArticleTitle']
+        abstract = PARSED_SAMPLE[1]['Article']['Abstract']
+        text = '\n\n'.join((title, abstract['AbstractText'],
+                            abstract['CopyrightInformation']))
         revs = {'11700088': {
-            '_rev': 'maintain', 'created': 'keep me', 'text': 'clear me',
-            'tags': {'clear': {'me': [(1,2)]}}, '_id': '11700088',
-            'medline': 'gone',
+            '_rev': 'maintain', 'created': 'keep me', 'text': text,
+            'tags': [tag], '_id': '11700088',
+            'medline': 'gone', 'checksum': ('md5', md5(text.encode()).hexdigest())
         }}
         docs = iter(MakeDocuments(self.xml_stream, revs))
         d = next(docs)
@@ -178,24 +202,26 @@ class TestMedline(unittest.TestCase):
         self.assertEqual('keep me', d['created'])
         self.assertEqual(now, d['modified'].replace(minute=0, second=0))
         self.assertNotEqual('clear me', d['text'])
-        self.assertTrue('clear' not in d['tags'])
+        self.assertTrue(tag in d['tags'], d['tags'])
         self.assertRaises(StopIteration, next, docs)
 
     def testTextFromAbstract(self):
-        section_tags = {"title": [(0, 10)]}
+        section_tags = [('medline', 'title', (0, 10))]
         title = "1234567890"
         abstract = {
             "AbstractText": "1234567890",
-            "CopyrightNotice": "1234567890"
+            "CopyrightInformation": "1234567890"
         }
         buffer = StringIO()
         buffer.write(title)
 
         result = TextFromAbstract(buffer, abstract, section_tags)
         self.assertSequenceEqual('\n\n'.join(["1234567890"] * 3), result)
-        self.assertDictEqual({"title": [(0, 10)],
-                              "abstract": [(12, 22)],
-                              "copyright": [(24, 34)]}, section_tags)
+        self.assertListEqual([
+            ('medline', 'title', (0, 10)),
+            ('medline', 'abstract', (12, 22)),
+            ('medline', 'copyright', (24, 34))
+        ], section_tags)
 
 
 if __name__ == '__main__':

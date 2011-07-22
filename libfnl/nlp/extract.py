@@ -10,10 +10,10 @@ format, attempting to preserve annotations where possible.
 """
 import os
 import re
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 from html.entities import entitydefs
 from html.parser import HTMLParser
-from libfnl.nlp.text import Unicode
+from libfnl.nlp.text import Text
 from logging import getLogger
 from mimetypes import guess_type
 from socket import gethostname
@@ -74,7 +74,7 @@ GREEK_UPPER = {
     "Omega": "Ω",
 }
 
-def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Unicode:
+def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
     """
     :param filename: The path and name of the file to extract.
     :param encoding: The charset encoding of the file; can be guessed by
@@ -114,27 +114,10 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Unicode:
             html.feed(line)
 
         html.close()
-        text = Unicode(html.string)
-        text.tags = {
-            'section': html.section_tags,
-            'format': html.format_tags
-        }
-        text.metadata['source'] = html.url or MakeSource(filename)
-
-        if html.tag_attributes:
-            attrs = {'section': {}, 'format': {}}
-
-            for tag, attrs in html.tag_attributes.items():
-                if tag in html.section_tags:
-                    attrs['section'][tag] = attrs
-                else:
-                    attrs['format'][tag] = attrs
-
-            text.metadata['attributes'] = attrs
+        text = Text(html.string, html.tags)
     elif mime_type == 'text/plain':
         plain_text = open(filename, 'rb').read()
-        text = Unicode(plain_text)
-        text.metadata['source'] = MakeSource(filename)
+        text = Text(plain_text)
     else:
         msg = 'no extraction rules for MIME type {}'.format(mime_type)
         raise RuntimeError(msg)
@@ -157,7 +140,10 @@ class HtmlExtractor(HTMLParser):
     L = getLogger('HtmlExtractor')
 
     multi_ws = re.compile(r'\s+', re.ASCII) # only match r'[ \t\n\r\f\v]+'
+    nl_end = re.compile(r'[\n\u2028]+$')
     url_like = re.compile('^\w*:?//\w+') # simple check if a href is URL-like
+    ws_end = re.compile(r'\s+$')
+    ws_start = re.compile(r'^\s+')
 
     # Special characters:
     LINE_SEP = '\u2028'
@@ -403,7 +389,7 @@ class HtmlExtractor(HTMLParser):
         title = None
         alt = None
 
-        for k in attrs.keys():
+        for k in list(attrs.keys()):
             if not attrs[k]:
                 del attrs[k]
             elif k == 'href':
@@ -465,14 +451,12 @@ class HtmlExtractor(HTMLParser):
         super(HtmlExtractor, self).__init__()
         self.__ignoring_content = []
         self.__in_body = False
-        self.__root = (HtmlExtractor.Tag('root', *[None]*5), [])
+        self.__root = (HtmlExtractor.Tag('root', *[None]*4), [])
         self.__state = []
         self.__string = None
         self.__url = None
         self.__chunks = self.__root[1]
-        self.format_tags = None
-        self.section_tags = None
-        self.tag_attributes = None
+        self.tags = None
 
     def reset(self):
         """
@@ -481,14 +465,12 @@ class HtmlExtractor(HTMLParser):
         super(HtmlExtractor, self).reset()
         self.__ignoring_content = []
         self.__in_body = False
-        self.__root = (HtmlExtractor.Tag('root', *[None]*5), [])
+        self.__root = (HtmlExtractor.Tag('root', *[None]*4), [])
         self.__state = []
         self.__string = None
         self.__url = None
         self.__chunks = self.__root[1]
-        self.format_tags = None
-        self.section_tags = None
-        self.tag_attributes = None
+        self.tags = None
 
     #noinspection PyMethodOverriding
     def feed(self, data:str, url:str=None):
@@ -503,7 +485,7 @@ class HtmlExtractor(HTMLParser):
             fully qualified URLs; If the HTML has a base element with the href
             attribute set, that is used unless set here explicitly.
         """
-        if HtmlExtractor.url_like.match(url):
+        if url and HtmlExtractor.url_like.match(url):
             self.__url = urlunsplit(urlsplit(url, 'http'))
 
         super(HtmlExtractor, self).feed(data)
@@ -529,17 +511,12 @@ class HtmlExtractor(HTMLParser):
         
         if self.__string is None:
             self.__string = ['']
-            self.format_tags = defaultdict(list)
-            self.section_tags = defaultdict(list)
-            self.tag_attributes = defaultdict(dict)
+            self.tags = dict()
             strlen = self._toOffsets(self.__root, 0)
             self.__string = ''.join(self.__string).replace(
                 HtmlExtractor.LINE_SEP, '\n'
             )
             assert strlen == len(self.__string)
-            self.format_tags = dict(self.format_tags)
-            self.section_tags = dict(self.section_tags)
-            self.tag_attributes = dict(self.tag_attributes)
 
         return self.__string
 
@@ -567,10 +544,15 @@ class HtmlExtractor(HTMLParser):
                 if tag.name != 'pre':
                     chunk = self.multi_ws.sub(' ', chunk)
                     chunk = chunk.replace(HtmlExtractor.PARA_SEP, '\n\n')
-                    last = self.__string[-1]
+                    last = ''
 
-                    if last in HtmlExtractor.SPACES and chunk.startswith(' '):
-                        chunk = chunk[1:]
+                    for s in reversed(self.__string):
+                        if s:
+                            last = s
+                            break
+
+                    if HtmlExtractor.ws_end.search(last):
+                        chunk = HtmlExtractor.ws_start.sub('', chunk)
 
                 if chunk:
                     chunk = normalize('NFC', chunk)
@@ -589,24 +571,31 @@ class HtmlExtractor(HTMLParser):
         return end
 
     def _createTag(self, tag:Tag, start:int, end:int) -> int:
-        offset = (start, end)
+        self.tags[('html', tag.name, (start, end))] = tag.attrs
 
-        if tag.attrs:
-            self.tag_attributes[tag.name][repr(offset)] = tag.attrs
-
-        if HtmlExtractor.isInlined(tag):
-            self.format_tags[tag.name].append(offset)
-        elif HtmlExtractor.isContent(tag):
-            self.section_tags[tag.name].append(offset)
-
+        if HtmlExtractor.isContent(tag):
             if tag.name != 'body':
+                last = ''
+
+                for s in reversed(self.__string):
+                    if s:
+                        last += s
+                        if len(last) > 1: break
+
+                mo = HtmlExtractor.nl_end.search(last)
+
+                if mo: last = mo.group()
+                else: last = ''
+
                 if tag.name in HtmlExtractor.MINOR_CONTENT:
-                    self.__string.append('\n')
-                    end += 1
+                    if not last:
+                        self.__string.append('\n')
+                        end += 1
                 else:
-                    self.__string.append('\n\n')
-                    end += 2
-        else:
+                    if not len(last) > 1:
+                        self.__string.append('\n\n')
+                        end += 2
+        elif not HtmlExtractor.isInlined(tag):
             msg = 'unexpected tag {}'.format(tag)
             raise RuntimeError(msg)
         return end

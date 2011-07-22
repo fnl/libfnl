@@ -19,14 +19,14 @@ from unicodedata import normalize
 from urllib.request import build_opener
 from xml.etree.ElementTree import iterparse, tostring, Element
 from logging import getLogger
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from libfnl.couch.broker import Database
 from libfnl.nlp.extract import Extract
-from libfnl.nlp.text import Unicode
+from libfnl.nlp.text import Text
 
 __all__ = ['Attach', 'Dump', 'Fetch', 'Parse']
 
-LOGGER = getLogger()
+LOGGER = getLogger('medline')
 
 MONTHS_SHORT = (None, 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
@@ -59,7 +59,7 @@ ABSTRACT_ELEMENTS = [
     ('Methods', 'methods'),
     ('Results', 'results'),
     ('Conclusions', 'conclusions'),
-    ('CopyrightNotice', 'copyright')
+    ('CopyrightInformation', 'copyright'),
 ]
 """
 List of keys found in Article{1}->Abstract{0,1}, in order of how they should
@@ -163,36 +163,54 @@ def MakeDocuments(stream, old_revisions:dict=None) -> iter([dict]):
     :return: A document iterator.
     """
     for medline in Parse(stream):
-        text = MakeUnicode(medline)
-        text.metadata['medline'] = medline
+        text = MakeText(medline)
         pmid = medline['PMID'][0]
+        rev = None
+        created = datetime.now().replace(microsecond=0)
+        modified = created
 
         if old_revisions and pmid in old_revisions:
-            pmid = old_revisions[pmid]
+            old = old_revisions[pmid]
+            old_text = Text.fromJson(old)
 
-        yield text.toDocument(pmid)
+            try:
+                old_text.update(text)
+            except ValueError:
+                LOGGER.warn('text for %s changed', pmid)
+            else:
+                text = old_text
+
+            rev = old['_rev']
+            created = old['created']
+
+        json = text.toJson()
+        json['_id'] = pmid
+        if rev: json['_rev'] = rev
+        json['medline'] = medline
+        json['created'] = created
+        json['modified'] = modified
+        yield json
 
 
-def MakeUnicode(raw_json:dict) -> Unicode:
+def MakeText(raw_json:dict) -> Text:
     article = raw_json['Article']
     title = normalize('NFC', article['ArticleTitle'])
-    section_tags = {'title': [(0, len(title))]}
+    tags = [('medline', 'title', (0, len(title)))]
 
     if 'Abstract' in article:
         buffer = StringIO()
         buffer.write(title)
-        text = TextFromAbstract(buffer, article['Abstract'], section_tags)
+        text = TextFromAbstract(buffer, article['Abstract'], tags)
         del article['Abstract']
     else:
         text = title
 
-    text = Unicode(text)
-    text.tags = {'section': section_tags}
+    text = Text(text, tags)
     return text
 
 
-def TextFromAbstract(buffer:StringIO, abstract:dict, section_tags:dict) -> str:
-    offset = section_tags['title'][0][1]
+def TextFromAbstract(buffer:StringIO, abstract:dict, tags:list) -> str:
+    offset = tags[0][2][1] # title must exist!
 
     for section, short in ABSTRACT_ELEMENTS:
         if section in abstract:
@@ -201,7 +219,7 @@ def TextFromAbstract(buffer:StringIO, abstract:dict, section_tags:dict) -> str:
             content = normalize('NFC', abstract[section])
             start = offset
             offset += len(content)
-            section_tags[short] = [(start, offset)]
+            tags.append(('medline', short, (start, offset)))
             buffer.write(content)
 
     return buffer.getvalue()
@@ -409,7 +427,7 @@ def Attach(filenames:list, medline_db:Database, encoding:str='utf-8',
 
     for fn in filenames:
         try:
-            text = Extract(fn, encoding).toBinary('utf-8')
+            text = Extract(fn, encoding)
         except IOError:
             logger.error('could not read %s', fn)
             continue
@@ -425,6 +443,7 @@ def Attach(filenames:list, medline_db:Database, encoding:str='utf-8',
             continue
 
         text_id = text.base64digest
+        modified = False
 
         if text_id in medline_db:
             article = medline_db[text_id]
@@ -434,24 +453,36 @@ def Attach(filenames:list, medline_db:Database, encoding:str='utf-8',
                 logger.info('%s already attached', fn)
             else:
                 pm_ids.append(pmid)
-                text.metadata['pmids'] = pm_ids
 
                 if force:
                     logger.info('overwriting %s (%s)', text_id, base)
-                    article = text.toDocument(text_id)
+                    rev = article['_rev']
+                    article = text.toJson()
+                    article['_rev'] = rev
+                    article['created'] = datetime.today()
                 else:
                     logger.debug('updating %s with %s', text_id, base)
-                    article = text.toDocument(article)
+                    old_text = Text.fromJson(article)
+                    old_text.update(text)
+                    text = old_text
+                    article.update(text.toJson())
 
+                article['modified'] = datetime.today()
+                article['pmids'] = pm_ids
                 medline_db[text_id] = article
+                modified = True
         else:
             logger.debug('adding article %s (%s)', base, text_id)
-            text.metadata['pmids'] = [pmid]
-            article =  text.toDocument()
+            article = text.toJson()
+            article['pmids'] = [pmid]
+            article['created'] = datetime.today()
+            article['modified'] = article['created']
             medline_db[text_id] = article
+            modified = True
 
-        medline_db.saveAttachment(article, fn, 'raw.{}'.format(ext),
-                                  charset=encoding)
+        if modified:
+            medline_db.saveAttachment(article, open(fn, 'rb').read(),
+                                      'raw{}'.format(ext), charset=encoding)
         results[pmid].append(text_id)
 
     return results

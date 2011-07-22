@@ -19,8 +19,8 @@ class SessionTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         timeout = 1
         session = network.Session(timeout=timeout)
         start = time.time()
-        response = session.request('GET', db.resource.url + '/_changes?feed=longpoll&since=1000&timeout=%s' % (timeout*2*1000,), chunked_response=True)
-        self.assertRaises(socket.timeout, response.data.read)
+        self.assertRaises(socket.timeout, session.request, 'GET', db.resource.url + '/_changes?feed=longpoll&since=1000&timeout=%s' % (timeout*2*1000,))
+        #self.assertRaises(socket.timeout, response.data.read)
         self.failUnless(time.time() - start < timeout * 1.3)
 
 
