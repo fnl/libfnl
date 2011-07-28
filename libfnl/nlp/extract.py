@@ -446,7 +446,7 @@ class HtmlExtractor(HTMLParser):
         """
         Create a new extractor that can be reused with :meth:`.reset()`,
         run with :meth:`.feed()`, and the result then fetched from
-        :attr:`.string`.
+        :attr:`.HtmlExtractor.string`.
         """
         super(HtmlExtractor, self).__init__()
         self.__ignoring_content = []

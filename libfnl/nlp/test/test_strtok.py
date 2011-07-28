@@ -27,11 +27,11 @@ class TokenizerTests(TestCase):
         self.text = Text(self.EXAMPLE)
 
     def assertResult(self, tokenizer, offsets):
-        self.text.tags = tokenizer.tag(self.text)
+        tokenizer.tag(self.text)
 
-        for idx, (tag, attrs) in enumerate(self.text):
-            self.assertSequenceEqual(offsets[idx], tag.offsets)
-            self.assertSequenceEqual(self.TAGS[tag.offsets[0]:tag.offsets[1]],
+        for idx, (tag, attrs) in enumerate(self.text.get()):
+            self.assertSequenceEqual(offsets[idx], tag[2])
+            self.assertSequenceEqual(self.TAGS[tag[2][0]:tag[2][1]],
                                      attrs['morphology'])
 
     def testSeparator(self):
@@ -81,10 +81,9 @@ class TokenizerTests(TestCase):
         # tokenizer = S.AlnumTokenizer()
         start = time()
         # Tagging without morphology (None) is about 30% faster, obviously.
-        tags = tokenizer.tag(text)
-        # text.tags = tags
-        # tokenizer.tag(text, None)
+        tokenizer.tag(text)
         end = time()
+        tags = dict(text.get())
         # on an average MBP (2.66 GHz) this should take less than half a sec
         # using the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
@@ -141,8 +140,7 @@ if __name__ == '__main__':
         string = "".join(chr(randint(1, 0xD7FE)) for dummy in range(100000))
         text = Text(string)
         tokenizer = S.WordTokenizer()
-        tags = tokenizer.tag(text)
-        text.tags = tags
-        print("tagged", len(text), "chars with", len(tags), "tokens")
+        tokenizer.tag(text)
+        print("tagged", len(text.string), "chars with", len(text), "tokens")
     else:
         main()

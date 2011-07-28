@@ -1,5 +1,5 @@
 ###################################
-nlp.genia -- GENIA Corpus and Tools
+nlp.genia -- GENIA corpus and tools
 ###################################
 
 .. automodule:: libfnl.nlp.genia

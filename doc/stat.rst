@@ -1,5 +1,5 @@
 #############################
-stat -- Statistical Functions
+stat -- Statistical functions
 #############################
 
 .. automodule:: libfnl.stat

@@ -6,102 +6,27 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 import hashlib
-from operator import itemgetter
-from bintrees import FastRBTree as RBTree
+from collections import defaultdict, namedtuple
+from itertools import chain
 from libfnl import PyUTF16
 from libfnl.couch.serializer import b64encode
 
 class Text:
     """
-    Annotate strings with character-offset based :class:`.Text.Tag`\ s.
+    Annotate strings with character-offset based tags.
 
-    Counting character offset for strings with Supplementary Multilingual
+    Tags are assumed to be tuples of three values::
+
+        tag = ( 'namespace', 'identifier', <offsets> )
+
+    Where the last, offset, is a tuple of 1 or 2n integers with n > 0::
+
+        offset = ( <start>, ... <[stop]> )
+
+    Using (whole) character offsets for strings with Supplementary Multilingual
     Plane (SMP) codepoints works even on narrow Python builds, via a special
     fix for strings containing surrogate pairs.
-
-    Tags retrieved from the subscript accessor (``__getitem__`` aka.
-    ``text[<slice or idx>]``) and iterators are sorted by the lowest offset
-    start, highest offset end. The `reversed` iteration of tags (ie.,
-    ``reversed(text)``) starts with the highest offset end, lowest offset
-    start.
-
-    .. note::
-
-        The reversed list is not always the same order as reversing the list
-        of ``iter(text)`` -- ie., ``reversed(iter(text)) != reversed(text)``
-        if there are nested tags.
     """
-
-    class Tag(tuple):
-        """
-        A hashable annotation container for offset-based :class:`.Text` tags.
-
-        Just as a named tuple, but with the ability to cast it to a string
-        of the form ``<ns>:<id>:<o>`` (where ``<o>`` is a dot (.) separated
-        list of offsets, to be XML-conform) and a pure `tuple`\ -representation
-        (instead of the regular, but verbose `collections.namedtuple`
-        representation).
-        """
-
-        __slots__ = ()
-
-        _fields = ('ns', 'id', 'offsets')
-
-        #noinspection PyInitNewSignature
-        def __new__(cls, ns, id, offsets):
-            return tuple.__new__(cls, (ns, id, offsets))
-
-        #noinspection PyMethodOverriding
-        def __getnewargs__(self):
-            # Return self as a plain tuple. Used by copy and pickle.
-            return tuple(self)
-
-        def __repr__(self):
-            return tuple.__repr__(self)
-
-        def __str__(self):
-            return '{}:{}:{}'.format(self.ns, self.id,
-                                     '.'.join(map(str, self.offsets)))
-
-        def _asdict(self):
-            """
-            Return a `dict` which maps field names to their values.
-            """
-            return dict(zip(self._fields, self))
-
-        @classmethod
-        def _make(cls, iterable, new=tuple.__new__, len=len):
-            """
-            Make a new :class:`.Text.Tag` object from a sequence or iterable.
-            """
-            result = new(cls, iterable)
-            if len(result) != 3:
-                raise TypeError('Expected 3 arguments, got %d' % len(result))
-            return result
-
-        def _replace(self, **kwds):
-            """
-            Return a new Tag object replacing specified fields with new values.
-            """
-            result = self._make(map(kwds.pop, ('ns', 'id', 'offsets'), self))
-
-            if kwds:
-                raise ValueError('unexpected field names: %r' % kwds.keys())
-
-            return result
-
-        ns = property(itemgetter(0), doc='The namespace of this tag.\n\n'
-             'Should not contain colon (:) characters and; otherwise conform '
-             'with XML element name specifications.'
-        )
-        id = property(itemgetter(1), doc='The ID of this tag.\n\n'
-            'May contain any characters that are allowed for; XML element '
-            'names.'
-        )
-        offsets = property(itemgetter(2), doc='A tuple of integers.\n\n'
-            'Should consist of 1 or 2n integers where n > 0. If n > 1, it is '
-            'a multi-span annotation.'
-        )
 
     class StringFix:
         # A fix for offset problems in strings containing SMP characters on
@@ -123,45 +48,67 @@ class Text:
         def __len__(self) -> int:
             return self.__len
 
+        def __repr__(self) -> str:
+            return repr(self.__fixed)
+
         def __str__(self) -> str:
             return ''.join(self.__fixed)
+
+    Key = lambda tag: (tag[2][0], -tag[2][-1], tag[2], tag[0], tag[1])
+    """
+    Ordering of tags in forward offset order (lowest start, highest stop,
+    other offsets, namespace, ID).
+    """
+
+    ReverseKey = lambda tag: (-tag[2][-1], tag[2][0], tag[2], tag[0], tag[1])
+    """
+    Sort key of tags in reverse offset order (highest stop, lowest start,
+    other offsets, namespace, ID).
+
+    Not used anywhere, but provided for convenience, especially for
+    :meth:`.tags`.
+
+    .. note::
+
+        The reversed offset order is not the same as reversing the list
+        offset-ordered tags -- ie.::
+
+            reversed(sorted(tags, key=Text.Key)) != sorted(tags, key=Text.ReverseKey)
+    """
+
+    _Token = namedtuple('_Token', 'id text attributes')
 
     def __init__(self, text, tags:iter=None, **utf_maps):
         """
         Constructing a `Text` instance might raise any exception that
-        :meth:`.add` might raise in addition to those listed.
+        :meth:`.add` might raise.
 
         :param text: The string to annotate or another `Text` instance to copy.
         :param tags: The tags holding the annotations; Ignored if *text* is a
-            `Text` instance. May be an iterator of :class:`.Text.Tag`-like
-            tuples or a dictionary consisting of those tags as keys and an
-            attribute dictionary as value for each tag, adding additional
-            metadata to a specific tag.
-            To supply attributes only to a subset of the tags, any ``None``
-            value in the *tags* dictionary is ignored.
+            `Text` instance. See :meth:`.add` for more information about the
+            structure of *tags*.
         :param utf_maps: Provide pre-calculated maps for ``utf8``, ``utf16``,
-            and ``utf32``. Normally, you should not supply them yourself, this
-            parameter is used when creating `Text` instances from a
-            deserializer and maps are dropped silently if they are incorrect.
+            and ``utf32``. Normally, this parameter is only used when
+            deserializing `Text` instances. Maps are dropped silently if they
+            are incorrect.
         :raise TypeError: If *text* is neither a string or a `Text` instance.
         """
         if isinstance(text, Text): # deep copy from that instance
-            self._TEXT = text._TEXT
             self._FIX = text._FIX
+            self._TEXT = text._TEXT
+            self.attributes = { ns: { tag: dict(a)
+                                      for tag, a in attrs.items() }
+                                for ns, attrs in text.attributes.items() }
             self._digest = text._digest
             self._maps = dict(text._maps)
-            self._keys = { ns: { key: set(leaf) for key, leaf in node.items()}
-                           for ns, node in text._keys.items() }
-            #noinspection PyArgumentList
-            self._offsets = RBTree({start: RBTree({stop: set(tags) for
-                                                  stop, tags in tree.items()})
-                                    for start, tree in text._offsets.items()})
-            self.attributes = { tag: dict(attrs) for tag, attrs in
-                                text.attributes.items() }
+            self._tags = { ns: list(tags)
+                           for ns, tags in text._tags.items() }
         elif isinstance(text, str): # create a new instance
             self._TEXT = text # NB: immuteable!
-            self._maps = dict()
             self._digest = None
+            self._maps = dict()
+            self._tags = dict()
+            self.attributes = dict()
 
             if PyUTF16:
                 self._FIX = Text.StringFix(Text.__chars(text))
@@ -170,7 +117,7 @@ class Text:
             else:
                 self._FIX = self._TEXT
 
-            self.tags = list() if tags is None else tags
+            if tags: self.add(tags)
 
             if utf_maps:
                 for name in ('utf8', 'utf16', 'utf32'):
@@ -187,14 +134,6 @@ class Text:
 
     # Special and Private Methods
 
-    def __add(self, tag:Tag, leaf:set):
-        # Add tag to the _tagtree leaf and to _offsets.
-        leaf.add(tag)
-        start, stop = tag.offsets[0], -tag.offsets[-1]
-        tree = self._offsets.setdefault(start, RBTree())
-        if stop in tree: tree[stop].add(tag)
-        else: tree[stop] = {tag}
-
     @staticmethod
     def __chars(text:str) -> iter:
         # For character count problems with narrow Python builds: an iterator
@@ -206,13 +145,13 @@ class Text:
 
             if '\ud800' <= c < '\udc00':
                 c += next(char_iter)
-                assert '\udc00' <= c[1] < '\ue000'
+                assert '\udc00' <= c[1] < '\ue000', 'low surrogate missing'
 
             yield c
 
     def __checkMap(self, map:iter) -> tuple:
         map = tuple(int(i) for i in map)
-        textlen = len(self)
+        textlen = len(self.string)
 
         if textlen != len(map): # must be as long as the text has characters
             raise ValueError('map length != text length')
@@ -237,9 +176,9 @@ class Text:
 
     def __contains__(self, tag) -> bool:
         # Check if this *tag* is annotated on the text.
-        if self._keys and isinstance(tag, tuple) and len(tag) == 3:
+        if self._tags and isinstance(tag, tuple) and len(tag):
             try:
-                return tag in self._keys[tag[0]][tag[1]]
+                return tag in self._tags[tag[0]]
             except (KeyError, TypeError):
                 pass
 
@@ -258,81 +197,61 @@ class Text:
         # To ensure text1 **is** text2, use `is`, not ``==``.
         if isinstance(other, Text):
             if self._TEXT == other._TEXT:
-                if self._keys == other._keys:
+                if self._tags == other._tags:
                     return True
 
         return False
 
     def __iter__(self) -> iter:
-        # Iterate over all tags, yielding them with their attributes.
-        for tag in self.__iterHelper():
-            yield tag, self.attributes.get(tag, None)
+        # Iterate over all tags, yielding them without their attributes.
+        return chain(*self._tags.values())
 
-    def __iterHelper(self) -> iter:
-        # Iterate over all tags, yielding them in offset order.
-        for tree in self._offsets.values():
-            for tags in tree.values():
-                for tag in tags:
-                    yield tag
-
-    def __getitem__(self, idx:int) -> list:
+    def __getitem__(self, idx:int) -> iter:
         # Get all tags at a character position in text; optionally, a slice.
         # Note: The list is always ordered by offsets.
         # If the slice step evaluates to ``True``, only tags that are
         # completely contained in the slice are fetched.
-        return list(self.__getitemHelper(idx))
+        return sorted(self.__getitemHelper(idx), key=Text.Key)
 
     def __getitemHelper(self, idx):
-        begin, end = 0, len(self)
+        begin, end = 0, len(self.string)
+        inclusive = False
 
         if isinstance(idx, slice):
             start, stop, inclusive = self.__unslice(idx)
-            if inclusive: begin, end = start, stop
         else:
             if idx < 0: idx += end
             start, stop = idx, idx + 1
 
-        tags = list()
+        if inclusive:
+            in_range = lambda t: t[2][0] >= start and t[2][-1] <= stop
+        else:
+            in_range = lambda t: t[2][0] < stop and t[2][-1] > start
 
-        for tree in self._offsets.valueslice(begin, stop):
-            for tagset in tree.valueslice(-end, -start):
-                    tags.extend(tagset)
-
-        return tags
+        for ns, taglist in self._tags.items():
+            for tag in filter(in_range, taglist):
+                yield tag
 
     def __len__(self) -> int:
-        # The number of characters in the list, ie., counting surrogate pairs
-        # in narrow Python builds as one.
-        return len(self._FIX)
+        # The number of tags on this text.
+        return sum(len(tags) for tags in self._tags.values())
 
     def __repr__(self) -> str:
-#        return repr(self._TEXT)
-        return '<{} {}@{}>'.format(self.__class__.__name__,
-                                   id(self), self.base64digest)
+        return '<{} {}@{}>'.format(Text.__name__, id(self), self.base64digest)
 
-    @staticmethod
-    def __remove(container:dict, subset:set, key, subkey):
-        # Clean up any containers in _keys and _offsets that have been emptied.
-        if not subset:
-            del container[key][subkey]
-
-            if not container[key]:
-                del container[key]
-
-    def __reversed__(self):
-        # Iterate over all tags, yielding them in a special reverse order.
-        for tag in sorted(self.tags,
-                          key=lambda tag: (-tag.offsets[-1], tag.offsets[0])):
-            yield tag, self.attributes.get(tag, None)
+    def __reversed__(self) -> iter:
+        # Ensure using reversed() does not produce unexpected results.
+        return iter(self)
 
     def __setitem__(self, key, value):
         # Set a tag on a character, span, or offsets tuple:
-        # text[10] = 'ns:key'
-        # text[10:20] = 'ns:key'
-        # text[10:20] = 'ns:key', {'attr': 'value'}
-        # text[(10,15,18,20)] = 'ns:key'
+        # text[10] = 'ns:id'
+        # text[10:20] = 'ns:id'
+        # text[10:20] = 'ns:id', {'attr': 'value'}
+        # text[(10,15,18,20)] = 'ns:id'
         # Note: the key may contain additional colon characters.
         # Slice step values are ignored.
+        # Very inefficient way to add tags!!!
         if isinstance(key, slice):
             start, stop, _ = self.__unslice(key)
             offsets = (start, stop)
@@ -341,35 +260,54 @@ class Text:
         else:
             offsets = (int(key),)
 
-        if isinstance(value, tuple):
-            value, attributes = value[0], value[1]
+        if len(value) == 3:
+            ns, id, attributes = value[0], value[1], dict(value[2])
         else:
+            ns, id = value
             attributes = None
 
-        ns, tag_id = value.split(':', 1)
-        if __debug__: Text._checkOffsets(offsets, len(self))
-
         try:
-            node = self._keys[ns]
+            tags = self._tags[ns]
         except KeyError:
-            node = self._keys[ns] = dict()
+            tags = list()
 
-        try:
-            leaf = node[tag_id]
-        except KeyError:
-            leaf = node[tag_id] = set()
+        tag = (ns, id, offsets)
 
-        tag = Text.Tag(ns, tag_id, offsets)
-        if attributes: self.attributes[tag] = dict(attributes)
-        if tag not in leaf: self.__add(tag, leaf)
+        if tag not in tags:
+            tags.append(tag)
+            self._tags[ns] = sorted(tags, key=Text.Key)
+
+        if attributes:
+            attrs = self.attributes.setdefault(ns, dict())
+            Text.__update(attrs.setdefault(tag, dict()), attributes)
 
     def __str__(self) -> str:
         # The underlying string of this text.
         return self._TEXT
 
+    @staticmethod
+    def __update(attrs, new):
+        # Update an exisiting attribute dictionary, updating any dictionary
+        # values, extending any list values, or otherwise adding/replacing
+        # the values.
+        for name, value in new.items():
+            if name in attrs:
+                target = attrs[name]
+
+                if isinstance(target, dict) and \
+                   isinstance(value, dict):
+                    target.update(value)
+                elif isinstance(target, list) and \
+                     isinstance(value, (list, tuple)):
+                    target.extend(value)
+                else: # "unmutable" JSON target
+                    attrs[name] = value
+            else:
+                attrs[name] = value
+
     def __unslice(self, s):
         # Decompose a slice into start, stop, step.
-        l = len(self)
+        l = len(self.string)
 
         if not s.start: start = 0
         elif s.start < 0: start = l + s.start
@@ -385,211 +323,193 @@ class Text:
 
         return start, stop, s.step
 
-    # Tag Properties and Methods
+    # Tag Methods
 
-    @property
-    def tags(self) -> iter:
+    def add(self, tags:iter, namespace:str=None):
         """
-        An iterator over the list of (unique) :class:`.Text.Tag`\ s annotated
-        on this text, ordered by their offsets.
+        Add several tags at once, updating any existing ones. The *tags* can
+        be any iterable with a structure as the iterable returned by
+        :meth:`.Text.get`.
 
-        This is nearly the same as ``iter(text)``, except that only the tags
-        are returned instead of ``(tag, attributes)`` tuples.
+        Existing attribute dictionaries are updated. If the new attribute names
+        are not present, the new values are added. If the name exists, the
+        value is replaced, or ``update()``\ d if the value is a dictionary
+        and ``extend()``\ ed if it is a list.
+        
+        If tags are added to an existing namespace, the tags are ordered after
+        appending them. Tags for a novel namespace are **not** ordered because
+        tag lists are assumed to be created in order anyways, so by default no
+        ordering takes place when an entire new namespace is added. If the
+        to be added new namespace for some reason is not ordered it is
+        recommended to order them prior to adding.
 
-        By setting this property, the annotations on this text are all erased
-        and replaced with the list or dictionary of tags -- an iterable of
-        :class:`.Text.Tag`\ -like tuples, possibly a dictionary with tag tuples
-        as keys and attribute dictionaries as values; any ``None`` (attribute)
-        value is ignored. Setting the tags can raise the same errors as
-        :meth:`.add`.
+        :param tags: Any iterable of tag, attributes tuples::
+
+                ( ( "namespace", "id", ( <offset>, ... ) ),
+                  { "name": <value>, ... }                  )
+
+            If the tag has no attributes, attributes can be ``None`` instead of
+            a dictionary. The values of an attribute dictionary should be
+            JSON-serializable and the attribute names therefore plain strings.
+        :param namespace: If given, all tags are treated as being for that
+            namespace only, which improves the time needed to add tags for
+            just one namespace. None the less, the namespace element of the
+            *tags* has to be present in every tag, but no check is made to
+            ensure no different (ie., wrong) namespace is set in any of the
+            *tags*.
+        :raise TypeError: If any tag is not a sequence of items or not hashable
+            or if an attribute is not dictionary-like.
+        :raise ValueError: If a tag seems like a sequence of three items, but
+            is not - eg., ``('tag', 'id')``. If an attribute seems dictionary
+            like, but turns out to be not - eg., ``[('name', 'value',
+            'illegal')]``. Finally, a `ValueError` occurs if only tags but no
+            attributes are added: ie., using ``[tag1, tag2, tag3]`` instead of
+            ``[(tag1, None), (tag2, None), (tag3, None)]``.
         """
-        return self.__iterHelper()
-
-    @tags.setter
-    def tags(self, tags:iter):
-        self._keys = dict()
-        self._offsets = RBTree()
-        self.attributes = dict()
-        self.add(tags)
-
-    @property
-    def offsets(self) -> dict:
-        """
-        Get **a fresh copy of** a dictionary of (unique) :class:`.Text.Tag`\ s
-        grouped by their first offset, then last offset value::
-
-            {
-                1: {
-                    4: [
-                        Tag(ns='nsX', id='idA', offsets=(1,2,3,4)), ...
-                    ], ...
-                },
-                2: {
-                    2: [
-                        Tag(ns='nsY', id='idB', offsets=(2,)), ...
-                    ], ...
-                }, ...
-            }
-        """
-        return { start: { -stop: list(tags) for stop, tags in tree.items() }
-                 for start, tree in self._offsets.items() }
-
-    @property
-    def tagtree(self) -> dict:
-        """
-        Get **a fresh copy of** the (unique) :class:`.Text.Tag`\ s annotated
-        on this text, grouped into a dictionary tree::
-
-            {
-                'nsX' : {
-                    'idY': [
-                        Tag(ns='nsX', id='idY', offsets=(1,2,3,4)),
-                        ...
-                    ], ...
-                }, ...
-            }
-
-        The tags in the list are guaranteed to be unique, but are not ordered.
-        """
-        return { ns: { key: list(tags) for key, tags in node.items() }
-                 for ns, node in self._keys.items() }
-
-    def add(self, tags:iter):
-        """
-        Add several tags at once.
-
-        Note that this has a far better insert performance than, for example::
-
-            for offsets, attributes in some_iterable:
-                text[offsets] = 'ns:id', attributes
-
-        :param tags: An iterable of tags. If *tags* is a dictionary, the keys
-            should be the tags, the values a dictionary of the tag's
-            attributes; any ``None`` (attribute) value is ignored. An existing
-            attribute dictionary for a tag is replaced.
-        :raise TypeError: If the tag is not a tuple of three elements with the
-            last element another tuple (of offsets) itself. If *tags* is a
-            dictionary, but any value that is not ``None`` cannot be iterated.
-        :raise ValueError: If a tag's offsets are malformed, illegal or
-            unordered. If *tags* is a dictionary, but any iterable value can
-            not be coerced to a dictionary.
-        """
-        last_ns, last_id, last_node, last_leaf = None, None, None, None
-        textlen = len(self)
-
-        if isinstance(tags, dict):
-            for tag, attr in tags.items():
-                if attr is not None:
-                    self.attributes[tag] = dict(attr)
-
-        for tag in sorted(tags):
-            tag = Text.Tag(*tag)
-            if __debug__: Text._checkOffsets(tag.offsets, textlen)
-
-            if tag.ns != last_ns:
-                last_ns = tag.ns
-                last_node = self._keys.setdefault(last_ns, dict())
-
-            if tag.id != last_id:
-                last_id = tag.id
-                last_leaf = last_node.setdefault(last_id, set())
-
-            if tag in last_leaf: continue
-            self.__add(tag, last_leaf)
-
-    def get(self, namespace:str, key:str=None) -> list:
-        """
-        Get a list of all tags in a given *namespace* [and *key*] in no
-        particular order, but grouped keys (if *key* is ``None``).
-
-        :param namespace: The namespace to use.
-        :param key: The key to use or all for the *namespace* if ``None``.
-        :raise KeyError: If the *namespace* [or *key*] does not exist.
-        """
-        if key is None:
-            tags = list()
-
-            for leaf in self._keys[namespace].values():
-                tags.extend(leaf)
+        if namespace:
+            self._add(namespace, tags)
         else:
-            tags = list(self._keys[namespace][key])
+            groups = defaultdict(list)
 
-        return tags
+            for tag_attrs in tags:
+                groups[tag_attrs[0][0]].append(tag_attrs)
 
-    def remove(self, tags:iter):
+            for ns, ns_tags in groups.items():
+                self._add(ns, ns_tags)
+
+    def _add(self, namespace:str, tags:iter):
+        # Add new or update existing tags and attributes in *namespace* with
+        # additional *tags* and their attributes.
+        if namespace in self._tags:
+            existing_tags = frozenset(self._tags[namespace])
+            existing_attrs = self.attributes[namespace]
+            new_tags = list()
+
+            for tag, attrs in tags:
+                if tag not in existing_tags:
+                    new_tags.append(tag)
+
+                if attrs:
+                    if tag in existing_attrs:
+                        Text.__update(existing_attrs[tag], dict(attrs))
+                    else:
+                        existing_attrs[tag] = dict(attrs)
+
+            if new_tags:
+                new_tags.extend(existing_tags)
+                self._tags[namespace] = sorted(new_tags, key=Text.Key)
+        else:
+            taglist = self._tags[namespace] = list()
+            attdict = self.attributes[namespace] = dict()
+
+            for tag, attrs in tags:
+                taglist.append(tag)
+                if attrs: attdict[tag] = dict(attrs)
+
+    def get(self, namespace:str=None) -> iter:
         """
-        Remove several tags at once.
+        An iterator over the list of tags and attributes annotated on this
+        text, optionally only for one namespace.
 
-        :param tags: An iterable of tags.
-        :raise KeyError: If any tag's namespace or ID do not exist.
-        :raise ValueError: If any tag does not exist in that namespace and ID.
+        No ordering of the tags is made, although tags for one *namespace*
+        normally should be in correct order -- which only would occur if tags
+        had been added unordered.
+
+        :param namespace: Only fetch the tags for the given namespace instead
+            of all tags.
+        :return: An iterator over ``(tag, attrs)`` pairs where ``attrs`` is
+            the dictionary of attributes or ``None`` if the tag has no
+            attributes.
+        :raise KeyError: If the *namespace* does not exist.
+        :raise TypeError: If any tag previously added was malformed.
         """
-        last_ns, last_id, last_node, last_leaf = None, None, None, None
+        if namespace:
+            return self._get(namespace)
+        else:
+            return chain(*(self._get(ns) for ns in self.namespaces))
 
-        for tag in sorted(tags):
-            tag = Text.Tag(*tag)
+    def _get(self, ns:str) -> iter:
+        attrs = self.attributes[ns]
 
-            if tag.ns != last_ns:
-                last_ns = tag.ns
-                last_node = self._keys[last_ns]
+        for t in self._tags[ns]:
+            yield t, attrs.get(t)
 
-            if tag.id != last_id:
-                last_id = tag.id
-                last_leaf = last_node[last_id]
-
-            start, stop = tag.offsets[0], tag.offsets[-1]
-            starts = self._offsets[start][-stop]
-            last_leaf.remove(tag)
-            starts.remove(tag)
-            Text.__remove(self._keys, last_leaf, last_ns, last_id)
-            Text.__remove(self._offsets, starts, start, -stop)
-
-    def update(self, other):
+    @property
+    def namespaces(self) -> iter:
         """
-        Update this instance with tags and attributes from another `Text`.
-
-        Existing attribute dictionaries are updated, ie., if they have the
-        same keys, such attributes are overwritten.
-
-        :param other: A `Text` instance.
-        :raise TypeError: If *other* is not a `Text` instance.
-        :raise ValueError: If the annotated strings do not match.
+        An iterator over all namespace strings of all tags.
         """
-        if not isinstance(other, Text):
-            raise TypeError('can only update from other Text objects')
+        return self._tags.keys()
 
-        if self.digest != other.digest:
-            raise ValueError('texts mismatch')
-
-        self.add(other.tags)
-
-        for tag, attrs in other.attributes.items():
-            if tag in self.attributes:
-                self.attributes[tag].update(attrs)
-            else:
-                self.attributes[tag] = dict(attrs)
-
-    @staticmethod
-    def _checkOffsets(offsets:tuple, textlen:int):
+    def remove(self, tags:iter, namespace:str=None):
         """
-        Ensure the offsets are conforming or raise exceptions if not.
+        Remove several *tags* or an entire *namespace* at once.
 
-        Raise a :exc:`ValueError` if the length of the offsets is not a
-        multiple of 2 and larger than 2 (aka. "malformed"), the first offset
-        isn't ``>= 0``, the last offset isn't ``<= textlen`` (aka. "illegal"),
-        or the offsets are not consecutive (aka. "unordered").
+        :param tags: An iterable of tags or ``None`` to remove an entire
+            *namespace*.
+        :param namespace: The namespace to remove tags from (avoids grouping
+            the *tags* by namespaces first, but all tags must be from the
+            same namespace). If *tags* is ``None``, the entire namespace is
+            removed.
+        :raise KeyError: If any tag's namespace does not exist.
+        :raise ValueError: If any tag does not exist.
         """
-        len_offsets = len(offsets)
+        if tags is None:
+            del self._tags[namespace]
+            if namespace in self.attributes: del self.attributes[namespace]
+        elif namespace:
+            self._remove(namespace, tags)
+        else:
+            groups = defaultdict(list)
 
-        if len_offsets < 1 or (len_offsets != 1 and len_offsets % 2):
-            raise ValueError('malformed offsets: {}'.format(offsets))
+            for t in tags:
+                groups[t[0]].append(t)
 
-        if offsets[0] < 0 or offsets[-1] > textlen:
-            raise ValueError('illegal offsets: {}'.format(offsets))
+            for ns, ns_tags in groups.items():
+                self._remove(ns, ns_tags)
 
-        if len_offsets > 1 and not all(offsets[i-1] < offsets[i] for i in
-                                       range(1, len(offsets))):
-            raise ValueError('unordered offsets: {}'.format(offsets))
+    def _remove(self, namespace:str, tags:list):
+        target = self._tags[namespace]
+        attrs = self.attributes[namespace]
+
+        for t in tags:
+            target.remove(t)
+            if t in attrs: del attrs[t]
+
+        if not self._tags[namespace]:
+            del self._tags[namespace]
+            del self.attributes[namespace]
+
+    def tags(self, key=Key) -> list:
+        """
+        Return a list of **all** tags, sorted by *key*.
+
+        :param key: By default, uses :obj:`.Text.Key` order.
+        """
+        return sorted(self, key=key)
+
+    def update(self, text):
+        """
+        Update with tags and attributes from another `Text` instance that has
+        the same underlying string.
+
+        If you really need to update from another text with a different digest
+        and underlying string, you could simply use::
+
+            text.add(other.get())
+
+        .. seealso:: :meth:`.Text.add`
+
+        :param text: A `Text` instance.
+        :raise ValueError: If *text* is a `Text` instance, but the digests do
+            not match.
+        :raise AttributeError: If *text* is not a `Text` instance.
+        """
+        if self.digest != text.digest:
+            raise ValueError('the two texts mismatch')
+
+        for ns in text.namespaces:
+            self._add(ns, text.get(ns))
 
     # Byte Offset Maps
 
@@ -604,7 +524,7 @@ class Text:
     def _utf8(self):
         offset = 0
 
-        for c in self.iter():
+        for c in self.string:
             yield offset
             o = ord(c)
             if   o < 0x80: offset += 1
@@ -623,7 +543,7 @@ class Text:
     def _utf16(self):
         offset = 0
 
-        for c in self.iter():
+        for c in self.string:
             yield offset
             if ord(c) > 0xFFFF: offset += 4
             else: offset += 2
@@ -637,7 +557,7 @@ class Text:
         return self._utf('_utf32')
 
     def _utf32(self):
-        for i in range(len(self)):
+        for i in range(len(self.string)):
             yield i * 4
 
     def _utf(self, name:str) -> tuple:
@@ -651,6 +571,36 @@ class Text:
 
     # String methods
 
+    def encode(self, encoding:str='utf-8', errors:str='strict') -> bytes:
+        """
+        Return the encoded text string.
+        """
+        return self._TEXT.encode(encoding, errors)
+
+    def iter(self, namespace:str) -> iter:
+        """
+        Iterate over the string tokens of all tags in a given *namespace*.
+
+        Tokens are named tuples to represent token strings for a given tag.
+        The tuple consists of an *id* string (the tag ID), *text* (the string),
+        and an *attributes* dictionary (as set on the tag; possibly ``None``).
+
+        :param namespace: The namespace to iterate over
+        :return: Named tuples of ``(id, text, attributes)`` values.
+        """
+        attributes = self.attributes[namespace]
+
+        for t in self._tags[namespace]:
+            off = t[2]
+
+            if len(off) > 2:
+                text = ''.join(self._FIX[off[i]:off[i+1]]
+                               for i in range(0, len(off), 2))
+            else:
+                text = self._FIX[off[0]:off[-1]]
+
+            yield Text._Token(t[1], text, attributes.get(t))
+
     @property
     def string(self) -> str:
         """
@@ -659,41 +609,39 @@ class Text:
 
         This property is provided to circumvent the problem of wrong offset
         counts when using narrow Python builds where Unicode is based on
-        UTF-16 characters, and surrogate pairs get sadly counted as length 2::
+        UTF-16 characters, and surrogate pairs normally are counted as length
+        2::
+
+        .. doctest::
 
             >>> from libfnl.nlp.text import Text
             >>> text = Text('abc\U0010ABCDabc')
-            >>> text.string[4]
-            '\U0010ABCD'
-            >>> text.string[3:5]
-            'c\U0010ABCDa'
+            >>> text.string[3]
+            '\\U0010abcd'
+            >>> text.string[2:5]
+            'c\\U0010abcda'
+            >>> for char in text.string:
+            ...     print(char)
+            a
+            b
+            c
+            \udbea\udfcd
+            a
+            b
+            c
+            >>> len(text.string)
+            7
 
         .. note::
 
-            If you wish to access the entire string, use ``s = str(text)``,
-            don't do ``s = text.string`` or something similar. On narrow
-            Python builds you might not be receiving a string type, but a
-            special class to fix the offset behaviour. You could use
-            ``s = str(text.string)`` to ensure this is always a string, but
-            this, in turn, would be very inefficient on narrow builds -- just
-            stick with ``str(text)``...
+            If you wish to access the entire string, use ``s = str(text)``
+            (better) or ``s = str(text.string)`` (can be slower in terms of
+            performance), but never use ``text.string`` directly. This is
+            important to remember, because on narrow Python builds you might
+            not be receiving a string type, but a special type to fix the
+            Surrogate Pair offset behaviour.
         """
         return self._FIX
-
-    def iter(self) -> iter:
-        """
-        Iterate over the characters in the string.
-
-        Can yield "characters" of length 2 if they are from the Unicode SMP
-        (ie., surrogate pairs) on narrow Python builds.
-        """
-        return iter(self._FIX)
-
-    def encode(self, encoding:str='utf-8', errors:str='strict') -> bytes:
-        """
-        Return the encoded text string.
-        """
-        return self._TEXT.encode(encoding, errors)
 
     # Text identity
 
@@ -724,47 +672,77 @@ class Text:
     def fromJson(cls, json:dict):
         """
         Create a `Text` instance, deserialized from a JSON dictionary with
-        the same keys mentioned in :meth:`.toJson`.
+        the same keys as mentioned in :meth:`.toJson`.
 
         Raises any exception that the `Text` constructor might.
 
         :raise ValueError: If the JSON dictionary has no text or checksum,
-            or if the checksum match test fails for any possible reason.
+            or if the checksum match test fails for any reason.
         """
-        tags = json.get('tags', [])
-
-        if tags:
-            tags = { Text.Tag(tag[0], tag[1], tuple(tag[2])): attr
-                     for tag, attr in tags }
-
+        # Create the text instance:
         try:
-            text = cls(json['text'], tags,
-                       **json.get('maps', {}))
+            text = cls(json['text'], **json.get('maps', {}))
         except KeyError:
-            raise ValueError('no text in this JSON dictionary')
+            raise ValueError('text not present in raw JSON')
 
+        # Ensure the checksum is correct:
         try:
-            hash_type, hex = json['checksum'][0].lower(), json['checksum'][1]
+            hex = None
+            checksum = { k.lower().replace('-', ''): v
+                         for k, v in json['checksum'].items() }
+            encoding = checksum['encoding'].lower().replace('-', '')
         except KeyError:
-            raise ValueError('no checksum in this JSON dictionary')
-        except IndexError:
-            raise ValueError('checksum list malformed')
-        except TypeError:
-            raise ValueError('checksum list malformed')
+            raise ValueError('checksum in raw JSON missing or malformed')
+        except AttributeError:
+            raise ValueError('checksum in raw JSON malformed')
 
-        digest = bytes(int(hex[i:i+2], 16) for i in range(0, len(hex), 2))
+        if 'md5' in checksum:
+            hex = checksum['md5']
 
-        if hash_type == 'md5':
-            if text.digest != digest:
-                raise ValueError('text and checksum mismatch')
+            if encoding == 'utf8':
+                text_digest = text.digest
+            else:
+                text_digest = hashlib.md5(str(text).encode(encoding)).digest()
         else:
-            try:
-                hasher = getattr(hashlib, hash_type)
-            except NameError:
-                raise ValueError('hash type "{}" unknown'.format(hash_type))
+            hash_function = None
 
-            if hasher(str(text).encode()).digest() != digest:
-                raise ValueError('text and checksum mismatch')
+            for hash_type in checksum:
+                try:
+                    hash_function = getattr(hashlib, hash_type)
+                    hex = checksum[hash_type]
+                except (NameError, AttributeError):
+                    pass
+                else:
+                    break
+
+            if hash_function is None:
+                msg = 'no known hash types ({})'.format(
+                    ', '.join(k for k in checksum.keys() if k != 'encoding')
+                )
+                raise ValueError(msg)
+
+            text_digest = hash_function(str(text).encode(encoding)).digest()
+
+        if text_digest != bytes(int(hex[i:i+2], 16)
+                                for i in range(0, len(hex), 2)):
+            raise ValueError('text and checksum mismatch')
+
+        # Add the tags to the text:
+        if 'tags' in json:
+            for ns, ns_set in json['tags'].items():
+                tags = list()
+                attrs = dict()
+
+                for id, id_set in ns_set.items():
+                    for offset, attributes in id_set.items():
+                        offsets = tuple(int(i) for i in offset.split('.'))
+                        tag = (ns, id, offsets)
+                        tags.append(tag)
+                        attrs[tag] = attributes
+
+                if tags:
+                    tags = sorted(tags, key=Text.Key)
+                    text.add(zip(tags, (attrs[t] for t in tags)))
 
         return text
 
@@ -775,21 +753,35 @@ class Text:
 
         Sets the following keys on the dictionary:
 
-        * **text**: ``"<the text>"``
-        * **checksum**: ``( "md5", "<the checksum as hex-string>" )``
-        * **maps**: ``{ "utf<X>": [<byte-offsets>] }``
-        * **tags**: ``[ ( ("<ns>", "<key>", (<offsets>)), <attributes dict or None> ), ... ]``
+        * text
+        * checksum
+        * maps
+        * tags
 
-        Note that ``tags`` are only set if present.
+        Note that ``tags`` are only set if any annotations were made.
         """
         json = { 'text': self._TEXT,
-                 'checksum': ('md5',
-                              ''.join('{:x}'.format(b) for b in self.digest)),
+                 'checksum': {
+                     'encoding': 'utf8',
+                     'md5': ''.join('{:x}'.format(b) for b in self.digest)
+                 },
                  'maps': {
                      'utf8': self.utf8,
                      'utf16': self.utf16,
                      'utf32': self.utf32
                  }
         }
-        if self._keys: json['tags'] = [t for t in iter(self)]
+        if self._tags:
+            tags = dict()
+
+            for ns in self._tags:
+                ns_set = tags[ns] = defaultdict(dict)
+                attributes = self.attributes.get(ns, dict())
+
+                for tag in self._tags[ns]:
+                    offsets = '.'.join(map(str, tag[2]))
+                    ns_set[tag[1]][offsets] = attributes.get(tag)
+
+            json['tags'] = tags
+
         return json

@@ -436,25 +436,24 @@ class Tokenizer:
 
     def __init__(self, namespace:str=NAMESPACE):
         """
-        The *namespace* is the string used for the tags created on the text.
+        The *namespace* is the namespace string used for the tags created on
+        the text.
         """
         self.namespace = namespace
 
-    def tag(self, text:Text, metamorph:str="morphology") -> dict:
+    def tag(self, text:Text, morphology:str="morphology") -> dict:
         """
-        Tag the given :class:`.Unicode` *text* with tokens and store them
-        in the defined `namespace` and `key`. The morphology of each token,
-        in the order they appear in the text, is stored in the ``metadata``
-        dictionary of the *text*, using *metamorph* as key.
+        Tokenize the given *text* by adding tags the defined
+        :attr:`.namespace` with *morphology* attributes for each tag.
 
         :param text: The text to tag.
-        :param metamorph: The key name for the morphology strings in the
-            attribute dictionaries of the tags.
-        :return: A dictionary of ``{tag: attrs}`` values that can be added or
-            set on the text.
+        :param morphology: The attribute name used for the morphology strings
+            in the attribute dictionaries of the tags.
         """
-        assert len(text), "empty text"
-        tokens = dict()
+        text.add(self._tag(text, morphology), self.namespace)
+
+    def _tag(self, text:Text, morphology:str):
+        assert len(text.string), "empty text string"
         start = 0
         cats = None
         last_cat = None
@@ -472,7 +471,7 @@ class Tokenizer:
                 if end:
                     tag = (NAMESPACE, State.__name__, (start, end))
                     last_cat = cats.getvalue() if cats else last_cat
-                    tokens[tag] = {metamorph: last_cat}
+                    yield tag, {morphology: last_cat}
 
                 cats = None
                 start = end
@@ -480,11 +479,9 @@ class Tokenizer:
                 last_cat = chr(cat)
 
         if cats or last_cat:
-            tag = (NAMESPACE, State.__name__, (start, len(text)))
+            tag = (NAMESPACE, State.__name__, (start, len(text.string)))
             last_cat = cats.getvalue() if cats else last_cat
-            tokens[tag] = {metamorph: last_cat}
-
-        return tokens
+            yield tag, {morphology: last_cat}
 
     @staticmethod
     def _findState(cat:int) -> FunctionType:
