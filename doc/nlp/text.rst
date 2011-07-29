@@ -75,7 +75,7 @@ Technical details on creating :class:`.Text` objects are found in the API docs o
 Accessing the text's string
 ---------------------------
 
-To access slices of or iterate over the characters of the underlying string of a `Text` object, a special :attr:`.Text.string` property is provided.
+To access slices of or iterate over the characters of the underlying string of a `Text` object, a special :attr:`.Text.string` (read-only) property is provided.
 
 .. doctest::
 
@@ -83,19 +83,21 @@ To access slices of or iterate over the characters of the underlying string of a
     'fox'
     >>> text.string[10]
     'f'
+    >>> isinstance(text.string, str)
+    True
 
-However, this attribute may return a special type to fix offset problems with so-called "Astral characters" on narrow Python builds -- characters with code-points mapping to the Supplementary Multilingual Planes (planes 2-16, U+10000-U+10FFFE). By providing this special `string` attribute, character offsets in strings are guaranteed to be equal no matter which Python build is used (on narrow builds, Astrals would normally result in two-character wide Surrogate Pairs). To fetch the entire underlying string, for efficiency, it is recommended to simply cast the `Text` object to a string, but it is also possible to cast the `.string` attribute, which is necessary because of the mentioned issue on narrow Python, when `string` is not a real `str` type.
+However, this attribute may be a special type to fix offset problems with so-called "Astral characters" on narrow Python builds -- characters with code-points mapping to the Supplementary Multilingual Planes (planes 2-16, U+10000-U+10FFFE). By providing this special `string` attribute, character offsets in strings are guaranteed to be equal no matter which Python build is used (on narrow builds, Astrals would normally result in two-character wide Surrogate Pairs). However, as it behaves just as any other string would, so there is not problem in using it just as you would use any other string.
 
 .. doctest::
 
-    >>> str(text) # preferred
+    >>> str(text) # directly on text
     'The brown fox jumped over the green frog.'
-    >>> str(text.string) # possible
+    >>> str(text.string) # just as good
     'The brown fox jumped over the green frog.'
     >>> [char for char in text.string]
     ['T', 'h', 'e', ' ', 'b', 'r', 'o', 'w', 'n', ' ', 'f', 'o', 'x', ...]
 
-Using the length operator on `string` returns the length of the underlying string in "real" characters (ie., counting Surrogate Pairs -- if any -- as length 1).
+Using the length operator on `string` returns the length of the underlying string in "real" characters (ie., counting Surrogate Pairs -- if any -- as length 1). If you need to get the "real" offsets of narrow builds (ie., counting Surrogate Pairs as length 2), cast it to a string object as shown above.
 
 .. doctest::
 
@@ -197,7 +199,7 @@ Text constructor and attributes
 -------------------------------
 
 .. autoclass:: libfnl.nlp.text.Text
-   :members: Key, ReverseKey, base64digest, digest, utf8, utf16, utf32
+   :members: Key, ReverseKey, base64digest, digest, utf8, utf16
 
 String access
 -------------

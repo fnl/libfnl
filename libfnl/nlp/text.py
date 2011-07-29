@@ -28,16 +28,36 @@ class Text:
     fix for strings containing surrogate pairs.
     """
 
-    class StringFix:
+    class StringFix(str):
         # A fix for offset problems in strings containing SMP characters on
         # narrow Python builds.
 
-        def __init__(self, fixed:tuple):
-            # *Fixed* is a tuple of codepoint-grouped strings where surrogate
-            # pairs are represented as a single tuple element to duck-type the
-            # same behaviour of strings on both Python builds.
-            self.__fixed = tuple(fixed)
+        def __init__(self, value:str='', *_):
+            str.__init__(self)
+            # __fixed is a tuple of codepoint-grouped strings where Surrogate
+            # Pairs are represented as a single tuple elements to ensure
+            # the same coordinates of string offsets on both Python builds.
+            self.__fixed = tuple(Text.StringFix.__chars(value))
             self.__len = len(self.__fixed)
+
+        # "fixed" methods
+
+        @staticmethod
+        def __chars(text:str) -> iter:
+            # For character count problems with narrow Python builds: an
+            # iterator of real characters, joining surrogate pairs as one.
+            char_iter = iter(text)
+
+            while True:
+                c = next(char_iter)
+
+                if '\ud800' <= c < '\udc00':
+                    c += next(char_iter)
+
+                    if not '\udc00' <= c[1] < '\ue000':
+                        raise UnicodeError('low surrogate character missing')
+
+                yield c
 
         def __getitem__(self, idx) -> str:
             return ''.join(self.__fixed[idx])
@@ -45,14 +65,11 @@ class Text:
         def __iter__(self) -> iter:
             return iter(self.__fixed)
 
+        def __reversed__(self) -> iter:
+            return reversed(self.__fixed)
+
         def __len__(self) -> int:
             return self.__len
-
-        def __repr__(self) -> str:
-            return repr(self.__fixed)
-
-        def __str__(self) -> str:
-            return ''.join(self.__fixed)
 
     Key = lambda tag: (tag[2][0], -tag[2][-1], tag[2], tag[0], tag[1])
     """
@@ -87,10 +104,12 @@ class Text:
         :param tags: The tags holding the annotations; Ignored if *text* is a
             `Text` instance. See :meth:`.add` for more information about the
             structure of *tags*.
-        :param utf_maps: Provide pre-calculated maps for ``utf8``, ``utf16``,
-            and ``utf32``. Normally, this parameter is only used when
+        :param utf_maps: Provide pre-calculated maps for UTF-8 and UTF-16
+            encodings. Normally, this parameter is only used when
             deserializing `Text` instances. Maps are dropped silently if they
-            are incorrect.
+            are incorrect. UTF-32 maps are ignored, because they are trivial:
+            ``bytes := characters * 4 + 4`` where ``+ 4`` is the BOM (Byte
+            Order Mark) length.
         :raise TypeError: If *text* is neither a string or a `Text` instance.
         """
         if isinstance(text, Text): # deep copy from that instance
@@ -111,7 +130,7 @@ class Text:
             self.attributes = dict()
 
             if PyUTF16:
-                self._FIX = Text.StringFix(Text.__chars(text))
+                self._FIX = Text.StringFix(text)
                 # But only use this fix if there are SMP codepoints!
                 if len(self._FIX) == len(self._TEXT): self._FIX = self._TEXT
             else:
@@ -120,10 +139,12 @@ class Text:
             if tags: self.add(tags)
 
             if utf_maps:
-                for name in ('utf8', 'utf16', 'utf32'):
-                    if name in utf_maps:
+                for name in utf_maps:
+                    normal = name.strip().lower().replace('-', '')
+
+                    if normal in ('utf8', 'utf16'):
                         try:
-                            self._maps['_' + name] = \
+                            self._maps['_' + normal] = \
                                 self.__checkMap(utf_maps[name])
                         except TypeError:
                             pass # silently drop bad maps
@@ -134,43 +155,35 @@ class Text:
 
     # Special and Private Methods
 
-    @staticmethod
-    def __chars(text:str) -> iter:
-        # For character count problems with narrow Python builds: an iterator
-        # of real characters, joining surrogate pairs as one.
-        char_iter = iter(text)
-
-        while True:
-            c = next(char_iter)
-
-            if '\ud800' <= c < '\udc00':
-                c += next(char_iter)
-                assert '\udc00' <= c[1] < '\ue000', 'low surrogate missing'
-
-            yield c
-
     def __checkMap(self, map:iter) -> tuple:
         map = tuple(int(i) for i in map)
-        textlen = len(self.string)
+        maplen = len(self.string) + 1
 
-        if textlen != len(map): # must be as long as the text has characters
-            raise ValueError('map length != text length')
+        if maplen != len(map): # must be as long as the text has characters +1
+            raise ValueError('UTF map len {} != {}'.format(len(map), maplen))
 
-        if not textlen: # if the text has no characters, we are fine already
+        # BOM sizes: 2 -> UTF-16, 3 -> UTF-8, 4 -> UTF-32
+        if map[0] not in (0, 2, 3, 4): # if not 0 or BOM size this map is wrong
+            raise ValueError('illegal initial UTF map offset')
+
+        if maplen == 1: # if the text has no characters, we are fine already
             return map
 
-        if map[0]: # if the first offset isn't 0, this map is wrong
-            raise ValueError('initial map offset != 0')
+        if map[-1] > (maplen - 1) * 4 + map[0]: # if the max offset is more
+            # than 4x the text len, the offsets cannot be right - no known
+            # encoding leads to more than 4x as many bytes as characters, so
+            # the last offset must be lower than that value
+            raise ValueError('UTF map offsets too large')
 
-        if map[-1] > textlen * 4: # if the max offset is 4x the text length
-            # or more, the offsets cannot be right - none of the encodings
-            # leads to more than 4x as many bytes as characters, so the last
-            # offset must be lower than that value
-            raise ValueError('map offsets too large')
+        if map[-1] < (maplen - 1) + map[0]: # if the min offset is less than
+            # 1x the text len, the offsets cannot be right - no known
+            # encoding leads to less bytes than characters, so the last
+            # offset must be at least that value
+            raise ValueError('UTF map offsets too small')
 
-        if not all(map[i - 1] < map[i] for i in range(1, textlen)):
+        if not all(map[i - 1] < map[i] for i in range(1, maplen)):
             # all offsets must be consecutive, otherwise the map is wrong
-            raise ValueError('map offsets not consecutive')
+            raise ValueError('UTF map offsets not consecutive')
 
         return map
 
@@ -245,10 +258,10 @@ class Text:
 
     def __setitem__(self, key, value):
         # Set a tag on a character, span, or offsets tuple:
-        # text[10] = 'ns:id'
-        # text[10:20] = 'ns:id'
-        # text[10:20] = 'ns:id', {'attr': 'value'}
-        # text[(10,15,18,20)] = 'ns:id'
+        # text[10] = 'ns', 'id'
+        # text[10:20] = 'ns', 'id'
+        # text[10:20] = 'ns', 'id', {'attr': 'value'}
+        # text[(10,15,18,20)] = 'ns', 'id'
         # Note: the key may contain additional colon characters.
         # Slice step values are ignored.
         # Very inefficient way to add tags!!!
@@ -411,12 +424,14 @@ class Text:
         An iterator over the list of tags and attributes annotated on this
         text, optionally only for one namespace.
 
-        No ordering of the tags is made, although tags for one *namespace*
-        normally should be in correct order -- which only would occur if tags
-        had been added unordered.
+        No ordering of the tags is guaranteed, although tags for one
+        *namespace* normally should be in correct order -- which only would
+        not be the case if tags had been added unordered. If no *namespace* is
+        specified, tags are grouped by namespaces (in alphanumerical order of
+        namespaces).
 
-        :param namespace: Only fetch the tags for the given namespace instead
-            of all tags.
+        :param namespace: Only fetch the tags for the given namespace (instead
+            of all tags).
         :return: An iterator over ``(tag, attrs)`` pairs where ``attrs`` is
             the dictionary of attributes or ``None`` if the tag has no
             attributes.
@@ -426,7 +441,7 @@ class Text:
         if namespace:
             return self._get(namespace)
         else:
-            return chain(*(self._get(ns) for ns in self.namespaces))
+            return chain(*(self._get(ns) for ns in sorted(self.namespaces)))
 
     def _get(self, ns:str) -> iter:
         attrs = self.attributes[ns]
@@ -443,7 +458,8 @@ class Text:
 
     def remove(self, tags:iter, namespace:str=None):
         """
-        Remove several *tags* or an entire *namespace* at once.
+        Remove several *tags* (without attributes) or an entire *namespace* at
+        once.
 
         :param tags: An iterable of tags or ``None`` to remove an entire
             *namespace*.
@@ -482,7 +498,7 @@ class Text:
 
     def tags(self, key=Key) -> list:
         """
-        Return a list of **all** tags, sorted by *key*.
+        Return a list of **all** tags (without attributes), sorted by *key*.
 
         :param key: By default, uses :obj:`.Text.Key` order.
         """
@@ -510,64 +526,6 @@ class Text:
 
         for ns in text.namespaces:
             self._add(ns, text.get(ns))
-
-    # Byte Offset Maps
-
-    @property
-    def utf8(self) -> tuple:
-        """
-        A tuple of byte-offsets of each character in UTF-8 encoding
-        (read-only).
-        """
-        return self._utf('_utf8')
-
-    def _utf8(self):
-        offset = 0
-
-        for c in self.string:
-            yield offset
-            o = ord(c)
-            if   o < 0x80: offset += 1
-            elif o < 0x800: offset += 2
-            elif o < 0x1000: offset += 3
-            else: offset += 4
-
-    @property
-    def utf16(self) -> tuple:
-        """
-        A tuple of byte-offsets of each character in UTF-16 encoding
-        (read-only).
-        """
-        return self._utf('_utf16')
-
-    def _utf16(self):
-        offset = 0
-
-        for c in self.string:
-            yield offset
-            if ord(c) > 0xFFFF: offset += 4
-            else: offset += 2
-
-    @property
-    def utf32(self) -> tuple:
-        """
-        A tuple of byte-offsets of each character in UTF-32 encoding
-        (read-only).
-        """
-        return self._utf('_utf32')
-
-    def _utf32(self):
-        for i in range(len(self.string)):
-            yield i * 4
-
-    def _utf(self, name:str) -> tuple:
-        if self._maps.get(name) is not None:
-            m = self._maps[name]
-        else:
-            m = tuple(getattr(self, name)())
-            self._maps[name] = m
-
-        return m
 
     # String methods
 
@@ -604,19 +562,19 @@ class Text:
     @property
     def string(self) -> str:
         """
-        This is a special property that should be used when taking **slices**
-        or retrieving individual characters of the text's string.
+        This is a special (read-only) property that should be used when taking
+        **slices** or retrieving individual characters of the text's string.
 
         This property is provided to circumvent the problem of wrong offset
         counts when using narrow Python builds where Unicode is based on
-        UTF-16 characters, and surrogate pairs normally are counted as length
+        UTF-16 characters, and Surrogate Pairs normally are counted as length
         2::
 
         .. doctest::
 
             >>> from libfnl.nlp.text import Text
             >>> text = Text('abc\U0010ABCDabc')
-            >>> text.string[3]
+            >>> text.string[3] # SP \udbea\udfcd of length 2 on narrow builds
             '\\U0010abcd'
             >>> text.string[2:5]
             'c\\U0010abcda'
@@ -625,21 +583,21 @@ class Text:
             a
             b
             c
-            \udbea\udfcd
+            \U0010ABCD
             a
             b
             c
             >>> len(text.string)
             7
+            >>> text.string
+            'abc\\U0010abcdabc'
+            >>> isinstance(text.string, str)
+            True
 
         .. note::
 
-            If you wish to access the entire string, use ``s = str(text)``
-            (better) or ``s = str(text.string)`` (can be slower in terms of
-            performance), but never use ``text.string`` directly. This is
-            important to remember, because on narrow Python builds you might
-            not be receiving a string type, but a special type to fix the
-            Surrogate Pair offset behaviour.
+            If you wish to access the entire string, you can also just use
+            ``str(text)``.
         """
         return self._FIX
 
@@ -665,6 +623,66 @@ class Text:
             self._digest = hashlib.md5(self.encode()).digest()
 
         return self._digest
+
+    # Byte Offset Maps
+
+    @property
+    def utf8(self) -> tuple:
+        """
+        A tuple of byte-offsets of each character in UTF-8 encoding
+        (read-only).
+
+        The tuple is one element longer than the text characters, with the
+        last element representing the total length of the encoded string.
+        The first element starts at 0 bytes (the possible, but unusual 3 byte
+        UTF-8 BOM should never be counted).
+        """
+        return self._utf('_utf8')
+
+    def _utf8(self):
+        offset = 0
+
+        for c in self.string:
+            yield offset
+            o = ord(c)
+            if   o < 0x80: offset += 1
+            elif o < 0x800: offset += 2
+            elif o < 0x1000: offset += 3
+            else: offset += 4
+
+        yield offset
+
+    @property
+    def utf16(self) -> tuple:
+        """
+        A tuple of byte-offsets of each character in UTF-16 encoding
+        (read-only).
+
+        The tuple is one element longer than the text characters, with the
+        last element representing the total length of the encoded string.
+        The first element starts at 2 bytes because of the 2 byte long Byte
+        Order Mark (BOM) in UTF-16 strings before the first character byte.
+        """
+        return self._utf('_utf16')
+
+    def _utf16(self):
+        offset = 2 # 2 byte BOM
+
+        for c in self.string:
+            yield offset
+            if ord(c) > 0xFFFF: offset += 4
+            else: offset += 2
+
+        yield offset
+
+    def _utf(self, name:str) -> tuple:
+        if self._maps.get(name) is not None:
+            m = self._maps[name]
+        else:
+            m = tuple(getattr(self, name)())
+            self._maps[name] = m
+
+        return m
 
     # Text serialization
 
@@ -767,8 +785,7 @@ class Text:
                  },
                  'maps': {
                      'utf8': self.utf8,
-                     'utf16': self.utf16,
-                     'utf32': self.utf32
+                     'utf16': self.utf16
                  }
         }
         if self._tags:

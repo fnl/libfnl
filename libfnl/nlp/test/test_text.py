@@ -247,15 +247,13 @@ class TextTests(TestCase):
 
     def testUtf8Map(self):
         text = Text('aä\U0010ABCD!')
-        self.assertTupleEqual((0, 1, 3, 7), text.utf8)
+        self.assertTupleEqual((0, 1, 3, 7, 8), text.utf8)
+        self.assertEqual(len('aä\U0010ABCD!'.encode('utf8')), text.utf8[-1])
 
     def testUtf16Map(self):
         text = Text('aä\U0010ABCD!')
-        self.assertTupleEqual((0, 2, 4, 8), text.utf16)
-
-    def testUtf32Map(self):
-        text = Text('aä\U0010ABCD!')
-        self.assertTupleEqual((0, 4, 8, 12), text.utf32)
+        self.assertTupleEqual((2, 4, 6, 10, 12), text.utf16)
+        self.assertEqual(len('aä\U0010ABCD!'.encode('utf16')), text.utf16[-1])
 
     @patch.object(Text, '_utf8')
     def testUtf8Calls(self, mock):
@@ -264,10 +262,6 @@ class TextTests(TestCase):
     @patch.object(Text, '_utf16')
     def testUtf16Calls(self, mock):
         self.assertUtfCalls(mock, 'utf16')
-
-    @patch.object(Text, '_utf32')
-    def testUtf32Calls(self, mock):
-        self.assertUtfCalls(mock, 'utf32')
 
     def assertUtfCalls(self, mock, attr):
         text = Text('aä\U0010ABCD!')
@@ -305,6 +299,8 @@ class TextTests(TestCase):
         self.assertEqual('\U0010ABCD', text.string[2:3])
         self.assertEqual('b\U0010ABCDüa', text.string[4:-5:-1])
         self.assertEqual('bü', text.string[4:-5:-2])
+        self.assertTrue(isinstance(text.string, str))
+        self.assertEqual('Aü\U0010ABCDb', text.string.capitalize())
 
     def testStringLen(self):
         text = Text('n\U0010ABCDn')
@@ -342,9 +338,8 @@ class TextTests(TestCase):
                 'encoding': 'UTF-8'
             },
             'maps': {
-                'utf8': (0, 1, 2, 3),
-                'utf16': (0, 2, 4, 6),
-                'utf32': (0, 4, 8, 12)
+                'UTF-8': (0, 1, 2, 3, 4),
+                'UTF-16': (2, 4, 6, 8, 10),
             },
             'tags': {'ns': {'id': {'0.4': {'a': 'v'}}}},
         }
@@ -353,10 +348,9 @@ class TextTests(TestCase):
         self.assertEqual([('ns', 'id', (0, 4))], list(text))
         self.assertEqual({'ns': {('ns', 'id', (0, 4)): {'a': 'v'}}},
                          text.attributes)
-        self.assertEqual({
-                '_utf8': (0, 1, 2, 3),
-                '_utf16': (0, 2, 4, 6),
-                '_utf32': (0, 4, 8, 12),
+        self.assertDictEqual({
+            '_utf8': (0, 1, 2, 3, 4),
+            '_utf16': (2, 4, 6, 8, 10),
         }, text._maps)
 
     def testFromJsonValueErrors(self):
@@ -387,9 +381,8 @@ class TextTests(TestCase):
             'text': 'abcd',
             'checksum': {'md5': md5(b'abcd').hexdigest(), 'encoding': 'utf8'},
             'maps': {
-                'utf8': (0, 1, 2, 3),
-                'utf16': (0, 2, 4, 6),
-                'utf32': (0, 4, 8, 12),
+                'utf8': (0, 1, 2, 3, 4),
+                'utf16': (2, 4, 6, 8, 10),
             },
             'tags': {'ns': {'id': {'0.4': {'a': 'v'}}}},
         }

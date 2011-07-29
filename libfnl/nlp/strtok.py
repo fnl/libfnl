@@ -330,7 +330,8 @@ Mapping of Unicode category names to Category attributes.
 """
 
 REMAPPED_CHARACTERS = {
-    # NOTE: Lt, Lu and Ll would not be remapped (see GetCharCatVal)
+    # NOTE: Lt, Lu and Ll can not be remapped
+    # (see GetCharCategoryValue and GREEK_REMAPPED)
     Category.Cc: {
         "\n": Category.Zl,
         "\f": Category.Zl,
@@ -446,19 +447,27 @@ class Tokenizer:
         Tokenize the given *text* by adding tags the defined
         :attr:`.namespace` with *morphology* attributes for each tag.
 
-        :param text: The text to tag.
-        :param morphology: The attribute name used for the morphology strings
-            in the attribute dictionaries of the tags.
+        :param text: The :class:`.Text` to tag.
+        :param morphology: The key used in the attribute dictionaries for the
+            morphology strings.
         """
-        text.add(self._tag(text, morphology), self.namespace)
+        text.add(self.tags(text, morphology), self.namespace)
 
-    def _tag(self, text:Text, morphology:str):
-        assert len(text.string), "empty text string"
-        start = 0
+    def tags(self, text:Text, morphology:str):
+        """
+        Yield tokens for the given *text* in the defined
+        :attr:`.namespace` with *morphology* attributes for each tag.
+
+        :param text: The :class:`.Text` to tag.
+        :param morphology: The key used in the attribute dictionaries for the
+            morphology strings.
+        :return: An iterator of (tag, attributes) tuples, where tag is a tuple
+            of namespace, ID, offsets and attributes is a dictionary.
+        """
         cats = None
         last_cat = None
+        start = 0
         State = lambda c: False
-        findState = self._findState
 
         for end, cat in enumerate(CategoryIter(text)):
             if State(cat):
@@ -474,9 +483,9 @@ class Tokenizer:
                     yield tag, {morphology: last_cat}
 
                 cats = None
-                start = end
-                State = findState(cat)
                 last_cat = chr(cat)
+                start = end
+                State = self._findState(cat)
 
         if cats or last_cat:
             tag = (NAMESPACE, State.__name__, (start, len(text.string)))
@@ -498,13 +507,13 @@ class Tokenizer:
 
 class Separator(Tokenizer):
     """
-    A tokenizer that only separates `Z?` category character (line- and
+    A tokenizer that only separates `Z?` category characters (line- and
     paragraph-breaks, as well as spaces) from all others.
 
-    Produces the following tag keys:
+    Produces the following tag IDs:
 
-        * non_separator (all others)+
-        * seaparator (Zl, Zp)+
+        * not_separator (all others)+
+        * separator (Z?)+
     """
 
     @staticmethod
@@ -521,7 +530,7 @@ class WordTokenizer(Tokenizer):
     -digit, -numeral, and -separator character, while it joins the others
     as long as the next character is of that same category, too.
 
-    Produces the following tag keys:
+    Produces the following tag IDs:
 
         * breaker (Zl, Zp)+
         * digit (Nd)+
@@ -553,7 +562,7 @@ class AlnumTokenizer(Tokenizer):
     and -alphanumeric characters, and joins the latter two as long as the
     next character is of that same category, too.
 
-    Produces the following tag keys:
+    Produces the following tag IDs:
 
         * alnum (L?, Nl, Nd)+
         * breaker (Zl, Zp)+
@@ -577,8 +586,8 @@ class AlnumTokenizer(Tokenizer):
 
 def CategoryIter(text:Text) -> iter:
     """
-    Yields (offset, category) pairs for any *text* string, one per (real -
-    wrt. surrogate pairs) character in the *text*.
+    Yields category integers for a *text*, one per (real - wrt. Surrogate
+    Pairs) character in the *text*.
     """
     for char in text.string:
         yield GetCharCategoryValue(char)

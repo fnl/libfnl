@@ -10,7 +10,7 @@ format, attempting to preserve annotations where possible.
 """
 import os
 import re
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from html.entities import entitydefs
 from html.parser import HTMLParser
 from libfnl.nlp.text import Text
@@ -407,7 +407,7 @@ class HtmlExtractor(HTMLParser):
                 if alt in GREEK_UPPER:
                     alt = GREEK_UPPER[alt]
                 elif alt in GREEK_LOWER or alt.lower() in GREEK_LOWER:
-                    alt = GREEK_LOWER[alt]
+                    alt = GREEK_LOWER[alt.lower()]
             elif k in HtmlExtractor.SKIPPED_ATTRIBUTES:
                 del attrs[k]
 
@@ -420,7 +420,7 @@ class HtmlExtractor(HTMLParser):
         if name in cls.NORMAL_NAME:
             name = cls.NORMAL_NAME[name]
 
-        return cls.Tag(name, tag_type, attrs, alt, title)
+        return cls.Tag(name, tag_type, attrs, title, alt)
 
     @classmethod
     def isIgnored(cls, tag:Tag) -> bool:
@@ -442,11 +442,13 @@ class HtmlExtractor(HTMLParser):
     # == SETUP == #
     ###############
 
-    def __init__(self):
+    def __init__(self, namespace:str='html'):
         """
         Create a new extractor that can be reused with :meth:`.reset()`,
         run with :meth:`.feed()`, and the result then fetched from
         :attr:`.HtmlExtractor.string`.
+
+        :param namespace: The namespace to use for the tags.
         """
         super(HtmlExtractor, self).__init__()
         self.__ignoring_content = []
@@ -456,6 +458,7 @@ class HtmlExtractor(HTMLParser):
         self.__string = None
         self.__url = None
         self.__chunks = self.__root[1]
+        self.namespace = namespace
         self.tags = None
 
     def reset(self):
@@ -511,7 +514,7 @@ class HtmlExtractor(HTMLParser):
         
         if self.__string is None:
             self.__string = ['']
-            self.tags = dict()
+            self.tags = OrderedDict()
             strlen = self._toOffsets(self.__root, 0)
             self.__string = ''.join(self.__string).replace(
                 HtmlExtractor.LINE_SEP, '\n'
@@ -571,7 +574,7 @@ class HtmlExtractor(HTMLParser):
         return end
 
     def _createTag(self, tag:Tag, start:int, end:int) -> int:
-        self.tags[('html', tag.name, (start, end))] = tag.attrs
+        self.tags[(self.namespace, tag.name, (start, end))] = tag.attrs
 
         if HtmlExtractor.isContent(tag):
             if tag.name != 'body':
@@ -666,14 +669,13 @@ class HtmlExtractor(HTMLParser):
             if self.__state: parent = self.__state[-1]
             else: parent = self.__root
 
-            if __debug__:
-                for n in reversed(parent[1]):
-                    if isinstance(n, tuple):
-                        assert n == node, \
-                            'expected {}\nfound {}\nin {}\n at {}'.format(
-                                n, node, parent, [s[0] for s in self.__state]
-                            )
-                        break
+            # for n in reversed(parent[1]):
+            #     if isinstance(n, tuple):
+            #         assert n == node, \
+            #             'expected {}\nfound {}\nin {}\n at {}'.format(
+            #                 n, node, parent, [s[0] for s in self.__state]
+            #             )
+            #         break
 
             self.__chunks = parent[1]
             if node[0].name == 'body': self.__in_body = False
@@ -717,12 +719,12 @@ class HtmlExtractor(HTMLParser):
                 self.__chunks.append((tag._replace(type=HtmlExtractor.INLINE),
                                       [string]))
                 self.__chunks.append(HtmlExtractor.LINE_SEP)
-        elif tag.name == 'br':
-            self.__chunks.append(HtmlExtractor.LINE_SEP)
         elif tag.name == 'img' or tag.name == 'area':
             # append as 'mini-node' by simulating it were an inline tag
             self.__chunks.append((tag._replace(type=HtmlExtractor.INLINE),
                                   [tag.alt or HtmlExtractor.OBJECT_CHAR]))
+        elif tag.name == 'br':
+            self.__chunks.append(HtmlExtractor.LINE_SEP)
         elif tag.name == 'hr':
             self.__chunks.append(HtmlExtractor.PARA_SEP)
         elif tag.name == 'base':
