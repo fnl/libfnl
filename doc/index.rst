@@ -10,15 +10,7 @@ libfnl: A toolset for real-world NLP
 Introduction
 ============
 
-**libfnl** is an API for interactively processing natural language (**NLP**)
-and associated statistical functions. In addition, it provides a collection of
-command line scripts to do some of this work in a (UNIX) shell. The library
-is exclusively designed to work with Python 3000 (3.x). All data storage is
-managed via CouchDB_. Heavy statistical processing and machine learning
-algorithms are provided as wrapped Python classes of C or C++ implementations
-available on the Internet, for example the GENIA_ Tagger_. This design choice
-ensures a high performance of this library sufficient for real-world NLP
-problems.
+**libfnl** is an API for interactively processing natural language (**NLP**) and associated statistical functions. In addition, it provides a collection of command line scripts to do some of this work in a (UNIX) shell. Finally, a server can be used to visualize the data and interact with the text annotations. The library is exclusively designed to work with Python 3000 (3.x). The main data storage is managed via CouchDB_. External algorithms are preferentially provided as wrapped Python classes of C or C++ implementations available on the Internet, for example the GENIA_ Tagger_. These design choices should ensure a good performance of this library, sufficient for real-world NLP problems, and at the same time make the data created easily sharable via the server and CouchDB.
 
 .. _CouchDB: http://couch.apache.org
 .. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
