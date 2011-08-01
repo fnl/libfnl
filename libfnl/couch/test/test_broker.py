@@ -143,6 +143,9 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertEqual((id, rev), (doc['_id'], doc['_rev']))
         doc = self.db.get(id)
         self.assertEqual(doc['foo'], 'bär')
+        self.assertTrue('created' in doc)
+        self.assertTrue('modified' in doc)
+        self.assertTrue(doc['created'] == doc['modified'])
 
     def test_save_new_with_id(self):
         doc = {'_id': 'föö'}
@@ -150,13 +153,30 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertTrue(doc['_id'] == id == 'föö')
         self.assertEqual(doc['_rev'], rev)
 
+    def test_save_new_bad(self):
+        doc = {'_id': 'foo', 'junk': object()}
+        self.assertRaises(TypeError, self.db.save, doc)
+        self.assertFalse('created' in doc, doc)
+        self.assertFalse('modified' in doc, doc)
+        doc['created'] = 'sentinel'
+        self.assertRaises(TypeError, self.db.save, doc)
+        self.assertEqual('sentinel', doc['created'], doc)
+        self.assertFalse('modified' in doc, doc)
+        doc['modified'] = 'sentinel2'
+        self.assertRaises(TypeError, self.db.save, doc)
+        self.assertEqual('sentinel', doc['created'], doc)
+        self.assertEqual('sentinel2', doc['modified'], doc)
+
     def test_save_existing(self):
         doc = {}
         id_rev_old = self.db.save(doc)
+        self.assertTrue(doc['created'] == doc['modified'])
         doc['föö'] = True
+        time.sleep(1)
         id_rev_new = self.db.save(doc)
         self.assertTrue(doc['_rev'] == id_rev_new[1])
         self.assertTrue(id_rev_old[1] != id_rev_new[1])
+        self.assertTrue(doc['created'] < doc['modified'])
 
     def test_save_new_batch(self):
         doc = {'_id': 'föö'}
@@ -380,13 +400,27 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         ]
         self.db.bulk(docs)
 
+        for d in docs:
+            self.assertTrue(d['created'] == d['modified'], d)
+
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
+                        docs[2]['created'], [d['created'] for d in docs])
+
         # update the first doc to provoke a conflict in the next bulk update
         doc = docs[0].copy()
         self.db[doc['_id']] = doc
 
+        time.sleep(1)
         results = self.db.bulk(docs)
         self.assertEqual(False, results[0][0])
         assert isinstance(results[0][2], network.ResourceConflict)
+        self.assertTrue(docs[0]['created'] == docs[0]['modified'], docs[0])
+        self.assertTrue(docs[1]['created'] < docs[1]['modified'], docs[1])
+        self.assertTrue(docs[2]['created'] < docs[2]['modified'], docs[2])
+        self.assertTrue(docs[1]['modified'] == docs[2]['modified'],
+                        (docs[1]['modified'], docs[2]['modified']))
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
+                        docs[2]['created'], [d['created'] for d in docs])
 
     def test_bulk_update_all_or_nothing(self):
         docs = [
@@ -396,11 +430,15 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         ]
         self.db.bulk(docs)
 
+        for d in docs:
+            self.assertTrue(d['created'] == d['modified'], d)
+
         # update the first doc to provoke a conflict in the next bulk update
         doc = docs[0].copy()
         doc['name'] = 'Jane Doe'
         self.db[doc['_id']] = doc
 
+        time.sleep(1)
         results = self.db.bulk(docs, strict=True)
         self.assertEqual(True, results[0][0])
 
@@ -408,6 +446,9 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         assert '_conflicts' in doc
         revs = self.db.get(doc['_id'], open_revs='all', chunked_response=True)
         assert len(revs) == 2
+        
+        for d in docs:
+            self.assertTrue(d['created'] < d['modified'], d)
 
     def test_bulk_update_bad_doc(self):
         self.assertRaises(TypeError, self.db.bulk, [object()])

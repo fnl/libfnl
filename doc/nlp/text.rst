@@ -239,9 +239,13 @@ Tag and attribute access
 
 .. automethod:: libfnl.nlp.text.Text.update
 
-Encoding to and from JSON
--------------------------
+Text serialization
+------------------
 
 .. automethod:: libfnl.nlp.text.Text.fromJson
 
 .. automethod:: libfnl.nlp.text.Text.toJson
+
+.. automethod:: libfnl.nlp.text.Text.addFromDict
+
+.. automethod:: libfnl.nlp.text.Text.tagsAsDict

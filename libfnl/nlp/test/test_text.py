@@ -175,6 +175,22 @@ class TextTests(TestCase):
                           [(tag, [('a', 'b', 'c')])])
         self.assertRaises(ValueError, Text('abcd').add, [tag])
 
+    def testAddFromDict(self):
+        text = Text('abcd')
+        tags = {
+            'ns1': { 'id1': { '0.1': { 'a': 'v' },
+                              '1.2': None },
+                     'id2': { '2.3': { 'x': 'y' }}},
+            'ns2': { 'id1': { '0.4': { 'k': 'l' }}}
+        }
+        text.addFromDict(tags)
+        self.assertListEqual([
+            (('ns1', 'id1', (0, 1)), { 'a': 'v'}),
+            (('ns1', 'id1', (1, 2)), None),
+            (('ns1', 'id2', (2, 3)), { 'x': 'y'}),
+            (('ns2', 'id1', (0, 4)), { 'k': 'l'}),
+        ], list(text.get()))
+
     def testGet(self):
         tag1 = ('ns1', 'key1', (0, 3))
         tag2 = ('ns1', 'key2', (1, 2))
@@ -227,6 +243,20 @@ class TextTests(TestCase):
         self.assertListEqual([mstag, tag], list(text.tags()))
         self.assertListEqual([mstag, tag], list(text.tags(Text.ReverseKey)))
 
+    def testTagsAsDict(self):
+        text = Text('abcd', [
+            (('ns1', 'id1', (0, 1)), { 'a': 'v'}),
+            (('ns1', 'id1', (1, 2)), None),
+            (('ns1', 'id2', (2, 3)), { 'x': 'y'}),
+            (('ns2', 'id1', (0, 4)), { 'k': 'l'}),
+        ])
+        self.assertDictEqual({
+            'ns1': { 'id1': { '0.1': { 'a': 'v' },
+                              '1.2': None },
+                     'id2': { '2.3': { 'x': 'y' }}},
+            'ns2': { 'id1': { '0.4': { 'k': 'l' }}}
+        }, text.tagsAsDict())
+
     def testUpdate(self):
         text1 = Text('blabla', [(('ns', 'k', (1,2)),
                                  {'a1': 'v1', 'a2': 'v1'})])
@@ -241,7 +271,7 @@ class TextTests(TestCase):
                                      ('ns', 'k', (4,6)): {'a1': 'v1'}}},
                              text1.attributes)
         self.assertRaises(ValueError, text1.update, text3)
-        self.assertRaises(AttributeError, text1.update, 'bla')
+        self.assertRaises(TypeError, text1.update, 'bla')
 
     # Byte Offset Maps
 
@@ -341,13 +371,9 @@ class TextTests(TestCase):
                 'UTF-8': (0, 1, 2, 3, 4),
                 'UTF-16': (2, 4, 6, 8, 10),
             },
-            'tags': {'ns': {'id': {'0.4': {'a': 'v'}}}},
         }
         text = Text.fromJson(json)
         self.assertEqual('abcd', str(text))
-        self.assertEqual([('ns', 'id', (0, 4))], list(text))
-        self.assertEqual({'ns': {('ns', 'id', (0, 4)): {'a': 'v'}}},
-                         text.attributes)
         self.assertDictEqual({
             '_utf8': (0, 1, 2, 3, 4),
             '_utf16': (2, 4, 6, 8, 10),
@@ -384,7 +410,6 @@ class TextTests(TestCase):
                 'utf8': (0, 1, 2, 3, 4),
                 'utf16': (2, 4, 6, 8, 10),
             },
-            'tags': {'ns': {'id': {'0.4': {'a': 'v'}}}},
         }
         self.assertDictEqual(json, text.toJson())
 

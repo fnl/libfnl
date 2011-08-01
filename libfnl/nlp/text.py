@@ -83,7 +83,7 @@ class Text:
     other offsets, namespace, ID).
 
     Not used anywhere, but provided for convenience, especially for
-    :meth:`.tags`.
+    :meth:`.Text.tags`.
 
     .. note::
 
@@ -390,6 +390,22 @@ class Text:
             for ns, ns_tags in groups.items():
                 self._add(ns, ns_tags)
 
+    def addFromDict(self, tags:dict):
+        """
+        Add tags from a dictionary as the one produced by :meth:`.tagsAsDict`.
+
+        :param tags: A dictionary of tags.
+        """
+        for ns, ns_dict in tags.items():
+            tag_attrs = []
+
+            for id, off_dict in ns_dict.items():
+                for off, attrs in off_dict.items():
+                    offsets = tuple(map(int, off.split('.')))
+                    tag_attrs.append(((ns, id, offsets), attrs))
+
+            self._add(ns, sorted(tag_attrs, key=lambda ta: Text.Key(ta[0])))
+
     def _add(self, namespace:str, tags:iter):
         # Add new or update existing tags and attributes in *namespace* with
         # additional *tags* and their attributes.
@@ -504,6 +520,42 @@ class Text:
         """
         return sorted(self, key=key)
 
+    def tagsAsDict(self) -> dict:
+        """
+        Return **all** tags and attributes as a dictionary that can be used to
+        serialize the annotations.
+
+        An example:
+
+        >>> from libfnl.nlp.text import Text
+        >>> text = Text('example')
+        >>> text[2] = 'ns1', 'id1', {'a': 'v'}
+        >>> text[(1,3,4,6)] = 'ns1', 'id1'
+        >>> text.tagsAsDict()
+        {'ns1': {'id1': {'1.3.4.6': None, '2': {'a': 'v'}}}}
+
+        :return: A `dict` of all tags and attributes, grouped by namespace,
+            ID, (string) offsets (offset integers, joined with dots (``.``)).
+        """
+        tags = dict()
+
+        for ns in self.namespaces:
+            attributes = self.attributes[ns]
+            ns_dict = tags[ns] = dict()
+
+            for tag in self._tags[ns]:
+                id_dict = ns_dict.setdefault(tag[1], {})
+                offsets = '.'.join(map(str, tag[2]))
+                attrs = attributes.get(tag)
+
+                if attrs:
+                    assert all(map(lambda key: isinstance(key, str), attrs)), \
+                        'key not a string: {}'.format(list(attrs.keys()))
+                
+                id_dict[offsets] = attrs
+
+        return tags
+
     def update(self, text):
         """
         Update with tags and attributes from another `Text` instance that has
@@ -519,15 +571,39 @@ class Text:
         :param text: A `Text` instance.
         :raise ValueError: If *text* is a `Text` instance, but the digests do
             not match.
-        :raise AttributeError: If *text* is not a `Text` instance.
+        :raise TypeError: If *text* is not a `Text` instance.
         """
-        if self.digest != text.digest:
-            raise ValueError('the two texts mismatch')
+        try:
+            if self.digest != text.digest:
+                raise ValueError('the two texts mismatch')
+        except AttributeError:
+            raise TypeError('{} not a Text instance'.format(repr(text)))
 
         for ns in text.namespaces:
             self._add(ns, text.get(ns))
 
     # String methods
+
+    @property
+    def base64digest(self) -> str:
+        """
+        The base64-encoded ASCII string of the :attr:`.digest` without the
+        redundant ``=`` padding characters (read-only).
+
+        Instead of regular base64 encoding, the characters ``+`` and ``/``
+        are mapped to a **CouchDB-URL**\ -safe versions via :func:`.b64encode`.
+        """
+        return b64encode(self.digest)[:-2].decode('ASCII')
+
+    @property
+    def digest(self) -> bytes:
+        """
+        The MD5 digest of the UTF-8 encoded text (read-only).
+        """
+        if not self._digest:
+            self._digest = hashlib.md5(self.encode()).digest()
+
+        return self._digest
 
     def encode(self, encoding:str='utf-8', errors:str='strict') -> bytes:
         """
@@ -601,29 +677,6 @@ class Text:
         """
         return self._FIX
 
-    # Text identity
-
-    @property
-    def base64digest(self) -> str:
-        """
-        The base64-encoded ASCII string of the :attr:`.digest` without the
-        redundant ``=`` padding characters (read-only).
-
-        Instead of regular base64 encoding, the characters ``+`` and ``/``
-        are mapped to a **CouchDB-URL**\ -safe versions via :func:`.b64encode`.
-        """
-        return b64encode(self.digest)[:-2].decode('ASCII')
-
-    @property
-    def digest(self) -> bytes:
-        """
-        The hash digest of the UTF-8 encoded text (read-only).
-        """
-        if not self._digest:
-            self._digest = hashlib.md5(self.encode()).digest()
-
-        return self._digest
-
     # Byte Offset Maps
 
     @property
@@ -689,8 +742,8 @@ class Text:
     @classmethod
     def fromJson(cls, json:dict):
         """
-        Create a `Text` instance, deserialized from a JSON dictionary with
-        the same keys as mentioned in :meth:`.toJson`.
+        Create a `Text` instance without annotations, deserialized from a JSON
+        dictionary with the same keys as mentioned in :meth:`.toJson`.
 
         Raises any exception that the `Text` constructor might.
 
@@ -745,23 +798,6 @@ class Text:
                                 for i in range(0, len(hex), 2)):
             raise ValueError('text and checksum mismatch')
 
-        # Add the tags to the text:
-        if 'tags' in json:
-            for ns, ns_set in json['tags'].items():
-                tags = list()
-                attrs = dict()
-
-                for id, id_set in ns_set.items():
-                    for offset, attributes in id_set.items():
-                        offsets = tuple(int(i) for i in offset.split('.'))
-                        tag = (ns, id, offsets)
-                        tags.append(tag)
-                        attrs[tag] = attributes
-
-                if tags:
-                    tags = sorted(tags, key=Text.Key)
-                    text.add(zip(tags, (attrs[t] for t in tags)))
-
         return text
 
     def toJson(self) -> dict:
@@ -774,31 +810,15 @@ class Text:
         * text
         * checksum
         * maps
-        * tags
-
-        Note that ``tags`` are only set if any annotations were made.
         """
-        json = { 'text': self._TEXT,
-                 'checksum': {
-                     'encoding': 'utf8',
-                     'md5': ''.join('{:x}'.format(b) for b in self.digest)
-                 },
-                 'maps': {
-                     'utf8': self.utf8,
-                     'utf16': self.utf16
-                 }
+        return {
+            'text': self._TEXT,
+             'checksum': {
+                 'encoding': 'utf8',
+                 'md5': ''.join('{:x}'.format(b) for b in self.digest)
+             },
+             'maps': {
+                 'utf8': self.utf8,
+                 'utf16': self.utf16
+             }
         }
-        if self._tags:
-            tags = dict()
-
-            for ns in self._tags:
-                ns_set = tags[ns] = defaultdict(dict)
-                attributes = self.attributes.get(ns, dict())
-
-                for tag in self._tags[ns]:
-                    offsets = '.'.join(map(str, tag[2]))
-                    ns_set[tag[1]][offsets] = attributes.get(tag)
-
-            json['tags'] = tags
-
-        return json

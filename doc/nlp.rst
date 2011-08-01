@@ -4,28 +4,23 @@ nlp -- Natural language processing
 
 .. automodule:: libfnl.nlp
 
-The NLP packages only have been tested with the 32bit version of Python
-3000 (i.e., the narrow build using UTF-16 for [Unicode] strings); They might
-work with 64bit (wide build, UTF-32) as well [#f1]_ . To check the build of
-your Python distribution, enter an interpreter session and type::
+The NLP packages work with both the 32bit version of Python 3000 (i.e., the narrow build using UTF-16 for [Unicode] strings) and 64bit (wide build, UTF-32) as well [#f1]_ . To check the build of your Python distribution, enter an interpreter session and type::
 
     >>> import sys
-    >>> sys.maxsize
-    2147483647
+    >>> sys.maxunicode
+    65535
 
-If the result is the above number (hex value 0x7FFFFFFF), you have a narrow
-build. If it is ``9223372036854775807`` instead (hex value 0x7FFFFFFFFFFFFFFF),
-you are running a wide build [#f2]_.
+If the result is the above number (hex value 0xFFFF), you have a narrow build. If it is ``1114111`` instead (hex value 0x10FFFF), you are using a wide build [#f2]_.
 
-.. [#f1] UCS-2 and -4 are nearly equal to UTF-16 and -32. As a matter of fact,
+.. [#f1] UCS-2 and -4 are nearly equal to UTF-16 and -32. *De facto*, narrow
          Python uses UTF-16, and not UCS-2, as often claimed. The difference
-         is that UCS-2 has no surrogate range to compose Supplementary Plane
-         characters, while UTF-16 does. As Python makes use of the surrogate
-         range, it is UTF-16 based, not UCS-2.
+         is that UCS-2 has no Surrogate Range to compose Supplementary Plane
+         characters, while UTF-16 does. As Python uses Surrogate Pairs, it
+         really is UTF-16 based, not UCS-2.
 
-.. [#f2] Using wide builds is only recommended if the majority of characters
-         you are processing are found in the Unicode Supplementary Planes. In
-         all other cases it is significantly more efficient to use narrow
+.. [#f2] Using wide builds is only recommended if characters you are
+         processing are frequently found in the Unicode Supplementary Planes.
+         In all other cases it is significantly more efficient to use narrow
          builds (because UTF-16 strings will only consume half the memory
          UTF-32/UCS-4 encoded strings would when no Supplementary Plane
          characters are involved).
@@ -39,14 +34,14 @@ extract -- Text extraction from documents
 Extract
 -------
 
-Extract the contents of the file at *filename*, assuming the given *encoding* for the file, and returning a :class:`.Binary` text object.
+Extract the contents of the file at *filename*, assuming the given *encoding* for the file, and returning a :class:`.Text` object.
 
-If the file-type contains HTML markup, this markup is preserved as much as possible. A plain-text file simply gets read into `Binary`, but no annotations are made. If the MIME type isn't set and cannot be guessed (from the file's extension), 'text/plain' is assumed automatically. Currently supported MIME-types (ie., file-types) are:
+If the file-type contains HTML markup, this markup is preserved as much as possible. A plain-text file simply gets read into `Text`, but no annotations are made. If the MIME type isn't set and cannot be guessed (from the file's extension), 'text/plain' is assumed automatically. Currently supported MIME-types (ie., file-types) are:
 
 * text/html, application/xhtml (.htm, .html, .xhtml)
 * text/plain (.txt) [defaulted if not set and guessing fails]
 
-HTML text is extracted by the :class:`.HtmlExtractor`. The extractor's ``section_tags`` get set as tags in the namespace ``section``, the ``format_tags`` in the namespace ``format``. And the ``tag_attributes`` dictionary gets added as metadata, using the key ``attributes``, and splitting the attribute tags into their namespaces ``section`` and ``format``, as required for `nlp.text` instances.
+HTML text is extracted by the :class:`.HtmlExtractor`.
 
 .. autofunction:: libfnl.nlp.extract.Extract
 
@@ -57,57 +52,63 @@ Converts HTML files to plain text files as close as possible to the way these fi
 
 .. warning::
 
-    This extractor relies on :mod:`html.parser` and therefore is not especially robust when used on noisy HTML. Therefore, it is recommended you install the lxml_ package wrapping **libxml2** and first clean HTML documents with :func:`lxml.html.clean.clean_html` before feeding the HTML to this extractor.
+    This extractor relies on :mod:`html.parser` and therefore is not especially robust when used on noisy HTML. Therefore, it is recommended you install the lxml_ package wrapping **libxml2** and first prune HTML documents with :func:`lxml.html.clean.clean_html` before feeding the HTML to this extractor.
 
 Any section (ie., a HTML element that would separate a piece of text from another -- not just ``p``, but also things such as ``dl``, ``li``, ``h3``, or ``div``) are separated by one or two line feeds (\\n), any entity (eg., &nbsp) or character reference (eg., &#x0123) is converted to the corresponding character, while any such reference that would be invalid gets replaced by the replacement (U+FFFD) character.
 
-All the elements that can be handled by the extractor are listed in :attr:`.HtmlExtractor.ELEM_INDEX`\ , while those that are :attr:`.HtmlExtractor.IGNORE`\ D are dropped entirely, including any elements or text they might contain.
+All the elements that are officially part of HTML 4 or 5 (even if their use is not recommeded by the W3C) are handled, while any elements that are not part of HTML are dropped entirely, including any elements or CDATA they might contain.
 
-A few elements follow special replacement procedures -- see :attr:`.HtmlExtractor.REPLACE`\ .
+All relevant HTML elements are converted to :attr:`.HtmlExtractor.tags` and are annotated on the resulting string with offsets. Elements that have neither a span size in the extracted text nor any attributes are "dropped" (ie., no tag is created for them).
 
-All relevant HTML elements are converted to format (:attr:`.HtmlExtractor.INLINE`) or section (:attr:`.HtmlExtractor.CONTENT`) tags and are annotated on the resulting string with offsets. Inline and content block elements are converted to text tags (as ``{str(<tag name>): [tuple(<offsets>), ...]}`` dictinaries), available from the attributes ``format_tags`` and ``section_tags``, respectively, **after** the HTMLs extracted :attr:`.HtmlExtractor.string` has been fetched the first time. Most of the attributes are preserved, too, in a separate dictionary ``tag_attributes``, set as an attribute on the extractor instance after fetching the :attr:`.HtmlExtractor.string` -- see :class:`.HtmlExtractor.Tag`\ .
-
-The parser should be initialized, then the HTML :meth:`.feed` sent to it, which has to be :meth:`.HtmlExtractor.close`\ d if has been fed in several rounds. Now, the :attr:`.HtmlExtractor.string` of the extracted content can be fetched, whence the two tag dictionaries will become available as :attr:`.HtmlExtractor.format_tags` and :attr:`.HtmlExtractor.section_tags`. To reuse the same instance, call :meth:`.HtmlExtractor.reset` before feeding new content. An example:
+The parser should be initialized, then the HTML :meth:`.feed` sent to it once or more, then the feed should to be :meth:`.HtmlExtractor.close`\ d. Now, the :attr:`.HtmlExtractor.string` of the extracted content can be fetched, as well as the :attr:`.HtmlExtractor.tags`. To reuse the same instance, call :meth:`.HtmlExtractor.reset` before feeding new content. An example:
 
 >>> from libfnl.nlp.extract import HtmlExtractor
->>> html = HtmlExtractor()
+>>> html = HtmlExtractor(namespace='html')
 >>> html.feed('''<html>
 ...   <head>
 ...     <meta name="meta" content="content">
+...     <title>Example</title>
 ...    </head>
 ...    <body>
 ...      <div id="div" class="a b">
-... This is the <b>text</b><br/> of this weird&nbsp;document.<object/>
+... This is the <b> text </b> <br/> of this weird &nbsp; document.<fake/>
 ...      </div>
 ...    </body>
 ... </html>''')
+>>> html.close() # IMPORTANT - close feed, clean up rightmost whitespaces
+>>> html.string
+'Example\n\nThis is the text \nof this weird \xa0document.'
+>>> list(sorted(html.tags))
+[('html', 'body', (9, 51)), ('html', 'br', (26, 27)), ('html', 'div', (9, 51)), ('html', 'head', (0, 9)), ('html', 'html', (0, 51)), ('html', 'meta', (0,)), ('html', 'strong', (21, 26)), ('html', 'title', (0, 9))]
+>>> html.string[9:51] # &nbsp; in div is represented as U+00A0 (\xa0)
+'This is the text \nof this weird \xa0document.'
+>>> len(html.string)
+51
+>>> sorted(html.tags[('html', 'meta', (0,))].items())
+[('content', 'content'), ('name', 'meta')]
+>>> html.reset() # all extracted data is erased and the parser is ready again
+
+If an image (img) or area tag has an "alt" or "title" attribute, instead of using a placeholder character, the alt (preferred) or title (otherwise) value is used and the attribute is deleted from the dictionary. In addition, for image tags with alt values that exactly match to the latin name of a greek letter, the actual greek letter is used instead of the latin name. That greek letter is upper-case if the latin name if written capitalized and lower-case otherwise.
+
+>>> html.feed('''<img alt='alpha' href='some_url'/>''')
 >>> html.close()
 >>> html.string
-'meta: content\n\nThis is the text\nof this weird\xa0document.\n\n'
->>> print(html.string[15:55]) # &nbsp; in div is represented as U+00A0
-This is the text
-of this weird\xa0document.
->>> list(sorted(html.tags))
-[('html', 'body', (15, 57)), ('html', 'div', (15, 55)), ('html', 'head', (0, 13)), ('html', 'meta', (0, 13)), ('html', 'strong', (27, 31))]
->>> len(html.string)
-57
+'α'
+>>> html.tags[(html.namespace, 'img', (0, 1))]
+{'href': 'some_url'}
 
 .. autoclass:: libfnl.nlp.extract.HtmlExtractor
-    :members: feed, reset, close, string, ELEM_INDEX, MINOR_CONTENT, CONTENT, INLINE, REPLACE, IGNORE
+    :members: NORMAL_NAME, SKIPPED_ATTRIBUTES, close, feed, reset
 
-.. py:class:: libfnl.nlp.extract.HtmlExtractor.Tag
+.. py:attribute:: libfnl.nlp.extract.HtmlExtractor.tags
 
-    Text annotation tag keys are simply the elements' name.
+    A dictionary of tag tuples: attributes dictionaries.
 
-    The element attributes are preserved in ``tag_attributes``. This is a dictionary of the form::
+    Text annotation tag keys are the same as :class:`.Text` tags. The namespace is set during instantiation of the extractor. The IDs are the names of the HTML elements. The offsets are calculated during extraction.
 
-        {   '<tag name>': { '(<start>, <end>)': <attributes> } }
+    The attributes are all attributes found on each tag, except for attributes that are removed (see :attr:`.SKIPPED_ATTRIBUTES`).
 
-     Note that the **representation** (ie., a string) of the offsets tuple is used as dictionary key, not the tuple itself, to ensure it can be serialized to JSON. The attributes dictionary contains most attributes except those listed in :class:`HtmlExtractor.SKIPPED_ATTRIBUTES` as well as ``alt`` and ``title``, which are integrated into the extracted text. The ``href`` values get joined as absolute URLs **if** an absolute URL is supplied to the :meth:`.feed` call **or** the document has a *base* element in the header with an absolute ``href`` URL attribute.
-
-    Should it happen that a tag with the same name has the exact same offset as another, eg., ``<div id=1><div id=2>bla</div></div>``, only the attributes on the inner element (here, ``#2``) are preserved.
-
-    In addition, if set, the ``title`` values get appended as ``(<title>)`` -- incl. the parenthesis -- to the end of the **text** (ie., not the ``tag_attributes``\ !) content of that element, and ``alt`` values relplace ``img`` and ``area`` tags. Furthermore, if the ``alt`` value maps extactly to the latin written form of a greek letter (alpha, beta, gamma, ...), the actual greek letter is used, upper-cased if the written form is capitalized, and lower-cased otherwise.
+    Should it happen that a tag with the same name has the exact same offset as another, eg., ``<div id=1 a=x><div id=2 b=y>bla</div></div>``, the attributes dictionary is updated with the attributes from the second, but only one tag is created. In the example, the attribute "id" on the inner element would be overwritten with ``2``, resulting in ``{'id': '2', 'a': 'x', 'b': 'y'}`` only.
 
     For general information on text annotation and tags, see :mod:`libfnl.nlp.text`.
 

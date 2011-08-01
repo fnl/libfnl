@@ -9,16 +9,13 @@ Conversion of content from files to the internal :mod:`libfnl.nlp.text`
 format, attempting to preserve annotations where possible.
 """
 import os
-import re
-from collections import namedtuple, OrderedDict
 from html.entities import entitydefs
-from html.parser import HTMLParser
+from html.parser import HTMLParser, HTMLParseError
+import re
 from libfnl.nlp.text import Text
 from logging import getLogger
 from mimetypes import guess_type
 from socket import gethostname
-from unicodedata import category, normalize
-from urllib.parse import urljoin, urlsplit, urlunsplit
 
 GREEK_LOWER = {
     "alpha": "α",
@@ -41,6 +38,7 @@ GREEK_LOWER = {
     "sigma": "σ",
     "tau": "τ",
     "upsilon": "υ",
+    "ypsilon": "υ",
     "phi": "φ",
     "chi": "χ",
     "psi": "ψ",
@@ -68,6 +66,7 @@ GREEK_UPPER = {
     "Sigma": "Σ",
     "Tau": "Τ",
     "Upsilon": "Υ",
+    "Ypsilon": "Υ",
     "Phi": "Φ",
     "Chi": "Χ",
     "Psi": "Ψ",
@@ -109,14 +108,14 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
 
     if mime_type in ('text/html', 'application/xhtml'):
         html = HtmlExtractor()
-
-        for line in open(filename, encoding=encoding):
-            html.feed(line)
-
+        html.feed(open(filename, encoding=encoding).read())
         html.close()
-        text = Text(html.string, html.tags)
+        text = Text(html.string)
+        tags = [(t, html.tags[t]) for t in sorted(html.tags, key=Text.Key)]
+        text.add(tags, html.namespace)
     elif mime_type == 'text/plain':
-        plain_text = open(filename, 'rb').read()
+        encoding = encoding or 'utf-8'
+        plain_text = open(filename, 'rb', encoding=encoding).read()
         text = Text(plain_text)
     else:
         msg = 'no extraction rules for MIME type {}'.format(mime_type)
@@ -139,33 +138,151 @@ class HtmlExtractor(HTMLParser):
 
     L = getLogger('HtmlExtractor')
 
-    multi_ws = re.compile(r'\s+', re.ASCII) # only match r'[ \t\n\r\f\v]+'
-    nl_end = re.compile(r'[\n\u2028]+$')
-    url_like = re.compile('^\w*:?//\w+') # simple check if a href is URL-like
-    ws_end = re.compile(r'\s+$')
-    ws_start = re.compile(r'^\s+')
-
-    # Special characters:
-    LINE_SEP = '\u2028'
-    NBS = '\u00A0'
-    PARA_SEP = '\u2029'
-    OBJECT_CHAR = '\uFFFC'
     REPLACEMENT = '\uFFFD'
-    SPACES = frozenset(' \t\n\r\f\v{}{}{}'.format(LINE_SEP, NBS, PARA_SEP))
+    OBJECT_REPLACEMENT = '\uFFFC'
+    WS_REGEX = re.compile(r'\s+')
+    RSTRIP_REGEX = re.compile(r'\s+$')
 
-    ##########################
-    # == ELEMENT HANDLING == #
-    ##########################
+    IGNORE, INLINE, MINOR, CONTENT = 0, 1, 2, 3
+    # IGNORE: content and tag will never be added
+    # INLINE: no newline added after the tag's content
+    # MINOR: single newline added after the tag's content
+    # CONTENT: double newline added after the tag's content
 
-    MINOR_CONTENT = frozenset({
-        'button', 'caption', 'center', 'dd', 'dt', 'figcaption', 'h1', 'h2',
-        'h3', 'h4', 'h5', 'h6', 'label', 'legend', 'li', 'option', 'summary',
-        'td', 'textarea', 'tr', 'th',
-    })
-    """
-    Minor content elements that will be followed by a single newline,
-    not the two line feeds regular content tags get appended.
-    """
+    ELEMENTS = {
+        'a': INLINE,
+        'abbr': INLINE,
+        'acronym': INLINE,
+        'address': CONTENT,
+        'applet': IGNORE, # IGNORE
+        'area': INLINE,
+        'article': CONTENT,
+        'aside': CONTENT,
+        'audio': IGNORE, # IGNORE
+        'b': INLINE,
+        'base': INLINE,
+        'basefont': INLINE,
+        'bb': CONTENT,
+        'bdo': INLINE,
+        'bgsound': IGNORE, # IGNORE
+        'big': INLINE,
+        'blockquote': INLINE,
+        'blink': INLINE,
+        'body': INLINE,
+        'br': INLINE,
+        'button': MINOR,
+        'canvas': IGNORE, # IGNORE
+        'caption': MINOR,
+        'center': MINOR,
+        'cite': INLINE,
+        'code': INLINE,
+        'col': INLINE,
+        'colgroup': INLINE,
+        'command': INLINE,
+        'datagrid': CONTENT,
+        'datalist': CONTENT,
+        'dd': MINOR,
+        'del': INLINE,
+        'details': CONTENT,
+        'dfn': INLINE,
+        'dialog': CONTENT,
+        'dir': CONTENT,
+        'div': CONTENT,
+        'dl': CONTENT,
+        'dt': MINOR,
+        'em': INLINE,
+        'embed': IGNORE, # IGNORE
+        'eventsource': IGNORE, # IGNORE
+        'fieldset': CONTENT,
+        'figcaption': MINOR,
+        'figure': CONTENT,
+        'font': INLINE,
+        'footer': CONTENT,
+        'form': CONTENT,
+        'frame': IGNORE, # IGNORE
+        'frameset': CONTENT,
+        'h1': CONTENT,
+        'h2': CONTENT,
+        'h3': CONTENT,
+        'h4': CONTENT,
+        'h5': CONTENT,
+        'h6': CONTENT,
+        'head': CONTENT,
+        'header': CONTENT,
+        'hgroup': CONTENT,
+        'hr': INLINE,
+        'html': CONTENT,
+        'i': INLINE,
+        'iframe': CONTENT,
+        'img': INLINE,
+        'input': INLINE,
+        'ins': INLINE,
+        'isindex': IGNORE, # IGNORE
+        'kbd': INLINE,
+        'keygen': IGNORE, # IGNORE
+        'label': MINOR,
+        'legend': MINOR,
+        'li': MINOR,
+        'listing': CONTENT,
+        'link': INLINE,
+        'map': CONTENT,
+        'mark': INLINE,
+        'marquee': INLINE,
+        'menu': CONTENT,
+        'meta': INLINE,
+        'meter': INLINE,
+        'nav': CONTENT,
+        'nobr': INLINE,
+        'noembed': INLINE,
+        'noframes': INLINE,
+        'noscript': INLINE,
+        'object': IGNORE, # IGNORE
+        'ol': CONTENT,
+        'optgroup': INLINE,
+        'option': MINOR,
+        'output': IGNORE, # IGNORE
+        'p': CONTENT,
+        'param': IGNORE, # IGNORE
+        'plaintext': CONTENT,
+        'pre': CONTENT,
+        'progress': INLINE,
+        'q': INLINE,
+        'rp': IGNORE, # IGNORE
+        'rt': IGNORE, # IGNORE
+        'ruby': IGNORE, # IGNORE
+        's': INLINE,
+        'samp': INLINE,
+        'script': IGNORE, # IGNORE
+        'section': CONTENT,
+        'select': CONTENT,
+        'small': INLINE,
+        'source': IGNORE, # IGNORE
+        'spacer': INLINE,
+        'span': INLINE,
+        'strike': INLINE,
+        'strong': INLINE,
+        'style': IGNORE, # IGNORE
+        'sub': INLINE,
+        'summary': MINOR,
+        'sup': INLINE,
+        'table': CONTENT,
+        'tbody': INLINE,
+        'td': MINOR,
+        'textarea': MINOR,
+        'tfoot': INLINE,
+        'th': MINOR,
+        'thead': INLINE,
+        'time': INLINE,
+        'title': CONTENT,
+        'tr': MINOR,
+        'tt': INLINE,
+        'u': INLINE,
+        'ul': CONTENT,
+        'var': INLINE,
+        'video': IGNORE, # IGNORE
+        'wbr': INLINE,
+        'xmp': INLINE,
+    }
 
     NORMAL_NAME = {
         'b': 'strong',
@@ -179,7 +296,7 @@ class HtmlExtractor(HTMLParser):
     keys in the final tagged text.
     """
 
-    EMPTY_ELEMS = frozenset({
+    EMPTY_ELEMENTS = frozenset({
         'area', 'base', 'basefont', 'bsound', 'br', 'col', 'command', 'embed',
         'eventsource', 'frame', 'hr', 'img', 'input', 'isindex', 'link',
         'meta', 'nobr', 'param', 'source', 'wbr'
@@ -192,545 +309,248 @@ class HtmlExtractor(HTMLParser):
         'draggable', 'dropzone', 'style', 'tabindex',
     })
     """
-    These attributes are never stored/always dropped.
+    These attributes are never extracted/always dropped.
     """
-
-    IGNORE = 0
-    """
-    Ignore all contained content of these elements and do not create tags.
-    """
-
-    CONTENT = 1
-    """
-    A 'cohesive' block of content, such as a paragraph, heading, table cell,
-    or a list item, separated by one (minor) or two (major content blocks)
-    newlines from each other (see :attr:`.MINOR_CONTENT`, too).
-
-    Content block elements are stored as section tags.
-    """
-
-    INLINE = 2
-    """
-    These elements' offsets are maintained as format tags and transformed
-    according to :class:`.Tag`.
-    """
-
-    REPLACE = 3
-    """
-    These elements are replaced with some meaningful characters.
-
-    All such elements are treated as elements w/o special section or format
-    annotations; they are:
-
-    * ``br`` (replaced by a newline, but not annotated as tag)
-    * ``hr`` (replaced by two newlines, but not annotated as tag)
-    * ``img`` (replaced by the object replacement character or the alt
-      attribute's value, if present)
-    * ``area`` (replaced by the object replacement character or the alt
-      attribute's value, if present)
-    * ``meta`` (if it has a name and content attribute, those are added to the
-      text, before the body section itself starts, as ``<name>: <content>\\n``)
-    """
-
-    ELEM_INDEX = {
-        'a': INLINE,
-        'abbr': INLINE,
-        'acronym': INLINE,
-        'address': CONTENT,
-        'applet': IGNORE,
-        'area': REPLACE,
-        'article': CONTENT,
-        'aside': CONTENT,
-        'audio': IGNORE,
-        'b': INLINE,
-        'base': REPLACE,
-        'basefont': INLINE,
-        'bb': CONTENT,
-        'bdo': INLINE,
-        'bgsound': IGNORE,
-        'big': INLINE,
-        'blockquote': INLINE,
-        'blink': INLINE,
-        'body': CONTENT,
-        'br': REPLACE,
-        'button': CONTENT,
-        'canvas': IGNORE,
-        'caption': CONTENT,
-        'center': CONTENT,
-        'cite': INLINE,
-        'code': INLINE,
-        'col': INLINE,
-        'colgroup': INLINE,
-        'command': INLINE,
-        'datagrid': CONTENT,
-        'datalist': CONTENT,
-        'dd': CONTENT,
-        'del': INLINE,
-        'details': CONTENT,
-        'dfn': INLINE,
-        'dialog': CONTENT,
-        'dir': CONTENT,
-        'div': CONTENT,
-        'dl': CONTENT,
-        'dt': CONTENT,
-        'em': INLINE,
-        'embed': IGNORE,
-        'eventsource': IGNORE,
-        'fieldset': CONTENT,
-        'figcaption': CONTENT,
-        'figure': CONTENT,
-        'font': INLINE,
-        'footer': CONTENT,
-        'form': CONTENT,
-        'frame': IGNORE,
-        'frameset': CONTENT,
-        'h1': CONTENT,
-        'h2': CONTENT,
-        'h3': CONTENT,
-        'h4': CONTENT,
-        'h5': CONTENT,
-        'h6': CONTENT,
-        'head': CONTENT,
-        'header': CONTENT,
-        'hgroup': CONTENT,
-        'hr': REPLACE, # SPECIAL: create content block separator!
-        'html': CONTENT,
-        'i': INLINE,
-        'iframe': CONTENT,
-        'img': REPLACE,
-        'input': IGNORE,
-        'ins': INLINE,
-        'isindex': IGNORE,
-        'kbd': INLINE,
-        'keygen': IGNORE,
-        'label': CONTENT,
-        'legend': CONTENT,
-        'li': CONTENT,
-        'listing': CONTENT,
-        'link': IGNORE,
-        'map': CONTENT,
-        'mark': INLINE,
-        'marquee': INLINE,
-        'menu': CONTENT,
-        'meta': REPLACE,
-        'meter': INLINE,
-        'nav': CONTENT,
-        'nobr': IGNORE,
-        'noembed': INLINE,
-        'noframes': INLINE,
-        'noscript': INLINE,
-        'object': IGNORE,
-        'ol': CONTENT,
-        'optgroup': INLINE,
-        'option': INLINE,
-        'output': IGNORE,
-        'p': CONTENT,
-        'param': IGNORE,
-        'plaintext': CONTENT,
-        'pre': CONTENT,
-        'progress': INLINE,
-        'q': INLINE,
-        'rp': IGNORE,
-        'rt': IGNORE,
-        'ruby': IGNORE,
-        's': INLINE,
-        'samp': INLINE,
-        'script': IGNORE,
-        'section': CONTENT,
-        'select': CONTENT,
-        'small': INLINE,
-        'source': IGNORE,
-        'spacer': INLINE,
-        'span': INLINE,
-        'strike': INLINE,
-        'strong': INLINE,
-        'style': IGNORE,
-        'sub': INLINE,
-        'summary': CONTENT,
-        'sup': INLINE,
-        'table': CONTENT,
-        'tbody': INLINE,
-        'td': CONTENT,
-        'textarea': CONTENT,
-        'tfoot': INLINE,
-        'th': CONTENT,
-        'thead': INLINE,
-        'time': INLINE,
-        'title': CONTENT,
-        'tr': INLINE,
-        'tt': INLINE,
-        'u': INLINE,
-        'ul': CONTENT,
-        'var': INLINE,
-        'video': IGNORE,
-        'wbr': INLINE,
-        'xmp': INLINE,
-    }
-    """
-    A mapping of all possible HTML 4 and 5 element names to their
-    :attr:`.CONTENT` (1),
-    :attr:`.INLINE` (2),
-    :attr:`.REPLACE` (3), and
-    :attr:`.IGNORE` (0)
-    assignments.
-
-    .. warning::
-
-        Element names encountered during parsing but not listed here will raise
-        a :exc:`RuntimeError`\ .
-    """
-
-    Tag = namedtuple('Tag', 'name type attrs title alt')
-
-    @classmethod
-    def _Tag(cls, name:str, attrs:tuple, url:str):
-        # Create a new tag.
-        attrs = dict(attrs)
-        title = None
-        alt = None
-
-        for k in list(attrs.keys()):
-            if not attrs[k]:
-                del attrs[k]
-            elif k == 'href':
-                href = urlunsplit(urlsplit(attrs[k]))
-                if url: attrs[k] = urljoin(url, href)
-                elif href: attrs[k] = href
-                else: del attrs[k]
-            elif k == 'title':
-                title = attrs[k]
-                del attrs[k]
-            elif k == 'alt':
-                alt = attrs[k]
-                del attrs[k]
-
-                if alt in GREEK_UPPER:
-                    alt = GREEK_UPPER[alt]
-                elif alt in GREEK_LOWER or alt.lower() in GREEK_LOWER:
-                    alt = GREEK_LOWER[alt.lower()]
-            elif k in HtmlExtractor.SKIPPED_ATTRIBUTES:
-                del attrs[k]
-
-        try:
-            tag_type = cls.ELEM_INDEX[name]
-        except KeyError:
-            cls.L.warn('HTML element %s unknown; ignoring content', name)
-            tag_type = cls.IGNORE
-
-        if name in cls.NORMAL_NAME:
-            name = cls.NORMAL_NAME[name]
-
-        return cls.Tag(name, tag_type, attrs, title, alt)
-
-    @classmethod
-    def isIgnored(cls, tag:Tag) -> bool:
-        return tag.type == cls.IGNORE
-
-    @classmethod
-    def isContent(cls, tag:Tag) -> bool:
-        return tag.type == cls.CONTENT
-
-    @classmethod
-    def isReplaced(cls, tag:Tag) -> bool:
-        return tag.type == cls.REPLACE
-
-    @classmethod
-    def isInlined(cls, tag:Tag) -> bool:
-        return tag.type == cls.INLINE
-
-    ###############
-    # == SETUP == #
-    ###############
 
     def __init__(self, namespace:str='html'):
         """
-        Create a new extractor that can be reused with :meth:`.reset()`,
-        run with :meth:`.feed()`, and the result then fetched from
-        :attr:`.HtmlExtractor.string`.
-
         :param namespace: The namespace to use for the tags.
         """
-        super(HtmlExtractor, self).__init__()
-        self.__ignoring_content = []
-        self.__in_body = False
-        self.__root = (HtmlExtractor.Tag('root', *[None]*4), [])
-        self.__state = []
-        self.__string = None
-        self.__url = None
-        self.__chunks = self.__root[1]
+        HTMLParser.__init__(self)
         self.namespace = namespace
-        self.tags = None
+        self._string = []
+        self._elements = []
+        self._ignored = []
+        self.tags = dict()
+
+    def _addContentBreak(self):
+        # Add up to 2 LF chars to _string.
+        # Must have a string before already, and only add two LFs if there are
+        # none before, or add one if there is just one LF before.
+        length = 0
+
+        if self._string:
+            if len(self._string[-1]) > 1:
+                if not self._string[-1].endswith('\n\n'):
+                    if self._string[-1][-1] == '\n':
+                        self._string.append('\n')
+                        length = 1
+                    else:
+                        self._string.append('\n\n')
+                        length = 2
+            elif self._string[-1][-1] == '\n':
+                if len(self._string) > 1:
+                    if self._string[-2][-1] != '\n':
+                        self._string.append('\n')
+                        length = 1
+            else:
+                self._string.append('\n\n')
+                length = 2
+
+        return length
+
+    def _addImgOrArea(self, name:str, attrs:dict):
+        if 'alt' in attrs or 'title' in attrs:
+            if 'alt' in attrs:
+                string = attrs['alt'].strip()
+                del attrs['alt']
+
+                if name == 'img' and string.lower() in GREEK_LOWER:
+                    if string in GREEK_UPPER: string = GREEK_UPPER[string]
+                    else: string = GREEK_LOWER[string.lower()]
+            else:
+                string = attrs['title'].strip()
+                del attrs['title']
+
+            self._string.append(string)
+        else:
+            self._string.append(HtmlExtractor.OBJECT_REPLACEMENT)
+
+    def _addTag(self, name:str, start:int, stop:int, attrs:dict):
+        if any(a in HtmlExtractor.SKIPPED_ATTRIBUTES for a in attrs):
+            # clean up attributes
+            for a in HtmlExtractor.SKIPPED_ATTRIBUTES:
+                if a in attrs: del attrs[a]
+
+        if start != stop or attrs:
+            # only add tags that have content or attributes
+            if start != stop: offsets = (start, stop)
+            else: offsets = (start,)
+
+            if name in HtmlExtractor.NORMAL_NAME:
+                # normalize tag names
+                name = HtmlExtractor.NORMAL_NAME[name]
+
+            self._setTag((self.namespace, name, offsets), attrs)
+
+    def _setTag(self, tag:tuple, attrs:dict):
+        if tag in self.tags:
+            self.tags[tag].update(attrs)
+        else:
+            self.tags[tag] = attrs
+
+    def _shortenTags(self, max_offset:int):
+        for tag in list(self.tags.keys()):
+            if tag[2][-1] > max_offset:
+                if tag[2][0] >= max_offset: # entire tag shortened to no length
+                    if self.tags[tag]: # has attributes -> maintain tag
+                        new = (tag[0], tag[1], (max_offset,))
+                        attrs = self.tags[tag]
+                        self._setTag(new, attrs)
+                else:
+                    new = (tag[0], tag[1], (tag[2][0], max_offset))
+                    attrs = self.tags[tag]
+                    self._setTag(new, attrs)
+
+                del self.tags[tag]
+
+    def close(self):
+        """
+        Tell the parser the feed has ended and clean up the rightmost
+        whitespaces.
+        """
+        HTMLParser.close(self)
+        string = ''.join(self._string)
+
+        if string and HtmlExtractor.RSTRIP_REGEX.search(string):
+            # clean up those rightmost whitespaces:
+            self._string = [string.rstrip()]
+            self._shortenTags(self.position)
+
+    def feed(self, data:str):
+        """
+        Feed some data to the parser.
+
+        Can be called multiple times and feeding must be terminated with a
+        call to :meth:`.close`.
+
+        :param data: A string containing HTML.
+        """
+        HTMLParser.feed(self, data)
 
     def reset(self):
         """
-        Reset the instance for re-use on another document/feed.
+        Reset the parser for feeding a new document.
         """
-        super(HtmlExtractor, self).reset()
-        self.__ignoring_content = []
-        self.__in_body = False
-        self.__root = (HtmlExtractor.Tag('root', *[None]*4), [])
-        self.__state = []
-        self.__string = None
-        self.__url = None
-        self.__chunks = self.__root[1]
-        self.tags = None
-
-    #noinspection PyMethodOverriding
-    def feed(self, data:str, url:str=None):
-        """
-        Feed the extractor with a complete or partial HTML string.
-
-        The *URL* should be the URL from where the HTML resource was fetched;
-        This URL is used to change all href attributes to fully qualified URLs.
-
-        :param data: The HTML, as string.
-        :param url: The base URL to use for ``href`` attributes that are not
-            fully qualified URLs; If the HTML has a base element with the href
-            attribute set, that is used unless set here explicitly.
-        """
-        if url and HtmlExtractor.url_like.match(url):
-            self.__url = urlunsplit(urlsplit(url, 'http'))
-
-        super(HtmlExtractor, self).feed(data)
-
-    ######################
-    # == CONSTRUCTION == #
-    ######################
-
-    @property
-    def url(self) -> str:
-        """
-        Return any URL set or found for this document (or ``None``).
-        """
-        return self.__url
+        HTMLParser.reset(self)
+        self._string = []
+        self._elements = []
+        self._ignored = []
+        self.tags = dict()
 
     @property
     def string(self) -> str:
         """
-        After feeding the parser (and, possibly, calling :meth:`.close`, too),
-        the extracted text can be fetched from this attribute.
+        The string representation of the text extracted from the document.
         """
-        assert not self.__state, 'parse not complete: {}'.format(self.__state)
+        if self._elements or self._ignored:
+            raise HTMLParseError('incomplete parse')
         
-        if self.__string is None:
-            self.__string = ['']
-            self.tags = OrderedDict()
-            strlen = self._toOffsets(self.__root, 0)
-            self.__string = ''.join(self.__string).replace(
-                HtmlExtractor.LINE_SEP, '\n'
-            )
-            assert strlen == len(self.__string)
+        return ''.join(self._string)
 
-        return self.__string
-
-    def _toOffsets(self, node:(Tag, list), start:int) -> int:
-        tag = node[0]
-        end = start
-
-        if HtmlExtractor.isContent(tag) and node[1] and node[0].name != 'pre':
-            HtmlExtractor._stripContent(node[1])
-
-        end = self._appendStrings(node, end)
-
-        if tag.name not in ('root', 'html') and start != end:
-            end = self._createTag(tag, start, end)
-
-        return end
-
-    def _appendStrings(self, node:(Tag, list), end:int) -> int:
-        tag = node[0]
-
-        for chunk in node[1]:
-            if isinstance(chunk, tuple):
-                end = self._toOffsets(chunk, end)
-            else:
-                if tag.name != 'pre':
-                    chunk = self.multi_ws.sub(' ', chunk)
-                    chunk = chunk.replace(HtmlExtractor.PARA_SEP, '\n\n')
-                    last = ''
-
-                    for s in reversed(self.__string):
-                        if s:
-                            last = s
-                            break
-
-                    if HtmlExtractor.ws_end.search(last):
-                        chunk = HtmlExtractor.ws_start.sub('', chunk)
-
-                if chunk:
-                    chunk = normalize('NFC', chunk)
-                    self.__string.append(chunk)
-                    end += len(chunk)
-
-        if tag.title:
-            prefix = '' if self.__string[-1].endswith(' ') else ' '
-            title = self.multi_ws.sub(' ', tag.title)
-            suffix = '' if HtmlExtractor.isContent(tag) else ' '
-            self.__string.append(normalize(
-                'NFC', '{}({}){}'.format(prefix, title, suffix)
-            ))
-            end += len(self.__string[-1])
-
-        return end
-
-    def _createTag(self, tag:Tag, start:int, end:int) -> int:
-        self.tags[(self.namespace, tag.name, (start, end))] = tag.attrs
-
-        if HtmlExtractor.isContent(tag):
-            if tag.name != 'body':
-                last = ''
-
-                for s in reversed(self.__string):
-                    if s:
-                        last += s
-                        if len(last) > 1: break
-
-                mo = HtmlExtractor.nl_end.search(last)
-
-                if mo: last = mo.group()
-                else: last = ''
-
-                if tag.name in HtmlExtractor.MINOR_CONTENT:
-                    if not last:
-                        self.__string.append('\n')
-                        end += 1
-                else:
-                    if not len(last) > 1:
-                        self.__string.append('\n\n')
-                        end += 2
-        elif not HtmlExtractor.isInlined(tag):
-            msg = 'unexpected tag {}'.format(tag)
-            raise RuntimeError(msg)
-        return end
-
-    @classmethod
-    def _stripContent(cls, chunks:list):
-        def strip(i, f):
-            for idx in i:
-                if isinstance(chunks[idx], str):
-                    chunks[idx] = f(cls.multi_ws.sub(' ', chunks[idx]))
-                    if chunks[idx]: break
-                else:
-                    break
-
-        strip(range(len(chunks)), lambda c: c.lstrip())
-        strip(reversed(range(len(chunks))), lambda c: c.rstrip())
-
-    ####################
-    # == EXTRACTION == #
-    ####################
-
-    def handle_starttag(self, name:str, attrs:tuple):
-        if name in HtmlExtractor.EMPTY_ELEMS:
-            # redirect to the right handle
-            return self.handle_startendtag(name, attrs)
-
-        if not self.__ignoring_content:
-            tag = HtmlExtractor._Tag(name, attrs, self.__url)
-
-            if HtmlExtractor.isContent(tag) or HtmlExtractor.isInlined(tag):
-                if tag.name == 'body': self.__in_body = True
-                node = (tag, [])
-                self.__chunks.append(node)
-                self.__state.append(node)
-                self.__chunks = node[1]
-            elif HtmlExtractor.isIgnored(tag):
-                self.__ignoring_content.append(name)
-            else:
-                msg = 'unhandled type {} for tag {}'.format(tag.type, name)
-                raise RuntimeError(msg)
-        else:
-            self.__ignoring_content.append(name)
-
-    def handle_startendtag(self, name:str, attrs:tuple):
-        if not self.__ignoring_content:
-            tag = self._Tag(name, attrs, self.__url)
-
-            if self.isIgnored(tag):
-                pass
-            elif self.isReplaced(tag):
-                self._replace(tag)
-            elif self.isInlined(tag):
-                if tag.title: self.__chunks.append(' {} '.format(tag.title))
-            else:
-                msg = 'unhandled type {} for tag {}'.format(tag.type, name)
-                raise RuntimeError(msg)
-
-    def handle_endtag(self, name:str):
-        if self.__ignoring_content:
-            checked = self.__ignoring_content.pop()
-            assert name == checked, \
-                'expected {}, got {} in {}'.format(checked, name,
-                                                   self.__ignoring_content)
-        elif name in HtmlExtractor.EMPTY_ELEMS:
-            pass
-        else:
-            node = self.__state.pop()
-            if self.__state: parent = self.__state[-1]
-            else: parent = self.__root
-
-            # for n in reversed(parent[1]):
-            #     if isinstance(n, tuple):
-            #         assert n == node, \
-            #             'expected {}\nfound {}\nin {}\n at {}'.format(
-            #                 n, node, parent, [s[0] for s in self.__state]
-            #             )
-            #         break
-
-            self.__chunks = parent[1]
-            if node[0].name == 'body': self.__in_body = False
-
-    def handle_data(self, data:str):
-        if self.__in_body and not self.__ignoring_content:
-            self.__chunks.append(data)
+    @property
+    def position(self) -> int:
+        return sum(len(s) for s in self._string)
 
     def handle_charref(self, ref:str):
-        if self.__in_body and not self.__ignoring_content:
+        if not self._ignored:
             try:
                 codepoint = int(ref[1:], 16) if ref[0].lower() == 'x' else \
                             int(ref)
-                char = chr(codepoint)
-
-                if not char or (category(char) == 'Cc' and not
-                                HtmlExtractor.multi_ws.match(char)):
-                    raise ValueError('empty/control characters are forbidden')
-
-                self.__chunks.append(char)
+                self._string.append(chr(codepoint))
             except (ValueError, OverflowError):
-                self.L.warn('HTML charref &#%s; not a valid codepoint', ref)
-                self.__chunks.append(HtmlExtractor.REPLACEMENT)
+                self.L.warn('HTML char ref &#%s; not a valid codepoint', ref)
+                self._string.append(HtmlExtractor.REPLACEMENT)
+
+    def handle_comment(self, data:str):
+        pass
+
+    def handle_decl(self, decl:str):
+        pass
+
+    def handle_endtag(self, name:str):
+        if self._ignored:
+            check = self._ignored.pop()
+            assert name == check
+        else:
+            check, start, tag_type, attrs = self._elements.pop()
+
+            if name != check:
+                name = 'expected to close {}, got {}'.format(check, name)
+                raise HTMLParseError(name)
+
+            stop = self.position
+
+            if start != stop:
+                if tag_type == HtmlExtractor.MINOR:
+                    if self._string and self._string[-1][-1] != '\n':
+                        self._string.append('\n')
+                        stop += 1
+                elif tag_type == HtmlExtractor.CONTENT:
+                    stop += self._addContentBreak()
+
+            self._addTag(name, start, stop, attrs)
+
 
     def handle_entityref(self, ref:str):
-        if self.__in_body and not self.__ignoring_content:
+        if not self._ignored:
             try:
-                self.__chunks.append(entitydefs[ref])
+                self._string.append(entitydefs[ref.lower()])
             except KeyError:
-                self.L.warn('HTML entityref &%s; unknown', ref)
-                self.__chunks.append(HtmlExtractor.REPLACEMENT)
+                self.L.warn('HTML entity ref &%s; unknown', ref)
+                self._string.append(HtmlExtractor.REPLACEMENT)
 
-    def _replace(self, tag:Tag):
-        if tag.name == 'meta':
-            if 'name' in tag.attrs and 'content' in tag.attrs:
-                string = '{}: {}'.format(tag.attrs['name'],
-                                           tag.attrs['content'])
-                del tag.attrs['name']
-                del tag.attrs['content']
-                # append as 'mini-node' by simulating it were an inline tag
-                self.__chunks.append((tag._replace(type=HtmlExtractor.INLINE),
-                                      [string]))
-                self.__chunks.append(HtmlExtractor.LINE_SEP)
-        elif tag.name == 'img' or tag.name == 'area':
-            # append as 'mini-node' by simulating it were an inline tag
-            self.__chunks.append((tag._replace(type=HtmlExtractor.INLINE),
-                                  [tag.alt or HtmlExtractor.OBJECT_CHAR]))
-        elif tag.name == 'br':
-            self.__chunks.append(HtmlExtractor.LINE_SEP)
-        elif tag.name == 'hr':
-            self.__chunks.append(HtmlExtractor.PARA_SEP)
-        elif tag.name == 'base':
-            if 'href' in tag.attrs and not self.__url and \
-               HtmlExtractor.url_like.match(tag.attrs['href']):
-                self.__url = urlunsplit(urlsplit(tag.attrs['href'], 'http'))
+
+    def handle_data(self, data:str):
+        if not self._ignored:
+            data = HtmlExtractor.WS_REGEX.sub(' ', data)
+
+            if not self._string or \
+               HtmlExtractor.RSTRIP_REGEX.search(self._string[-1]):
+                data = data.lstrip()
+            
+            if data: self._string.append(data)
+
+    def handle_pi(self, data:str):
+        pass
+
+    def handle_startendtag(self, name:str, attrs:list):
+        if not self._ignored:
+            try:
+                tag_type = HtmlExtractor.ELEMENTS[name]
+            except KeyError:
+                self.L.warn('ignoring unknown element "{}"'.format(name))
+            else:
+                if tag_type != HtmlExtractor.IGNORE:
+                    start = self.position
+                    attrs = dict(attrs)
+
+                    if name in ('img', 'area'):
+                        self._addImgOrArea(name, attrs)
+                    elif name == 'br':
+                        self._string.append('\n')
+                    elif name == 'hr':
+                        self._string.append('\n\n')
+
+                    self._addTag(name, start, self.position, attrs)
+
+    def handle_starttag(self, name:str, attrs:tuple):
+        if name in HtmlExtractor.EMPTY_ELEMENTS:
+            return self.handle_startendtag(name, attrs)
+
+        try:
+            tag_type = self.ELEMENTS[name]
+        except KeyError:
+            self.L.warn('ignoring unknown element "{}"'.format(name))
+            tag_type = HtmlExtractor.IGNORE
+
+        if self._ignored:
+            self._ignored.append(name)
+        elif tag_type == HtmlExtractor.IGNORE:
+            self._ignored.append(name)
         else:
-            msg = 'replacement for tag {} undefined'.format(tag.name)
-            raise RuntimeError(msg)
+            start = self.position
+            self._elements.append((name, start, tag_type, dict(attrs)))
+
+    def unknown_decl(self, data:str):
+        pass

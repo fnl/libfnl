@@ -5,30 +5,9 @@
 .. moduleauthor:: Christopher Lenz
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
-
-This module has been largely left untouched from the original code by
-Christopher Lenz for CouchDB-Python (in ``client.py``) at the API level, but
-much of the internals have completely changed. However, even if you are
-familiar with the original API, it is recommendable to at least once check
-the documentation of each public method for changes.
-
-A Simple usage example:
-
->>> from libfnl.couch import Server
->>> server = Server()
->>> db = server.create('python-tests')
->>> doc_id, doc_rev = db.save({'type': 'Person', 'name': 'John Doe'})
->>> doc = db[doc_id]
->>> doc['type']
-'Person'
->>> doc['name']
-'John Doe'
->>> del db[doc.id]
->>> doc.id in db
-False
->>> del server['python-tests']
 """
 from collections import namedtuple
+from datetime import datetime
 from inspect import getsource
 from io import TextIOBase
 import mimetypes
@@ -155,6 +134,48 @@ def EncodeViewOptions(options:dict) -> dict:
     return retval
 
 
+def SetTimestamps(document:dict, now:datetime=None) -> dict:
+    """
+    Add a field **created** to *document* if it does not exist and set
+    the field **modified** on *document* no matter if it exists or not.
+
+    Instead of fetching the UTC time at the moment the function is called, the
+    *now* value of the timestamp can be given; The given datetime will be used
+    after isoformatting the timestamps instead of :meth:`datetime.now`.
+
+    :param document: A document to update with created and modified fields.
+    :param now: The `datetime` value to set (default: :meth:`datetime.now`).
+    :return: A dictionary containing the old created and modified values (if
+        any).
+    """
+    old_stamps = { stamp: document[stamp]
+                   for stamp in ('created', 'modified') if stamp in document }
+
+    if now is None: now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+    else:           now = now.strftime('%Y-%m-%dT%H:%M:%S')
+
+    if 'created' not in document: document['created'] = now
+
+    document['modified'] = now
+    return old_stamps
+
+
+def UnsetTimestamps(document:dict, old_stamps:dict):
+    """
+    Remove **created** and **modified** values from *document* if they do not
+    exist in *old_stamps* or update them to the value in *old_stamps* if they
+    do.
+
+    :param document: The document to update.
+    :param old_stamps: A dictionary, possibly with created and modified keys.
+    """
+    for stamp in ('created', 'modified'):
+        if stamp in old_stamps:
+            document[stamp] = old_stamps[stamp]
+        else:
+            del document[stamp]
+
+
 def ValidateDbName(name:str) -> str:
     """
     Return the name if it is a valid DB name and raise a :exc:`ValueError`
@@ -178,6 +199,15 @@ class Document(dict):
     def __repr__(self):
         return '<{} {}@{}>'.format(type(self).__name__, self.id, self.rev)
 
+    def _toTimestamp(self, name:str) -> datetime:
+        ts = self.get(name)
+
+        if ts:
+            #noinspection PyArgumentList
+            ts = datetime.strptime(ts, '%Y-%m-%dT%H:%M:%S')
+
+        return ts
+
     @property
     def id(self) -> str:
         """
@@ -197,7 +227,7 @@ class Document(dict):
         """
         The document revision or ``None``.
         """
-        return self['_rev'] if '_rev' in self else None
+        return self.get('_rev')
 
     @rev.setter
     def rev(self, _rev:str):
@@ -205,6 +235,34 @@ class Document(dict):
         Set the document revision.
         """
         self['_rev'] = _rev
+
+    @property
+    def created(self) -> datetime:
+        """
+        The documents **created** timestamp as `datetime` or ``None``.
+        """
+        return self._toTimestamp('created')
+
+    @created.setter
+    def created(self, ts:datetime):
+        """
+        Set the documents creation timestamp.
+        """
+        self['created'] = ts.isoformat()
+
+    @property
+    def modified(self) -> datetime:
+        """
+        The documents **modified** timestamp as `datetime` or ``None``.
+        """
+        return self._toTimestamp('modified')
+
+    @modified.setter
+    def modified(self, ts:datetime):
+        """
+        Set the documents creation timestamp.
+        """
+        self['modified'] = ts.isoformat()
 
     @property
     def attachments(self) -> dict:
@@ -684,7 +742,15 @@ class Database(object):
         :raise libfnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
         """
-        response = self.resource.putJson(*DocPath(id), json=document)
+        old_stamps = SetTimestamps(document)
+
+        #noinspection PyBroadException
+        try:
+            response = self.resource.putJson(*DocPath(id), json=document)
+        except:
+            UnsetTimestamps(document, old_stamps)
+            raise
+
         document['_id']  = response.data['id']
         document['_rev'] = response.data['rev']
 
@@ -822,7 +888,15 @@ class Database(object):
         else:
             request = self.resource.postJson
 
-        response = request(json=document, **options)
+        old_stamps = SetTimestamps(document)
+
+        #noinspection PyBroadException
+        try:
+            response = request(json=document, **options)
+        except:
+            UnsetTimestamps(document, old_stamps)
+            raise
+
         id, rev = response.data['id'], response.data.get('rev')
         document['_id'] = id
 
@@ -1199,6 +1273,8 @@ class Database(object):
         :return: A `list` of (`bool`, `str`, `str`) `tuples`.
         """
         documents = list(documents)
+        now = datetime.utcnow()
+        old_stamps = [SetTimestamps(doc, now) for doc in documents]
         content = dict(docs=documents)
         if strict: content['all_or_nothing'] = True
         # TODO: would it pay off making this a chunked request?
@@ -1212,6 +1288,8 @@ class Database(object):
                 else:
                     # XXX: Any other error types mappable to exceptions here?
                     exc_type = network.ServerError
+
+                UnsetTimestamps(documents[idx], old_stamps[idx])
                 #noinspection PyArgumentList
                 results.append((False, result['id'],
                                 exc_type(result['reason'])))

@@ -28,6 +28,12 @@ class TempDatabaseMixin(object):
             for name in self.temp_dbs:
                 self.server.delete(name)
 
+        prefix = 'couchdb-python/'
+
+        for db in self.server:
+            if db.startswith(prefix) and db[len(prefix):].isdigit():
+                self.server.delete(db)
+
     def temp_db(self):
         if self.temp_dbs is None: self.temp_dbs = {}
         # Find an unused database name
