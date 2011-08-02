@@ -1028,6 +1028,16 @@ class Database(object):
         else:
             return response.data
 
+    def rev(self, id:str) -> str:
+        """
+        Get the latest revision for the given document ID.
+
+        :param id: The document ID.
+        :return: The document's revision string (_rev).
+        """
+        response = self.resource.head(*DocPath(id))
+        return response.headers["ETag"][1:-1]
+
     #noinspection PyExceptionInherit
     def revisions(self, id:str, **options) -> iter([Document]):
         """
@@ -1092,7 +1102,7 @@ class Database(object):
             doc_id = id_or_doc
             path = DocPath(doc_id)
             resp = self.resource.head(*path)
-            rev = resp.headers["ETag"]
+            rev = resp.headers["ETag"][1:-1]
         else:
             doc_id = id_or_doc['_id']
             path = DocPath(doc_id)
@@ -1148,21 +1158,27 @@ class Database(object):
         If the *content* is a `bytes` object, and the content is text, it is
         highly recommended to set the charset value, too. Otherwise, or if
         *content* is a `str` object or a :class:`io.TextIOBase` instance, it
-        will be assumed to use **Latin-1** encoding (the default HTTP 1.1
-        encoding).
+        will be assumed the content uses **Latin-1** encoding (the default
+        HTTP 1.1 encoding).
+
+        If *id_or_doc* is a dictionary or `Document` and has no ``_rev`` field,
+        an empty document with the given ``_id`` will be created. Note that the
+        document itself will **not** be saved, only the empty document created.
+        After the attachment has been saved, the document in memory will be
+        outdated, and if it is to be used further, has to be fetched again
+        from the database to obtain the CouchDB attachment information.
+
+        For an ID in *id_or_doc*, if it exists in the DB, the ``_rev`` is
+        fetched; Otherwise, the broker will attempt to create an empty document
+        with that ID.
 
         :param id_or_doc: The dictionary, `Document`, or simply document ID
-            string where the attachment should be added to. If the dictionary
-            or `Document` has no ``_rev`` field, an empty document with
-            the given ``_id`` will be created. Note that the document itself
-            will **not** be saved, only the empty document created. For an ID,
-            if it exists in the DB, the ``_rev`` is fetched; Otherwise, an
-            empty document with that ID will be created.
-        :param content: The content to upload, either a file-like object or
-            a filename.
+            string where the attachment should be added.
+        :param content: The content to upload, either a file-like object, a
+            `bytes`, or a `str` object.
         :param filename: The name of the attachment file to create/replace; if
-            omitted, this function tries to get the filename from the `name`
-            attribute (eg., file-like objects) of the *content* argument.
+            omitted, this method tries to get the filename from the `name`
+            attribute (eg., file-like objects) of the *content* object.
         :param content_type: MIME type of the attachment; if omitted, it is
             guessed based on the *filename* extension.
         :param charset: Appended to the *content type* value, **if not defined
@@ -1207,9 +1223,9 @@ class Database(object):
             resource = self.resource(*DocPath(doc_id))
 
             try:
-                resp = resource.head()
-                rev = resp.headers.get("ETag", None)
-            except network.ResourceNotFound:
+                response = resource.head()
+                rev = response.headers["ETag"][1:-1]
+            except (KeyError, IndexError, network.ResourceNotFound):
                 rev = None
         else:
             doc_id = id_or_doc['_id']
@@ -1222,16 +1238,6 @@ class Database(object):
                                 rev=rev)
         data = serializer.Decode(response.data.decode(response.charset))
         assert data['ok']
-
-        # update the document's revision (if id_or_doc was not a string)
-        if not isinstance(id_or_doc, str):
-            if '_attachments' not in id_or_doc:
-                id_or_doc['_attachments'] = dict()
-
-            id_or_doc['_rev'] = data['rev']
-            doc = self[id_or_doc['_id']]
-            id_or_doc['_attachments'][filename] = doc['_attachments'][filename]
-
         return data['id'], data['rev']
 
     # BULK DOCUMENT API

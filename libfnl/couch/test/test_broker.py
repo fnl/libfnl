@@ -232,6 +232,10 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         deldoc = lambda: self.db.delete({'_id': None, '_rev': None})
         self.assertRaises(ValueError, deldoc)
 
+    def test_fetching_rev(self):
+        id, rev = self.db.save({})
+        self.assertEqual(rev, self.db.rev(id))
+        
     def test_doc_revs(self):
         doc = {'bar': 42}
         self.db['foo'] = doc
@@ -271,10 +275,12 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.db['foo'] = doc
         old_rev = doc['_rev']
 
-        self.db.saveAttachment(doc, 'Foo bar', 'foo.txt', 'text/plain')
-        self.assertNotEquals(old_rev, doc['_rev'])
-
+        id, rev = self.db.saveAttachment(doc, 'Foo bar', 'foo.txt',
+                                         'text/plain')
+        self.assertEquals(old_rev, doc['_rev'])
         doc = self.db['foo']
+        self.assertEquals(rev, doc['_rev'])
+
         attachment = doc['_attachments']['foo.txt']
         self.assertEqual(len('Foo bar'), attachment['length'])
         self.assertEqual('text/plain; charset=iso-8859-1',
@@ -296,8 +302,8 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         #                   self.db.getAttachment('foo', 'föö.txt').data)
 
         old_rev = doc['_rev']
-        self.db.deleteAttachment(doc, 'foo.txt')
-        self.assertNotEquals(old_rev, doc['_rev'])
+        self.assertEquals(old_rev, doc['_rev'])
+        self.db.deleteAttachment('foo', 'foo.txt')
         self.assertEqual(None, self.db['foo'].get('_attachments'))
 
     def test_attachment_crud_with_files(self):
@@ -307,7 +313,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         fileobj = StringIO('Foo bar baz')
 
         self.db.saveAttachment(doc, fileobj, 'foo.txt')
-        self.assertNotEquals(old_rev, doc['_rev'])
+        self.assertEquals(old_rev, doc['_rev'])
 
         doc = self.db['foo']
         attachment = doc.attachments['foo.txt']
@@ -321,8 +327,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
                          self.db.getAttachment('foo', 'foo.txt').data)
 
         old_rev = doc['_rev']
-        self.db.deleteAttachment(doc, 'foo.txt')
-        self.assertNotEquals(old_rev, doc['_rev'])
+        self.db.deleteAttachment(doc['_id'], 'foo.txt')
         self.assertEqual(None, self.db['foo'].get('_attachments'))
 
     def test_empty_attachment(self):
@@ -331,7 +336,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         old_rev = doc['_rev']
 
         self.db.saveAttachment(doc, '', 'empty.txt')
-        self.assertNotEquals(old_rev, doc['_rev'])
+        self.assertEquals(old_rev, doc['_rev'])
 
         doc = self.db['foo']
         attachment = doc['_attachments']['empty.txt']
@@ -353,8 +358,11 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         f.close()
         doc = {}
         self.db['foo'] = doc
-        self.db.saveAttachment(doc, open(tmpfile, encoding='US-ASCII'))
+        id, rev = self.db.saveAttachment('foo',
+                                         open(tmpfile, encoding='US-ASCII'))
+        self.assertEqual(id, 'foo')
         doc = self.db.get('foo')
+        self.assertEqual(rev, doc['_rev'])
         self.assertEqual('text/plain; charset=US-ASCII',
                          doc.attachments['test.txt']['content_type'])
         shutil.rmtree(tmpdir)
