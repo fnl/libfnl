@@ -249,3 +249,65 @@ Text serialization
 .. automethod:: libfnl.nlp.text.Text.addFromDict
 
 .. automethod:: libfnl.nlp.text.Text.tagsAsDict
+
+
+JSON Annotations
+================
+
+Text and annotations can be saved to any other databases, files, might be provided as a REST web service, or available on some website. Therefore, all text and annotations are exchanged as `JSON`_ objects that follow the same uniform principles to make it easy to communicate them over the Internet (aka. "interoperable"). Two or more text and/or annotation objects form a **collection**. The exact nature of a collection is not defined in this context. A collection might be all objects found at a certain URL (resource), in one or more databases, retrievable from one or more web services/sites, etc.. In essence, a collection is entirely implementation dependent and therefore remains undefined in this context. JSON is specified in `RFC 4627`_ and both text and annotation objects must follow this specification.
+
+Text objects
+------------
+
+**Members:** ``text``, ``checksum``, [``_id``].
+
+Text objects are `JSON`_ objects with two required members: ``text`` and ``checksum``, and one optional member ``_id``.
+
+The ``text`` holds a JSON Unicode string of the text itself (see section "2.5. Strings" and "3. Encoding" of `RFC 4627`_ - JSON strings by default are UTF-8, but can be UTF-16 or -32 encoded, too). The ``checksum`` element is a JSON object with at least two values::
+
+    {
+        'encoding': '<encoding>',
+        '<hash type>': '<hexdigest>'
+    }
+
+The ``<encoding>`` value should be the encoding used on the ``text`` string to calculate the checksum as a 7bit ASCII string and must follow the `IANA specification`_ for character set names (Preferentially, the name should be the official encoding name using all lower case characters without dashes, eg., "utf8".) Allowed encodings are only the *UCS Transformation Format encodings* currently supported by the Unicode consortium (as of August 2011, those are UTF-8, -16, and -32). Preferentially, the encoding should be the same encoding as used for the ``text`` string in the JSON object. The ``<hash type>`` should be the hash algorithm used to calculate the checksum. Allowed hash types are **MD5** (preferred), **SHA256**, and **SHA512**, and the string can be written in upper- or lower-case and with or without a dash separating the letters from the digits. For MD5, the strings "md5" (preferred), "MD-5", "mD5", and "Md-5" are all valid keys to indicate a MD5 the hash type. The ``<hexdigest>`` is simply the hexadecimal representation of the binary hash, using two characters per byte. This value string must match the regular expression ``/^[A-Fa-f0-9]+$/`` and it must be twice as long as the number of bytes produced by the chosen hash type. Optionally, two or all three of the valid hash types may be part of the ``checksum`` JSON object. If hashing the encoded (ie., binary) ``text`` string with the specified hash type does not lead to the same ``<hexdigest>`` value, the text object is malformed and the receiver of a malformed text object should reject it.
+
+In addition, a text object may contain an additional key, ``_id``, that provides a unique ID for the text object. The ID must be a Unicode string, but an ID's exact nature remains unspecified. However, it is highly recommended to keep the string as short as possible, 256 characters or less. Objects with IDs longer than 256 characters may be rejected. IDs must be unique with respect to the collection this object pertains to. The ``_id`` is used to identify the text of annotation objects (see below), as annotation objects do not necessarily contain the text they annotate if the collection is a mixed collection of text and annotation objects.
+
+Additional members and data may be added to text objects, as long as they do not collide with the members just described. However, a receiver may decide to drop any other member not described. If a received text object does not match the described specifications, the receiver should reject the text object.
+
+Annotation objects
+------------------
+
+**Members**: ``annotator``, ``tags``, ``text_id`` OR (``text`` AND ``checksum``), [``_id``].
+
+Annotation objects are `JSON`_ objects unique to one ``annotator``, with the ``tags`` holding the annotation and *either* a ``text_id`` reference *or* the two required members ``text`` and ``checksum``. Optionally, annotation objects may have an ``_id``.
+
+An ``annotator`` references the entity that made the annotations represented by this object, and the value must be a string. If an automated agent created the annotations, a unique **URL** (and, explicitly **not** any other URI, ie., not a URN) for that agent must be used, preferentially mapping to some meaningful and available Internet resource with respect to the annotation agent. The agent URL syntax must follow the `RFC 1738`_ specifications for URLs, but only the schemes ``http[s]`` (`RFC 2616`_ and `RFC 2818`_ for HTTP over SSL/TLS), ``ftp`` (`RFC 1738`_), and ``mailto`` (`RFC 6068`_) are allowed. In the case of a human annotator, the annotator string must be the unique E-mail address of the annotator, and must follow the `RFC 5322`_ specifications for E-mail addresses (see `section 3.4.1`_). The E-mail address string for human annotators may **not** contain the ``mailto:`` (scheme) prefix, as this would qualify an annotator string as a URL, used to identify automated agents.
+
+The ``tags`` member holds a JSON object of annotations on some text string. The object must follow the structure as already described in :meth:`.Text.tagsAsDict`, namely::
+
+    { '<namespace>': { '<tag_id>': { '<offset>(\.<offset>)*': { '<attr_name>': <attr_value> } } } }
+
+To map entities annotated as tags to real resources, each namespace in ``tags`` might actually be a qualified **URI**, usable to map the namespace to an existing resource, such as a database entry. Preferentially, a namespace combined with a tag's ID creates a valid URL that points to the actual resource of the annotated entity. For example, to annotate UniProt proteins, the namespace might be ``http://www.uniprot.org/uniprot/``, and the IDs would be UniProt accessions, such as ``P12345``. For example, the annotation of the mention of the UniProt protein `P12345`_ - which has the official protein name "mAspAT", found in some text as the string "FABP1" (5 chars) at offsets 187 to 192 (5 chars) - might look like this::
+
+    { 'http://www.uniprot.org/uniprot/': { 'P12345': { '187.192': { 'name': 'mAspAT', 'confidence': 0.8745672 } } } } }
+
+The semantics of attribute values are undefined as they are only meaningful in an implementation dependent manner. Attributes can be used for a large variety of purposes, such as referencing other tags to create relational annotations, containing the annotated text when using separate text and annotation objects, or any relevant values created by automated systems, such as the confidence value for an annotation or the official name of an annotated entity, as shown in the example above. The only limitation for attributes is that they must be `JSON`_-serializable *objects*.
+
+Annotation objects always tag some specific text (string). Either, the text can be part of the annotation object, in which case it is added as two members, ``text`` and ``checksum``, following the same rules as described for text objects. Otherwise, the text can be referenced by the annotation object, by adding a ``text_id`` string. In this case, the actual text object must have an ``_id`` value with exactly that string, and both objects must be part of the same collection.
+
+Just as text objects, annotation objects may contain an ``_id`` value following the same guidelines as for text object IDs.
+
+Additional members and data may be added to annotation objects, as long as their names do not collide with the names just described. However, a receiver may decide to drop any other member not described. If a received annotation object does not match the described specifications, the receiver should reject the annotation object.
+
+.. _IANA specification: http://www.iana.org/assignments/character-sets
+.. _JSON: http://json.org/
+.. _P12345: http://www.uniprot.org/uniprot/P12345
+.. _RFC 1738: http://tools.ietf.org/html/rfc1738
+.. _RFC 2616: http://www.rfc-editor.org/rfc/rfc2616.txt
+.. _RFC 2818: http://www.rfc-editor.org/rfc/rfc2818.txt
+.. _RFC 4627: http://www.ietf.org/rfc/rfc4627.txt
+.. _RFC 5322: http://tools.ietf.org/html/rfc5322
+.. _RFC 6068: http://www.rfc-editor.org/rfc/rfc6068.txt
+.. _section 3.4.1: http://tools.ietf.org/html/rfc5322#section-3.4.1
