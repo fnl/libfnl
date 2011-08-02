@@ -49,14 +49,26 @@ class PosReaderTests(TestCase):
     def testReadingSample(self):
         count = 0
         sentences = [2, 4]
-        pos_tags = [44, 86] # second: one less for joined "didn't"!
+        tag_count = [48, 92] # second: one less for the joined "didn't"!
+        abstract_offsets = ['115.295', '119.526']
+        article_len = [295, 526]
+        article_ids = ['MEDLINE:95369245', 'MEDLINE:95333264']
+        pos_tags = [{'NN', 'CC', 'IN', 'VBZ', 'JJ', 'STOP', 'DT', 'VBG', 'VBN',
+                     'P_O', 'P_C',},
+                    {'DT', 'NN', 'VBZ', 'JJ', 'CD', 'IN', 'NNS', 'CC', 'RB',
+                     'STOP', 'P_O', 'P_C', 'COMMA', 'VBN', 'VBP', 'NNP',
+                     'PRP'}]
 
-        for text in self.reader.toText(self.file):
-            tags = text.tagtree
-            self.assertEqual(1, len(tags[self.reader.section_ns][self.reader.abstract_tag]))
-            self.assertEqual(1, len(tags[self.reader.section_ns][self.reader.title_tag]))
-            self.assertEqual(sentences[count], len(tags[self.reader.section_ns][self.reader.sentence_tag]))
-            self.assertEqual(pos_tags[count], sum(map(len, tags[self.reader.pos_tag_ns].values())))
+        for text_id, text in self.reader.toText(self.file):
+            tags = text.tagsAsDict()
+            self.assertEqual(text_id, article_ids[count])
+            self.assertEqual(article_len[count], len(text.string), str(text))
+            self.assertEqual(tag_count[count], len(text))
+            self.assertEqual(1, len(tags[self.reader.section_tag_ns][self.reader.abstract_elem]))
+            self.assertEqual(1, len(tags[self.reader.section_tag_ns][self.reader.title_elem]))
+            self.assertTrue(abstract_offsets[count] in tags[self.reader.section_tag_ns][self.reader.abstract_elem])
+            self.assertEqual(sentences[count], len(tags[self.reader.section_tag_ns][self.reader.sentence_elem]))
+            self.assertSetEqual(pos_tags[count], set(tags[self.reader.pos_tag_ns].keys()))
             count += 1
 
         self.assertEqual(2, count)
