@@ -709,28 +709,19 @@ class Database(object):
         """
         Remove the document with the specified *ID* from the database.
 
-        :raise KeyError: If no such document exists.
+        :raise network.ResourceNotFound: If no such document exists.
         """
         path = DocPath(id)
-
-        try:
-            response = self.resource.head(*path)
-        except network.ResourceNotFound:
-            raise KeyError(id)
-
+        response = self.resource.head(*path)
         self.resource.delete(*path, rev=response.headers['etag'].strip('"'))
 
     def __getitem__(self, id:str) -> Document:
         """
         Return the :class:`.Document` with the specified *ID*.
 
-        :raise KeyError: If no such document exists.
+        :raise network.ResourceNotFound: If no such document exists.
         """
-        try:
-            response = self.resource.getJson(*DocPath(id))
-        except network.ResourceNotFound:
-            raise KeyError(id)
-
+        response = self.resource.getJson(*DocPath(id))
         return Document(response.data)
 
     def __setitem__(self, id:str, document:dict):
@@ -1036,7 +1027,7 @@ class Database(object):
         :return: The document's revision string (_rev).
         """
         response = self.resource.head(*DocPath(id))
-        return response.headers["ETag"][1:-1]
+        return response.headers["ETag"].strip('"')
 
     #noinspection PyExceptionInherit
     def revisions(self, id:str, **options) -> iter([Document]):
@@ -1102,7 +1093,7 @@ class Database(object):
             doc_id = id_or_doc
             path = DocPath(doc_id)
             resp = self.resource.head(*path)
-            rev = resp.headers["ETag"][1:-1]
+            rev = resp.headers["ETag"].strip('"')
         else:
             doc_id = id_or_doc['_id']
             path = DocPath(doc_id)
@@ -1224,7 +1215,7 @@ class Database(object):
 
             try:
                 response = resource.head()
-                rev = response.headers["ETag"][1:-1]
+                rev = response.headers["ETag"].strip('"')
             except (KeyError, IndexError, network.ResourceNotFound):
                 rev = None
         else:

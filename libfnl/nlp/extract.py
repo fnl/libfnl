@@ -12,6 +12,7 @@ import os
 from html.entities import entitydefs
 from html.parser import HTMLParser, HTMLParseError
 import re
+from unicodedata import normalize
 from libfnl.nlp.text import Text
 from logging import getLogger
 from mimetypes import guess_type
@@ -116,7 +117,7 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
     elif mime_type == 'text/plain':
         encoding = encoding or 'utf-8'
         plain_text = open(filename, 'rb', encoding=encoding).read()
-        text = Text(plain_text)
+        text = Text(normalize('NFC', plain_text))
     else:
         msg = 'no extraction rules for MIME type {}'.format(mime_type)
         raise RuntimeError(msg)
@@ -362,7 +363,7 @@ class HtmlExtractor(HTMLParser):
                 string = attrs['title'].strip()
                 del attrs['title']
 
-            self._string.append(string)
+            self._string.append(normalize('NFC', string))
         else:
             self._string.append(HtmlExtractor.OBJECT_REPLACEMENT)
 
@@ -509,7 +510,7 @@ class HtmlExtractor(HTMLParser):
                HtmlExtractor.RSTRIP_REGEX.search(self._string[-1]):
                 data = data.lstrip()
             
-            if data: self._string.append(data)
+            if data: self._string.append(normalize('NFC', data))
 
     def handle_pi(self, data:str):
         pass

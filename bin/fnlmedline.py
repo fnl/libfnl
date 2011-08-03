@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from libfnl.couch import COUCHDB_URL, Server
+from libfnl.couch.network import ResourceNotFound
 from libfnl.nlp.medline import ABSTRACT_FILE, Attach, Dump
 
 __author__ = "Florian Leitner"
@@ -26,52 +27,63 @@ ACTIONS = {
     4: 'delet',
 }
 
-def main(pmids:list, action:int=CREATE, couch_db:str=COUCHDB_URL,
+def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
          database:str='medline', encoding:str='utf-8',
          force:bool=False) -> int:
     logging.info("%sing %i %s%s in %s/%s", ACTIONS[action], len(pmids),
                  'PMIDs' if action else 'files',
-                 ' (forced)' if force else '', couch_db, database)
+                 ' (forced)' if force else '', couchdb_url, database)
     try:
-        db = Server(couch_db)[database]
+        db = Server(couchdb_url)[database]
     except error:
-        logging.error('cannot connect to %s', couch_db)
+        logging.error('cannot connect to %s', couchdb_url)
         return 1
     
     checked = False
-    processed_docs = 0
+    done = 0
 
     if action == ATTACH:
-        processed_docs = sum(len(i) for i in
-                             Attach(pmids, db, encoding, force).values())
+        done = sum(len(i) for i in Attach(pmids, db, encoding, force).values())
     else:
         if not pmids and action in (UPDATE, READ):
             # read/update all records...
-            pmids = [id for id in db if len(id) != 64 and id.isdigit()]
-            checked = True
+            pmids = [id for id in db if len(id) <= 10 and id.isdigit()]
 
         if action is DELETE:
             for id in pmids:
-                if checked or id in db:
+                try:
                     del db[id]
-                    processed_docs += 1
-                else:
+                    done += 1
+                except ResourceNotFound:
                     logging.warn("PMID {} not in DB".format(id))
+                    print(id, file=sys.stderr)
         elif action is READ:
             for id in pmids:
-                if checked or id in db:
-                    att = db.getAttachment(id, ABSTRACT_FILE)
-                    file = open("{}.txt".format(id), mode='w',
-                                encoding='utf-8')
-                    file.write(att.data)
-                    file.close()
-                    processed_docs += 1
+                try:
+                    text = db[id]['text']
+                except ResourceNotFound:
+                    logging.warn("PMID %s not in DB", id)
+                    print(id, file=sys.stderr)
+                except KeyError:
+                    logging.warn("PMID %s has no text", id)
+                    print(id, file=sys.stderr)
                 else:
-                    logging.warn("PMID {} not in DB".format(id))
+                    try:
+                        file = open("{}.txt".format(id), mode='w',
+                                    encoding='utf-8')
+                        file.write(text)
+                        file.close()
+                        done += 1
+                    except IOError:
+                        logging.warn("could not write %s.txt", id)
+                        print(id, file=sys.stderr)
         else:
-            processed_docs = Dump(pmids, db, action is UPDATE, force)
+            done, failed_ids = Dump(pmids, db, action is UPDATE, force)
 
-    logging.info("%sed %i %s", ACTIONS[action], processed_docs,
+            for id in failed_ids:
+                print(id, file=sys.stderr)
+
+    logging.info("%sed %i %s", ACTIONS[action], done,
                  'PMIDs' if action else 'files')
 
     return 0
@@ -113,9 +125,9 @@ if __name__ == '__main__':
     )
     parser.add_option(
         "-a", "--attach", action="store_const", const=ATTACH, dest="action",
-        help="upload files that are attached to MEDLINE records; the files' "\
+        help="upload files that are related to MEDLINE records; the files' "\
              "names (w/o extension) must be the PMIDs to attach to, eg., "\
-             "1234567.html"
+             "1234567.html; use --force to replace sections on existing files"
     )
     parser.add_option(
         "-f", "--force", action="store_true", default=False,
@@ -126,7 +138,7 @@ if __name__ == '__main__':
         help="the encoding of the files too attach [%default]"
     )
     parser.add_option(
-        "--couch-db", default=COUCHDB_URL,
+        "--couchdb-url", default=COUCHDB_URL,
         help="COUCHDB_URL [%default]"
     )
     parser.add_option(
@@ -158,7 +170,7 @@ if __name__ == '__main__':
     kwds = opts.__dict__
     del kwds["logfile"]
     del kwds["loglevel"]
-    pm_ids = []
+    pmid_list = []
 
     if opts.action == ATTACH:
         for item in args:
@@ -171,25 +183,25 @@ if __name__ == '__main__':
             if not pmid.isdigit():
                 parser.error('name {} of {} not a PMID'.format(pmid, item))
 
-        pm_ids = args
+        pmid_list = args
     else:
         for item in args:
             if os.path.isfile(item):
-                found = len(pm_ids)
+                found = len(pmid_list)
 
                 try:
                     with open(item) as file:
-                        pm_ids.extend(pmid.strip() for pmid in file if
+                        pmid_list.extend(pmid.strip() for pmid in file if
                                       pmid.strip().isdigit())
                 except IOError:
                     parser.error("could not read {}".format(item))
 
-                found = len(pm_ids) - found
+                found = len(pmid_list) - found
                 if not found: parser.error('no PMIDs in {}'.format(item))
                 else: logging.info('read %s PMIDs from %s', found, item)
             elif item.isdigit():
-                pm_ids.append(item)
+                pmid_list.append(item)
             else:
                 parser.error("{} not a PMID or file".format(item))
 
-    sys.exit(main(list(frozenset(pm_ids)), **kwds))
+    sys.exit(main(list(frozenset(pmid_list)), **kwds))

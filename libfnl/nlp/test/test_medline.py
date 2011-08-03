@@ -1,10 +1,8 @@
 import os
 import unittest
-from datetime import date, datetime
-from hashlib import md5
-from io import StringIO
+from datetime import date
 
-from libfnl.nlp.medline import Fetch, Parse, MakeDocuments, TextFromAbstract
+from libfnl.nlp.medline import Fetch, Parse, MakeDocuments
 
 PARSED_SAMPLE = [
 {
@@ -176,52 +174,35 @@ class TestMedline(unittest.TestCase):
         self.assertEqual(len(PARSED_SAMPLE), self.count)
 
     def testMakeDocuments(self):
-        tag = (('keep', 'me', (1,2)), None)
         title = PARSED_SAMPLE[1]['Article']['ArticleTitle']
         abstract = PARSED_SAMPLE[1]['Article']['Abstract']
-        text = '\n\n'.join((title, abstract['AbstractText'],
-                            abstract['CopyrightInformation']))
+        text = '\n\n'.join((title, abstract['AbstractText']))
         revs = {'11700088': {
-            '_rev': 'maintain', 'created': 'keep me', 'text': text,
-            'tags': [tag], '_id': '11700088',
-            'medline': 'gone', 'checksum': ('md5', md5(text.encode()).hexdigest())
+            '_rev': 'revision', 'created': 'date created', 'text': text,
+            'PMID': 'dummy',
         }}
         docs = iter(MakeDocuments(self.xml_stream, revs))
         d = next(docs)
-        now = datetime.now().replace(minute=0, second=0, microsecond=0)
-        self.assertTrue('medline' in d, d)
-        self.assertEqual(d['medline']['PMID'][0], d['_id'])
-        self.assertTrue('_rev' not in d, d)
-        self.assertEqual(now, d['created'].replace(minute=0, second=0))
-        self.assertEqual(now, d['modified'].replace(minute=0, second=0))
+        self.assertEqual('11748933', d['_id'])
+        self.assertFalse('_rev' in d, d.get('_rev'))
+        self.assertFalse('created' in d, d.get('created'))
+        self.assertTrue('text' in d, 'text missing')
+        self.assertTrue('PMID' in d, 'PMID missing')
+        self.assertEqual(d['PMID'][0], d['_id'])
         d = next(docs)
-        now = datetime.now().replace(minute=0, second=0, microsecond=0)
-        self.assertNotEqual('gone', d['medline'])
-        self.assertEqual(d['medline']['PMID'][0], d['_id'])
-        self.assertEqual('maintain', d['_rev'])
-        self.assertEqual('keep me', d['created'])
-        self.assertEqual(now, d['modified'].replace(minute=0, second=0))
-        self.assertNotEqual('clear me', d['text'])
-        self.assertTrue(tag in d['tags'], d['tags'])
+        self.assertEqual('11700088', d['_id'])
+        self.assertEqual('revision', d['_rev'])
+        self.assertEqual('date created', d['created'])
+        self.assertNotEqual('dummy', d['PMID'])
+        self.assertEqual(d['PMID'][0], d['_id'])
+        self.assertEqual(text, d['text'])
         self.assertRaises(StopIteration, next, docs)
 
-    def testTextFromAbstract(self):
-        section_tags = [('medline', 'title', (0, 10))]
-        title = "1234567890"
-        abstract = {
-            "AbstractText": "1234567890",
-            "CopyrightInformation": "1234567890"
-        }
-        buffer = StringIO()
-        buffer.write(title)
-
-        result = TextFromAbstract(buffer, abstract, section_tags)
-        self.assertSequenceEqual('\n\n'.join(["1234567890"] * 3), result)
-        self.assertListEqual([
-            ('medline', 'title', (0, 10)),
-            ('medline', 'abstract', (12, 22)),
-            ('medline', 'copyright', (24, 34))
-        ], section_tags)
+    def testDoNotUpdateChangedText(self):
+        revs = { '11700088': { 'text': 'other'},
+                 '11748933': { 'text': 'other'} }
+        docs = iter(MakeDocuments(self.xml_stream, revs))
+        self.assertRaises(StopIteration, next, docs)
 
 
 if __name__ == '__main__':

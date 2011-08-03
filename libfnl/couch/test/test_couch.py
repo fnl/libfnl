@@ -30,7 +30,8 @@ class CouchTests(testutil.TempDatabaseMixin, unittest.TestCase):
 
         # delete a document
         del self.db['0']
-        self.assertRaises(KeyError, self.db.__getitem__, '0')
+        self.assertRaises(ResourceNotFound, self.db.__getitem__, '0')
+        self.assertRaises(ResourceNotFound, self.db.__delitem__, '0')
 
         # test _all_docs
         self._create_test_docs(4)

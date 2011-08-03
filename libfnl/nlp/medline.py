@@ -14,12 +14,12 @@ import os
 from collections import defaultdict
 from io import StringIO
 from http.client import HTTPResponse # function annotation only
-from time import sleep, time, strptime
+from time import sleep, time
 from unicodedata import normalize
 from urllib.request import build_opener
 from xml.etree.ElementTree import iterparse, tostring, Element
 from logging import getLogger
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from libfnl.couch.broker import Database
 from libfnl.nlp.extract import Extract
 from libfnl.nlp.text import Text
@@ -52,18 +52,16 @@ SKIPPED_ELEMENTS = ('OtherID', 'OtherAbstract', 'SpaceFlightMission',
 'Ignored tags in MedlineCitation elements that are never parsed.'
 
 ABSTRACT_ELEMENTS = [
-    ('ArticleTitle', 'title'),
-    ('AbstractText', 'abstract'),
-    ('Background', 'background'),
-    ('Objective', 'objective'),
-    ('Methods', 'methods'),
-    ('Results', 'results'),
-    ('Conclusions', 'conclusions'),
-    ('CopyrightInformation', 'copyright'),
+    'AbstractText',
+    'Background',
+    'Objective',
+    'Methods',
+    'Results',
+    'Conclusions',
 ]
 """
 List of keys found in Article{1}->Abstract{0,1}, in order of how they should
-be presented.
+be added to a **text** member.
 """
 
 ABSTRACT_FILE = 'abstract.txt'
@@ -82,16 +80,18 @@ def Dump(pmids:list([str]), db:Database, update:bool=False,
         ignored).
     :param db: A Couch :class:`.Database` instance.
     :param update: Update existing articles, if appropriate (see above).
-    :param force: If ``True``, force the update of all existing articles.
-    :return: Number of dumped documents.
+    :param force: If ``True``, force the *update* of all existing articles.
+    :return: Number of dumped documents and a list of failed PMIDs.
     """
     last_access = 0.0
     processed_docs = 0
+    failed_docs = []
 
     for idx in range(0, len(pmids), FETCH_SIZE):
         if update:
             existing = { p: db[p] for p in pmids[idx:idx + FETCH_SIZE]
                          if p in db }
+
             if force:
                 updated = existing
                 query = pmids[idx:idx + FETCH_SIZE]
@@ -107,42 +107,53 @@ def Dump(pmids:list([str]), db:Database, update:bool=False,
             # the Gatekeeper: only make eUtils requests every 3 sec
             sleep(max(last_access - time() + 3, 0))
             last_access = time()
-            processed_docs += len(query)
             stream = Fetch(query)
-            db.bulk(MakeDocuments(stream, updated))
+            for saved, pmid, r in db.bulk(MakeDocuments(stream, updated)):
+                if not saved:
+                    LOGGER.error('saving %s failed: %s', pmid, str(r))
+                    failed_docs.append(pmid)
+                else:
+                    processed_docs += 1
 
-    return processed_docs
+    return processed_docs, failed_docs
 
 
 def NeedsUpdate(item:(str, dict)) -> bool:
     one_week = timedelta(7)
     today = date.today()
     doc = item[1]
-    created = date(*strptime(doc['created'], '%Y-%m-%dT%H:%M:%S')[:3])
+    created = DateFromIsoDatetime(doc['created'])
 
     if today - created < one_week:
         return False
 
-    medline = doc['medline']
-
-    if medline['Status'] in ('In-Data-Review', 'In-Process'):
+    if doc['Status'] in ('In-Data-Review', 'In-Process'):
         return True
 
     one_year = timedelta(365)
-    created = date(*strptime(medline['DateCreated'], '%Y-%m-%d')[:3])
+    created = DateFromIsoDate(doc['DateCreated'])
 
     if today - created > one_year:
         # select records that are one year old, but not more than ten
         if today - created < 10 * one_year:
             # ignoring 'ancient' records, check they have all three stamps
             for stamp in ('DateRevised', 'DateCompleted'):
-                if stamp not in medline: return True
+                if stamp not in doc: return True
     else:
         # record is new, check if it has been completed
-        if 'DateCompleted' not in medline:
+        if 'DateCompleted' not in doc:
             return True
 
     return False
+
+
+def DateFromIsoDatetime(isodatetime:str) -> date:
+    return DateFromIsoDate(isodatetime.split('T')[0])
+
+
+def DateFromIsoDate(isodate:str) -> date:
+    y, m, d = isodate.split('-')
+    return date(int(y), int(m), int(d))
 
 
 def MakeDocuments(stream, old_revisions:dict=None) -> iter([dict]):
@@ -162,67 +173,41 @@ def MakeDocuments(stream, old_revisions:dict=None) -> iter([dict]):
         itself. Optional.
     :return: A document iterator.
     """
-    for medline in Parse(stream):
-        text = MakeText(medline)
-        pmid = medline['PMID'][0]
-        rev = None
-        created = datetime.now().replace(microsecond=0)
-        modified = created
+    for doc in Parse(stream):
+        doc['text'] = MakeText(doc)
+        pmid = doc['_id'] = doc['PMID'][0]
 
         if old_revisions and pmid in old_revisions:
             old = old_revisions[pmid]
-            old_text = Text.fromJson(old)
 
-            try:
-                old_text.update(text)
-            except ValueError:
-                LOGGER.warn('text for %s changed', pmid)
-            else:
-                text = old_text
+            if old['text'] != doc['text']:
+                LOGGER.error('text for %s changed; not updating', pmid)
+                continue
 
-            rev = old['_rev']
-            created = old['created']
+            doc['created'] = old['created']
+            doc['_rev'] = old['_rev']
 
-        json = text.toJson()
-        json['_id'] = pmid
-        if rev: json['_rev'] = rev
-        json['medline'] = medline
-        json['created'] = created
-        json['modified'] = modified
-        yield json
+        yield doc
 
 
 def MakeText(raw_json:dict) -> Text:
     article = raw_json['Article']
-    title = normalize('NFC', article['ArticleTitle'])
-    tags = [('medline', 'title', (0, len(title)))]
+    text = normalize('NFC', article['ArticleTitle'])
 
     if 'Abstract' in article:
+        abstract = article['Abstract']
         buffer = StringIO()
-        buffer.write(title)
-        text = TextFromAbstract(buffer, article['Abstract'], tags)
-        del article['Abstract']
-    else:
-        text = title
+        buffer.write(text)
 
-    text = Text(text, tags)
+        for section in ABSTRACT_ELEMENTS:
+            if section in abstract:
+                buffer.write('\n\n')
+                buffer.write(normalize('NFC', abstract[section]))
+
+        text = buffer.getvalue()
+
     return text
 
-
-def TextFromAbstract(buffer:StringIO, abstract:dict, tags:list) -> str:
-    offset = tags[0][2][1] # title must exist!
-
-    for section, short in ABSTRACT_ELEMENTS:
-        if section in abstract:
-            buffer.write('\n\n')
-            offset += 2
-            content = normalize('NFC', abstract[section])
-            start = offset
-            offset += len(content)
-            tags.append(('medline', short, (start, offset)))
-            buffer.write(content)
-
-    return buffer.getvalue()
 
 ##############
 # DOWNLOADER #
@@ -410,11 +395,11 @@ def ParseAbstract(element):
 # RELATIONS #
 #############
 
-def Attach(filenames:list, medline_db:Database, encoding:str='utf-8',
+def Attach(filenames:list, db:Database, encoding:str='utf-8',
            force:bool=False):
     """
     :param filenames: A list of file name strings.
-    :param medline_db: A :class:`.Database` instance.
+    :param db: A :class:`.Database` instance to which the files are saved.
     :param encoding: The (charset) encoding of the files to attach.
     :param force: Replace any existing article. Note this does not erase any
         ``pmids`` already stored on the article.
@@ -426,63 +411,54 @@ def Attach(filenames:list, medline_db:Database, encoding:str='utf-8',
     results = defaultdict(list)
 
     for fn in filenames:
+        #noinspection PyBroadException
         try:
             text = Extract(fn, encoding)
         except IOError:
             logger.error('could not read %s', fn)
             continue
-        except RuntimeError:
+        except:
             logger.exception('failed to extract %s', fn)
             continue
 
         base = os.path.basename(fn)
         pmid, ext = os.path.splitext(base)
-
-        if pmid not in medline_db:
-            logger.error('PMID %s not in DB', pmid)
-            continue
-
         text_id = text.base64digest
         modified = False
 
-        if text_id in medline_db:
-            article = medline_db[text_id]
-            pm_ids = article['pmids'] if 'pmids' in article else []
+        if text_id in db:
+            article = db[text_id]
 
-            if pmid in pm_ids and not force:
-                logger.info('%s already attached', fn)
+            try:
+                pmid_list = article['pmids']
+            except KeyError:
+                logger.warn('article %s (%s) had no PMIDs', text_id, base)
+                pmid_list = article['pmids'] = []
+
+            if pmid in pmid_list and not force:
+                logger.info('%s already attached (%s)', fn, text_id)
             else:
-                pm_ids.append(pmid)
+                pmid_list.append(pmid)
 
                 if force:
-                    logger.info('overwriting %s (%s)', text_id, base)
-                    rev = article['_rev']
-                    article = text.toJson()
-                    article['_rev'] = rev
-                    article['created'] = datetime.today()
-                else:
-                    logger.debug('updating %s with %s', text_id, base)
-                    old_text = Text.fromJson(article)
-                    old_text.update(text)
-                    text = old_text
-                    article.update(text.toJson())
+                    logger.info('updating %s (%s)', text_id, base)
+                    article['sections'] = text.tagsAsDict()
+                    modified = True
 
-                article['modified'] = datetime.today()
-                article['pmids'] = pm_ids
-                medline_db[text_id] = article
-                modified = True
+                db[text_id] = article
         else:
-            logger.debug('adding article %s (%s)', base, text_id)
-            article = text.toJson()
-            article['pmids'] = [pmid]
-            article['created'] = datetime.today()
-            article['modified'] = article['created']
-            medline_db[text_id] = article
+            logger.debug('creating %s (%s)', text_id, base)
+            db[text_id] = {
+                'text': str(text),
+                'sections': text.tagsAsDict(),
+                'pmids': [pmid],
+            }
             modified = True
 
         if modified:
-            medline_db.saveAttachment(article, open(fn, 'rb').read(),
-                                      'raw{}'.format(ext), charset=encoding)
+            db.saveAttachment(text_id, open(fn, 'rb').read(),
+                              'raw{}'.format(ext), charset=encoding)
+
         results[pmid].append(text_id)
 
     return results
