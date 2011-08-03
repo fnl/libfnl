@@ -109,12 +109,10 @@ Map alternate ``ArticleIds`` of MEDLINE records as ``[type, id]`` keys, eg.,
 ``["doi", "10.1002/gcc.10321"]``::
 
     function(doc) {
-      if (doc.medline) {
-        if ('ArticleIds' in doc.medline) {
-          article_ids = doc.medline['ArticleIds'];
-          for (id in article_ids) {
-            emit([id, article_ids[id]]);
-          }
+      if (doc.ArticleIds) {
+        article_ids = doc.ArticleIds;
+        for (id in article_ids) {
+          emit([id, article_ids[id]]);
         }
       }
     }

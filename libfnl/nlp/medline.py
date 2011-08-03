@@ -280,11 +280,20 @@ def ParseRegularElement(element):
     attributes = dict(element.items())
 
     if not content and not attributes:
-        return element.text.strip()
+        if element.text is None:
+            LOGGER.debug('empty element %s', element.tag)
+            return None
+        else:
+            return element.text.strip()
 
     if attributes and not content:
         if len(attributes) == 1 and list(attributes.keys())[0].endswith('YN'):
-            return element.text.strip()
+            try:
+                return element.text.strip()
+            except AttributeError:
+                LOGGER.fatal('parsing %s failed: no text?; XML:\n%s',
+                             element.tag, tostring(element))
+                raise
 
         # done everything possible to avoid it...
         # without further options, put the element inside itself
@@ -292,6 +301,10 @@ def ParseRegularElement(element):
 
 
     if attributes: content.update(dict(attributes))
+
+    for k, v in content.items():
+        if v is None: del[k]
+
     assert content, 'Empty element; XML:\n{}'.format(tostring(element))
     return content
 
@@ -379,10 +392,13 @@ def ParseAbstract(element):
         cat = abstract_text.get('NlmCategory', 'UNLABELLED').capitalize()
 
         if cat == 'Unlabelled': cat = 'AbstractText'
-        assert cat not in abstract, \
-            'Duplicate AbstractText NlmCategories; XML:\n' \
-            '{}'.format(tostring(element))
-        abstract[cat] = abstract_text.text.strip()
+
+        if cat in abstract:
+            LOGGER.info('Duplicate %s in Abstract; XML:\n%s',
+                        cat, tostring(element))
+            abstract[cat] += '\n' + abstract_text.text.strip()
+        else:
+            abstract[cat] = abstract_text.text.strip()
 
     copyright = element.find('CopyrightInformation')
 
