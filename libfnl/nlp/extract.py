@@ -109,8 +109,11 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
 
     if mime_type in ('text/html', 'application/xhtml'):
         html = HtmlExtractor()
-        html.feed(open(filename, encoding=encoding).read())
-        html.close()
+        try:
+            html.feed(open(filename, encoding=encoding).read())
+            html.close()
+        except HTMLParseError as err:
+            raise RuntimeError("could not parse {}: {}".format(filename, err))
         text = Text(html.string)
         tags = [(t, html.tags[t]) for t in sorted(html.tags, key=Text.Key)]
         text.add(tags, html.namespace)

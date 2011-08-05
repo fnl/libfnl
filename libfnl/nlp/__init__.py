@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 .. py:module:: nlp
    :synopsis: Modules for Natural Language Processing.

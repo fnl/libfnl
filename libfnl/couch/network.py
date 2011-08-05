@@ -696,7 +696,7 @@ class Session(object):
 
     def _cleanCache(self):
         def cache_sort(key_val):
-            date = key_val[1].header['Date']
+            date = key_val[1].headers['Date']
             t = time.mktime(time.strptime(date[5:-4], '%d %b %Y %H:%M:%S'))
             return datetime.fromtimestamp(t)
 
