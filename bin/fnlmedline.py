@@ -8,7 +8,7 @@ import os
 import sys
 from libfnl.couch import COUCHDB_URL, Server
 from libfnl.couch.network import ResourceNotFound
-from libfnl.nlp.medline import ABSTRACT_FILE, Attach, Dump
+from libfnl.nlp.medline import Attach, Dump
 
 __author__ = "Florian Leitner"
 __version__ = "0.1"
@@ -18,13 +18,15 @@ CREATE = 1
 READ = 2
 UPDATE = 3
 DELETE = 4
+READ_ATT = 5
 
 ACTIONS = {
-    0: 'attach',
-    1: 'creat',
-    2: 'extract',
-    3: 'updat',
-    4: 'delet',
+    ATTACH: 'attach',
+    CREATE: 'creat',
+    READ: 'extract',
+    UPDATE: 'updat',
+    DELETE: 'delet',
+    READ_ATT: 'extract',
 }
 
 def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
@@ -39,13 +41,12 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
         logging.error('cannot connect to %s', couchdb_url)
         return 1
     
-    checked = False
     done = 0
 
     if action == ATTACH:
         done = sum(len(i) for i in Attach(pmids, db, encoding, force).values())
     else:
-        if not pmids and action in (UPDATE, READ):
+        if not pmids and action in (UPDATE, READ, READ_ATT):
             # read/update all records...
             pmids = [id for id in db if len(id) <= 10 and id.isdigit()]
 
@@ -68,15 +69,26 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
                     logging.warn("PMID %s has no text", id)
                     print(id, file=sys.stderr)
                 else:
+                    done += WriteFile('{}.txt'.format(id),
+                                      text, encoding, id)
+        elif action is READ_ATT:
+            for id in pmids:
+                try:
+                    rows = list(db.view('attachment/xrefs', key=id))
+                except ResourceNotFound:
+                    logging.error('attachment/xrefs view not installed')
+                    return 1
+
+                for r in rows:
                     try:
-                        file = open("{}.txt".format(id), mode='w',
-                                    encoding='utf-8')
-                        file.write(text)
-                        file.close()
-                        done += 1
-                    except IOError:
-                        logging.warn("could not write %s.txt", id)
-                        print(id, file=sys.stderr)
+                        text = db[r.id]['text']
+                    except KeyError:
+                        logging.warn("attachment %s has no text", r.id)
+                        print('{}@{}'.format(id, r.id), file=sys.stderr)
+                    else:
+                        done += WriteFile('{}.{}.txt'.format(id, r.id),
+                                          text, encoding,
+                                          '{}@{}'.format(id, r.id))
         else:
             done, failed_ids = Dump(pmids, db, action is UPDATE, force)
 
@@ -88,6 +100,16 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
 
     return 0
 
+def WriteFile(name, text, encoding, id):
+    try:
+        file = open(name, mode='w', encoding=encoding)
+        file.write(text)
+        file.close()
+        return 1
+    except IOError:
+        logging.warn('could not write %s', name)
+        print(id, file=sys.stderr)
+        return 0
 
 if __name__ == '__main__':
     from optparse import OptionParser
@@ -109,15 +131,23 @@ if __name__ == '__main__':
         help="only create records if they do not exist already [default]"
     )
     parser.add_option(
-        "-r", "--extract", action="store_const", const=READ, dest="action",
+        "-r", "--read", action="store_const", const=READ, dest="action",
         help="save the abstracts (incl. titles) of existing records to files "\
              "named <PMID>.txt in the current directory; "\
-             "extracts all records if no arguments"
+             "extracts all records if no PMIDs are given"
+    )
+    parser.add_option(
+        "--read-attachments", action="store_const", const=READ_ATT,
+        dest="action",
+        help="save the attachment texts of existing records to files "\
+             "named <PMID>.<ATT_ID>.txt in the current directory; "\
+             "extracts all attachment texts if no PMIDs are given"
     )
     parser.add_option(
         "-u", "--update", action="store_const", const=UPDATE, dest="action",
         help="update records that are likely to have been revised or "\
-             "completed; updates all records if no arguments"
+             "completed; updates all records if no PMIDs are given; " \
+             "use --force to update all records"
     )
     parser.add_option(
         "-d", "--delete", action="store_const", const=DELETE, dest="action",
@@ -126,8 +156,8 @@ if __name__ == '__main__':
     parser.add_option(
         "-a", "--attach", action="store_const", const=ATTACH, dest="action",
         help="upload files that are related to MEDLINE records; the files' "\
-             "names (w/o extension) must be the PMIDs to attach to, eg., "\
-             "1234567.html; use --force to replace sections on existing files"
+             "names (w/o extension) should be the PMIDs to attach to, eg., "\
+             "1234567.html; use --force to replace existing attachments"
     )
     parser.add_option(
         "-f", "--force", action="store_true", default=False,
@@ -135,7 +165,7 @@ if __name__ == '__main__':
     )
     parser.add_option(
         "--encoding", action="store", default="utf-8",
-        help="the encoding of the files too attach [%default]"
+        help="the encoding of the files to attach or write [%default]"
     )
     parser.add_option(
         "--couchdb-url", default=COUCHDB_URL,

@@ -439,42 +439,42 @@ def Attach(filenames:list, db:Database, encoding:str='utf-8',
 
         base = os.path.basename(fn)
         pmid, ext = os.path.splitext(base)
-        text_id = text.base64digest
+        att_id = text.base64digest
         modified = False
 
-        if text_id in db:
-            article = db[text_id]
+        if att_id in db:
+            attachment = db[att_id]
 
             try:
-                pmid_list = article['pmids']
+                pmid_list = attachment['xrefs']
             except KeyError:
-                logger.warn('article %s (%s) had no PMIDs', text_id, base)
-                pmid_list = article['pmids'] = []
+                logger.warn('attachment %s (%s) had no PMIDs', att_id, base)
+                pmid_list = attachment['xrefs'] = []
 
             if pmid in pmid_list and not force:
-                logger.info('%s already attached (%s)', fn, text_id)
+                logger.info('%s already attached (%s)', fn, att_id)
             else:
                 pmid_list.append(pmid)
 
                 if force:
-                    logger.info('updating %s (%s)', text_id, base)
-                    article['sections'] = text.tagsAsDict()
+                    logger.info('updating %s (%s)', att_id, base)
+                    attachment['sections'] = text.tagsAsDict()
                     modified = True
 
-                db[text_id] = article
+                db[att_id] = attachment
         else:
-            logger.debug('creating %s (%s)', text_id, base)
-            db[text_id] = {
+            logger.debug('creating %s (%s)', att_id, base)
+            db[att_id] = {
                 'text': str(text),
                 'sections': text.tagsAsDict(),
-                'pmids': [pmid],
+                'xrefs': [pmid],
             }
             modified = True
 
         if modified:
-            db.saveAttachment(text_id, open(fn, 'rb').read(),
+            db.saveAttachment(att_id, open(fn, 'rb').read(),
                               'raw{}'.format(ext), charset=encoding)
 
-        results[pmid].append(text_id)
+        results[pmid].append(att_id)
 
     return results

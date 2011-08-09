@@ -120,12 +120,12 @@ Map alternate ``ArticleIds`` of MEDLINE records as ``[type, id]`` keys, eg.,
 fulltext/pmids
 --------------
 
-Map the PMIDs stored in attached articles::
+Map the PMIDs stored in attached files::
 
     function(doc) {
-      if (doc.pmids) {
-        for (var i in doc.pmids) {
-           emit(doc.pmids[i]);
+      if (doc.xrefs) {
+        for (var i = doc.xrefs.length; i--;) {
+           emit(doc.xrefs[i]);
         }
       }
     }
