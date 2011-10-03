@@ -334,6 +334,9 @@ class HtmlExtractor(HTMLParser):
         length = 0
 
         if self._string:
+            while self._string and self._string[-1] == '':
+                self._string.pop()
+
             if len(self._string[-1]) > 1:
                 if not self._string[-1].endswith('\n\n'):
                     if self._string[-1][-1] == '\n':
@@ -342,7 +345,7 @@ class HtmlExtractor(HTMLParser):
                     else:
                         self._string.append('\n\n')
                         length = 2
-            elif self._string[-1][-1] == '\n':
+            elif self._string[-1] and self._string[-1][-1] == '\n':
                 if len(self._string) > 1:
                     if self._string[-2][-1] != '\n':
                         self._string.append('\n')
