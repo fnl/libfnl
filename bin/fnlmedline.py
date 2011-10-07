@@ -30,7 +30,7 @@ ACTIONS = {
 }
 
 def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
-         database:str='medline', encoding:str='utf-8',
+         database:str='medline', encoding:str='utf-8', extract_fields=None,
          force:bool=False) -> int:
     logging.info("%sing %i %s%s in %s/%s", ACTIONS[action], len(pmids),
                  'PMIDs' if action else 'files',
@@ -42,6 +42,12 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
         return 1
     
     done = 0
+
+    if extract_fields:
+        print('PMID\t{}'.format('\t'.join(extract_fields)))
+
+        for idx in range(len(extract_fields)):
+            extract_fields[idx] = extract_fields[idx].split('/')
 
     if action == ATTACH:
         done = sum(len(i) for i in Attach(pmids, db, encoding, force).values())
@@ -60,17 +66,50 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
                     print(id, file=sys.stderr)
         elif action is READ:
             for id in pmids:
-                try:
-                    text = db[id]['text']
-                except ResourceNotFound:
-                    logging.warn("PMID %s not in DB", id)
-                    print(id, file=sys.stderr)
-                except KeyError:
-                    logging.warn("PMID %s has no text", id)
-                    print(id, file=sys.stderr)
+                if extract_fields:
+                    try:
+                        record = db[id]
+                    except ResourceNotFound:
+                        logging.warn("PMID %s not in DB", id)
+                        print(id, file=sys.stderr)
+                        continue
+
+                    data = [id]
+
+                    for f_path in extract_fields:
+                        val = record
+
+                        for f in f_path:
+                            try:
+                                val = val[f]
+                            except KeyError:
+                                logging.warn("PMID %s has no %s in %s",
+                                             id, f, f_path)
+                                print(id, file=sys.stderr)
+                                val = None
+                                break
+
+                        if val is None:
+                            data = None
+                            break
+
+                        data.append(str(val.replace('"', '\\"')))
+
+                    if data is None: continue
+                    print('"{}"'.format('"\t"'.join(data)))
+                    done += 1
                 else:
-                    done += WriteFile('{}.txt'.format(id),
-                                      text, encoding, id)
+                    try:
+                        text = db[id]['text']
+                    except ResourceNotFound:
+                        logging.warn("PMID %s not in DB", id)
+                        print(id, file=sys.stderr)
+                    except KeyError:
+                        logging.warn("PMID %s has no text", id)
+                        print(id, file=sys.stderr)
+                    else:
+                        done += WriteFile('{}.txt'.format(id),
+                                          text, encoding, id)
         elif action is READ_ATT:
             for id in pmids:
                 try:
@@ -162,6 +201,11 @@ if __name__ == '__main__':
     parser.add_option(
         "-f", "--force", action="store_true", default=False,
         help="force writing documents, even if they are stored already"
+    )
+    parser.add_option(
+        "-x", "--extract-fields", action="append",
+        help="one or more fields to extract as TSV (using read);"\
+             "the field's path should be separated by slashes"
     )
     parser.add_option(
         "--encoding", action="store", default="utf-8",
