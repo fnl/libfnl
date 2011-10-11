@@ -350,9 +350,14 @@ def ParseDateElement(date_element):
         except (AttributeError, ValueError):
             return date(year, month, 1)
     except (AttributeError, TypeError, ValueError):
+        # Dates enclosing a MedlineDate are never parsable - surpress msg
         if date_element.find('MedlineDate') is None:
-            msg = 'ParseDateElement: %s not recognized; XML:\n%s'
-            LOGGER.warn(msg, date_element.tag, tostring(date_element).strip())
+            # PubDate quite frequently only has a year - surpress msg
+            if not (date_element.tag == 'PubDate' and
+                    date_element.find('Year')):
+                msg = 'ParseDateElement: %s not recognized; XML:\n%s'
+                LOGGER.warn(msg, date_element.tag,
+                            tostring(date_element).strip())
 
         return dict(ParseChildren(date_element))
 
