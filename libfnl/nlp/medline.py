@@ -14,6 +14,7 @@ import os
 from collections import defaultdict
 from io import StringIO
 from http.client import HTTPResponse # function annotation only
+import re
 from time import sleep, time
 from unicodedata import normalize
 from urllib.request import build_opener
@@ -240,7 +241,7 @@ def Parse(xml_stream) -> iter([dict]):
     :raise AssertionError: If parsing of the XML does not go as expected, but
         only in non-optimized mode.
     """
-    for unused_event, element in iterparse(xml_stream):
+    for _, element in iterparse(xml_stream):
         if element.tag == 'PubmedArticle':
             record = ParseElement(element.find('MedlineCitation'))
             article_id_list = element.find('PubmedData/ArticleIdList')
@@ -311,6 +312,7 @@ def ParseRegularElement(element):
 
 def ParseChildren(parent):
     known_tags = []
+    languages = []
 
     for child in parent.getchildren():
         if child.tag in SKIPPED_ELEMENTS: continue
@@ -320,6 +322,9 @@ def ParseChildren(parent):
             # use the DateType attribute as prefix of the tag/key.
             # The default, according to the DTD, is 'Electronic'.
             tag = '{}ArticleDate'.format(child.get('DateType', 'Electronic'))
+        elif child.tag == 'Language':
+            languages.append(ParseElement(child))
+            continue
         else:
             tag = child.tag
 
@@ -327,6 +332,9 @@ def ParseChildren(parent):
             'Duplicate child {}; XML::\n{}'.format(tag, tostring(parent))
         yield tag, ParseElement(child)
         known_tags.append(tag)
+
+    if languages:
+        yield 'LanguageList', languages
 
 
 def ParseElementList(list_element:Element):
@@ -350,12 +358,12 @@ def ParseDateElement(date_element):
         except (AttributeError, ValueError):
             return date(year, month, 1)
     except (AttributeError, TypeError, ValueError):
-        # Dates enclosing a MedlineDate are never parsable - surpress msg
+        # Dates enclosing a MedlineDate can never be parsed to regular dates
         if date_element.find('MedlineDate') is None:
-            # PubDate quite frequently only has a year - surpress msg
+            # PubDate quite frequently only has a year - suppress msg
             if not (date_element.tag == 'PubDate' and
-                    date_element.find('Year')):
-                msg = 'ParseDateElement: %s not recognized; XML:\n%s'
+                    date_element.find('Year') is not None):
+                msg = 'ParseDateElement: %s not recognized; text XML:\n%s'
                 LOGGER.warn(msg, date_element.tag,
                             tostring(date_element).strip())
 
@@ -370,10 +378,13 @@ def ParseArticleIdList(element):
         id_type = article.get('IdType')
 
         if id_type in articles:
-            msg = 'duplicate {} ArticleId'.format(id_type)
-            LOGGER.error(msg)
-            assert id_type not in articles, \
-                '{}; XML:\n{}'.format(msg, tostring(element))
+            if re.match('\d[\d\.]+\/.+', article.text.strip()) and \
+               'doi' not in articles:
+                id_type = 'doi'
+            else:
+                msg = 'duplicate {} ArticleId'.format(id_type)
+                LOGGER.error(msg)
+                assert False, '{}; XML:\n{}'.format(msg, tostring(element))
 
         articles[id_type] = article.text.strip()
 
