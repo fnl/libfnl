@@ -409,12 +409,19 @@ def ParseAbstract(element):
 
         if cat == 'Unlabelled': cat = 'AbstractText'
 
-        if cat in abstract:
-            LOGGER.info('Duplicate %s in Abstract; XML:\n%s',
-                        cat, tostring(element))
-            abstract[cat] += '\n' + abstract_text.text.strip()
-        else:
-            abstract[cat] = abstract_text.text.strip()
+        try:
+            if cat in abstract:
+                LOGGER.info('Duplicate %s in Abstract; XML:\n%s',
+                            cat, tostring(element))
+                abstract[cat] += '\n' + abstract_text.text.strip()
+            else:
+                abstract[cat] = abstract_text.text.strip()
+        except AttributeError as err:
+            if abstract_text.text is None:
+                LOGGER.info('Empty %s element in Abstract; XML:\n%s',
+                             abstract_text.tag, tostring(element))
+            else:
+                raise
 
     copyright = element.find('CopyrightInformation')
 
@@ -475,6 +482,7 @@ def Attach(filenames:list, db:Database, encoding:str='utf-8',
                 if force:
                     logger.info('updating %s (%s)', att_id, base)
                     attachment['sections'] = text.tagsAsDict()
+                    attachment['text'] = str(text)
                     modified = True
 
                 db[att_id] = attachment

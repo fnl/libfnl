@@ -88,6 +88,7 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
         type or the extractor fails horribly.
     """
     logger = getLogger('Extract')
+    logger.info('filename %s', filename)
 
     if not encoding or not mime_type:
         guessed_mime_type, guessed_encoding = guess_type(filename)

@@ -1,5 +1,7 @@
 doc/_build
 doc/_build/*
+build/*
 .idea
+.DS_Store
 *.pyc
 *.pyo
