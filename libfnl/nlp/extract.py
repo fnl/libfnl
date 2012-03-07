@@ -114,7 +114,9 @@ def Extract(filename:str, encoding:str=None, mime_type:str=None) -> Text:
             html.feed(open(filename, encoding=encoding).read())
             html.close()
         except HTMLParseError as err:
-            raise RuntimeError("could not parse {}: {}".format(filename, err))
+            raise RuntimeError("could not parse {}: {} at line {}".format(
+                filename, err, html.lineno
+            ))
         text = Text(html.string)
         tags = [(t, html.tags[t]) for t in sorted(html.tags, key=Text.Key)]
         text.add(tags, html.namespace)
@@ -328,34 +330,31 @@ class HtmlExtractor(HTMLParser):
         self._ignored = []
         self.tags = dict()
 
+    def _countNewlines(self):
+        newlines = 0
+
+        for s in reversed(self._string):
+            for c in reversed(s):
+                if c == '\n':
+                    newlines += 1
+                else:
+                    return newlines
+
+        return newlines
+
     def _addContentBreak(self):
         # Add up to 2 LF chars to _string.
         # Must have a string before already, and only add two LFs if there are
         # none before, or add one if there is just one LF before.
-        length = 0
+        newlines = self._countNewlines()
 
-        if self._string:
-            while self._string and self._string[-1] == '':
-                self._string.pop()
+        if newlines < 2 and any(self._string):
+            newlines = 2 - newlines
+            self._string.append('\n' * newlines)
+        else:
+            newlines = 0
 
-            if len(self._string[-1]) > 1:
-                if not self._string[-1].endswith('\n\n'):
-                    if self._string[-1][-1] == '\n':
-                        self._string.append('\n')
-                        length = 1
-                    else:
-                        self._string.append('\n\n')
-                        length = 2
-            elif self._string[-1] and self._string[-1][-1] == '\n':
-                if len(self._string) > 1:
-                    if self._string[-2][-1] != '\n':
-                        self._string.append('\n')
-                        length = 1
-            else:
-                self._string.append('\n\n')
-                length = 2
-
-        return length
+        return newlines
 
     def _addImgOrArea(self, name:str, attrs:dict):
         if 'alt' in attrs or 'title' in attrs:
@@ -484,14 +483,16 @@ class HtmlExtractor(HTMLParser):
             check, start, tag_type, attrs = self._elements.pop()
 
             if name != check:
-                name = 'expected to close {}, got {}'.format(check, name)
-                raise HTMLParseError(name)
+                msg = 'expected to close {}, got {} at line {}'.format(
+                    check, name, self.lineno
+                )
+                raise HTMLParseError(msg)
 
             stop = self.position
 
             if start != stop:
                 if tag_type == HtmlExtractor.MINOR:
-                    if self._string and self._string[-1][-1] != '\n':
+                    if any(self._string) and not self._countNewlines():
                         self._string.append('\n')
                         stop += 1
                 elif tag_type == HtmlExtractor.CONTENT:
