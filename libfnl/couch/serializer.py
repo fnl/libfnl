@@ -46,7 +46,7 @@ def b64decode(b:bytes, charmap:bytes=SAFE):
 
 def IsoformatSerializer(obj):
     """
-    Serialization of any object that has a `isformat()` method to JSON,
+    Serialization of any object that has a `isoformat()` method to JSON,
     particularly for date and time objects.
     """
     if isinstance(obj, set):
