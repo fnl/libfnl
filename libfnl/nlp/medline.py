@@ -90,6 +90,7 @@ def Dump(pmids:list([str]), db:Database, update:bool=False,
 
     for idx in range(0, len(pmids), FETCH_SIZE):
         if update:
+            #noinspection PyTypeChecker
             existing = { p: db[p] for p in pmids[idx:idx + FETCH_SIZE]
                          if p in db }
 
@@ -149,6 +150,7 @@ def NeedsUpdate(item:(str, dict)) -> bool:
 
 
 def DateFromIsoDatetime(isodatetime:str) -> date:
+    #noinspection PyTypeChecker
     return DateFromIsoDate(isodatetime.split('T')[0])
 
 
@@ -176,11 +178,13 @@ def MakeDocuments(stream, old_revisions:dict=None) -> iter([dict]):
     """
     for doc in Parse(stream):
         doc['text'] = MakeText(doc)
+        #noinspection PyTypeChecker
         pmid = doc['_id'] = doc['PMID'][0]
 
         if old_revisions and pmid in old_revisions:
             old = old_revisions[pmid]
 
+            #noinspection PyTypeChecker
             if old['text'] != doc['text']:
                 LOGGER.error('text for %s changed; not updating', pmid)
                 continue
@@ -227,6 +231,7 @@ def Fetch(pmids:list, timeout:int=60) -> HTTPResponse:
         arrives.
     """
     assert len(pmids) <= FETCH_SIZE, 'too many PMIDs'
+    #noinspection PyTypeChecker
     url = EUTILS_URL + ','.join(map(str, pmids))
     LOGGER.debug('fetching MEDLINE records from %s', url)
     return URL_OPENER.open(url, timeout=timeout)
@@ -243,7 +248,13 @@ def Parse(xml_stream) -> iter([dict]):
     """
     for _, element in iterparse(xml_stream):
         if element.tag == 'PubmedArticle':
-            record = ParseElement(element.find('MedlineCitation'))
+            try:
+                record = ParseElement(element.find('MedlineCitation'))
+            except Exception as ex:
+                LOGGER.fatal('parsing %s failed: %s; XML:\n%s',
+                             element.tag, ex, tostring(element))
+                raise
+
             article_id_list = element.find('PubmedData/ArticleIdList')
 
             if article_id_list is not None:
@@ -271,7 +282,10 @@ def ParseElement(element):
         LOGGER.debug('parsing PMID=%s', element.text)
         return element.text.strip(), int(element.get('Version', 1))
     elif tag == 'ISSN':
-        return element.get('IssnType'), element.text.strip()
+        if element.text is None or not element.text.strip():
+            return None
+        else:
+            return element.get('IssnType'), element.text.strip()
     else:
         return ParseRegularElement(element)
 
@@ -292,7 +306,7 @@ def ParseRegularElement(element):
             try:
                 return element.text.strip()
             except AttributeError:
-                LOGGER.fatal('parsing %s failed: no text?; XML:\n%s',
+                LOGGER.fatal('parsing %s failed: no text content; XML:\n%s',
                              element.tag, tostring(element))
                 raise
 
@@ -323,14 +337,23 @@ def ParseChildren(parent):
             # The default, according to the DTD, is 'Electronic'.
             tag = '{}ArticleDate'.format(child.get('DateType', 'Electronic'))
         elif child.tag == 'Language':
-            languages.append(ParseElement(child))
+            content = ParseElement(child)
+
+            if content is not None:
+                languages.append(content)
+
             continue
         else:
             tag = child.tag
 
         assert tag not in known_tags, \
             'Duplicate child {}; XML::\n{}'.format(tag, tostring(parent))
-        yield tag, ParseElement(child)
+
+        content = ParseElement(child)
+
+        if content is not None:
+            yield tag, content
+
         known_tags.append(tag)
 
     if languages:
@@ -416,7 +439,7 @@ def ParseAbstract(element):
                 abstract[cat] += '\n' + abstract_text.text.strip()
             else:
                 abstract[cat] = abstract_text.text.strip()
-        except AttributeError as err:
+        except AttributeError:
             if abstract_text.text is None:
                 LOGGER.info('Empty %s element in Abstract; XML:\n%s',
                              abstract_text.tag, tostring(element))
@@ -465,6 +488,7 @@ def Attach(filenames:list, db:Database, encoding:str='utf-8',
         att_id = text.base64digest
         modified = False
 
+        #noinspection PyTypeChecker
         if att_id in db:
             attachment = db[att_id]
 
