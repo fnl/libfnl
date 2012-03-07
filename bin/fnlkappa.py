@@ -42,9 +42,11 @@ def TsvReader(files:str, subject_col:int, rating_col:int):
     rc = rating_col - 1
     sc = subject_col - 1
     for lno, line in enumerate(open(files)):
+        if not line: continue
         if ord(line[0]) == 0xFEFF: line = line[1:]
-        if line.strip()[0] == "#": continue
-        items = line.split('\t')
+        stripped = line.strip()
+        if not stripped or stripped[0] == "#": continue
+        items = stripped.split('\t')
 
         try:
             logging.debug("vote for %s: %s", items[sc], items[rc])
