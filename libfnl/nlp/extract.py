@@ -1,3 +1,4 @@
+# coding=utf-8
 """
 .. py:module:: extract
    :synopsis: Extract text from files.
@@ -523,7 +524,7 @@ class HtmlExtractor(HTMLParser):
     def handle_pi(self, data:str):
         pass
 
-    def handle_startendtag(self, name:str, attrs:list):
+    def handle_startendtag(self, name:str, attrs:tuple):
         if not self._ignored:
             try:
                 tag_type = HtmlExtractor.ELEMENTS[name]
