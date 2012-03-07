@@ -1,3 +1,4 @@
+# coding=utf-8
 """
 .. py:module:: kappa
    :synopsis: Inter-rater agreement functions.
@@ -60,7 +61,8 @@ def Fleiss(frequency_matrix):
     for s in range(S):
         for c in range(C):
             P[s] += M[s][c] * M[s][c]
-        
+
+        #noinspection PyUnresolvedReferences
         P[s] = (P[s] - R) / R2ub
 
     # Compute the mean [agreement] of the P_s's
@@ -81,8 +83,12 @@ def CreateRatingMatrix(ratings:[{str: str}]) -> [[int]]:
     # Determine subjects
     assert len(ratings) > 1, "at least two raters' results required"
     subjects = set(ratings[0].keys())
-    assert all(set(r.keys()) == subjects for r in ratings), \
-        "non-equal subject IDs in rating files"
+    for r in ratings:
+        test = set(r.keys())
+        assert test == subjects, \
+            "non-equal subject IDs in rating files:\n{}\n{}".format(
+                (test - subjects), (subjects - test)
+            )
     subjects = sorted(subjects)
     logging.debug("Subjects: %s", subjects)
     logging.info("Total: %s subjects", len(subjects))
