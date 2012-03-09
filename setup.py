@@ -32,8 +32,6 @@ setup(
         'Environment :: Console',
         'License :: OSI Approved :: GNU Affero General Public License v3',
         'Operating System :: POSIX',
-        'Programming Language :: C',
-        'Programming Language :: C++',
         'Programming Language :: Python :: 3',
         'Topic :: Scientific/Engineering :: Information Analysis',
         'Topic :: Scientific/Engineering :: Bio-Informatics',
@@ -42,6 +40,5 @@ setup(
         'Topic :: Text Processing',
         'Topic :: Text Processing :: Linguistic',
     ],
-    package_data={'biocreative.evaluation': ['configuration.ini']},
-    scripts=['bin/corpus.py', 'bin/kappa.py']
+    scripts=['bin/fnlmedline.py', 'bin/fnlkappa.py']
 )
