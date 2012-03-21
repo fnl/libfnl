@@ -178,7 +178,7 @@
 
 <PubmedArticle>
     <MedlineCitation Owner="NLM" Status="PubMed-not-MEDLINE">
-        <PMID>11700088</PMID>
+        <PMID Version="2">11700088</PMID>
         <DateCreated>
             <Year>2001</Year>
             <Month>11</Month>
@@ -260,6 +260,7 @@
             <NlmUniqueID>9707935</NlmUniqueID>
             <ISSNLinking>1090-7807</ISSNLinking>
         </MedlineJournalInfo>
+        <OtherID Source="NLM">PMC1361495</OtherID>
     </MedlineCitation>
     <PubmedData>
         <History>

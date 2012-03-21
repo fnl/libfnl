@@ -34,7 +34,7 @@ PARSED_SAMPLE = [
             },
             'Title': 'Cryobiology'
         },
-        'Language': 'eng',
+        'LanguageList': ['eng'],
         'Pagination': {'MedlinePgn': '244-55'},
         'PubModel': 'Print',
         'PublicationTypeList': [
@@ -45,7 +45,7 @@ PARSED_SAMPLE = [
     'ArticleIds': {
         'doi': '10.1006/cryo.2001.2328',
         'pii': 'S0011-2240(01)92328-4',
-        'pubmed': '11748933'
+        'pubmed': '11748933',
     },
     'DateCompleted': date(2002, 3, 4),
     'DateCreated': date(2001, 12, 25),
@@ -103,7 +103,7 @@ PARSED_SAMPLE = [
             },
             'Title': 'Journal of magnetic resonance (San Diego, Calif. : 1997)'
         },
-        'Language': 'eng',
+        'LanguageList': ['eng'],
         'Pagination': {'MedlinePgn': '117-23'},
         'PubModel': 'Print',
         'PublicationTypeList': ['Journal Article']
@@ -111,7 +111,8 @@ PARSED_SAMPLE = [
     'ArticleIds': {
         'doi': '10.1006/jmre.2001.2429',
         'pii': 'S1090-7807(01)92429-2',
-        'pubmed': '11700088'
+        'pubmed': '11700088',
+        'pmc': 'PMC1361495',
     },
     'DateCompleted': date(2001, 12, 20),
     'DateCreated': date(2001, 11, 8),
@@ -123,7 +124,7 @@ PARSED_SAMPLE = [
         'NlmUniqueID': '9707935'
     },
     'Owner': 'NLM',
-    'PMID': ('11700088', 1),
+    'PMID': ('11700088', 2),
     'Status': 'PubMed-not-MEDLINE'
 }]
 

@@ -50,7 +50,11 @@ Number of records that can be fetched from eUtils in one request.
 
 SKIPPED_ELEMENTS = ('OtherID', 'OtherAbstract', 'SpaceFlightMission',
                     'GeneralNote', 'NameID', 'ELocationID', 'CitationSubset')
-'Ignored tags in MedlineCitation elements that are never parsed.'
+"""
+Ignored tags in MedlineCitation elements that are never parsed.
+Note that OtherID is treated separately and parsed into the ArticleIds
+dictionary.
+"""
 
 ABSTRACT_ELEMENTS = [
     'AbstractText',
@@ -242,28 +246,47 @@ def Fetch(pmids:list, timeout:int=60) -> HTTPResponse:
 
 def Parse(xml_stream) -> iter([dict]):
     """
-    :param xml_stream: A stream as returned by :func:`.Fetch`.
+    :param xml_stream: A stream as returned by :func:`.Fetch` or XML found
+        in the MEDLINE distribution XML files.
     :raise AssertionError: If parsing of the XML does not go as expected, but
         only in non-optimized mode.
     """
-    for _, element in iterparse(xml_stream):
-        if element.tag == 'PubmedArticle':
+    record = None
+    last = None
+
+    for unused, element in iterparse(xml_stream):
+        if element.tag == 'MedlineCitation':
+            if record is not None:
+                assert 'PMID' in record, \
+                    'No PMID in record XML:\n{}'.format(tostring(last))
+                yield record
+
             try:
-                record = ParseElement(element.find('MedlineCitation'))
+                record = ParseElement(element)
+                other_ids = ParseOtherIds(element)
+                if other_ids: record['ArticleIds'] = other_ids
             except Exception as ex:
                 LOGGER.fatal('parsing %s failed: %s; XML:\n%s',
                              element.tag, ex, tostring(element))
+                record = None
                 raise
-
+            else:
+                last = element
+        elif element.tag == 'PubmedArticle':
             article_id_list = element.find('PubmedData/ArticleIdList')
 
-            if article_id_list is not None:
-                record['ArticleIds'] = ParseArticleIdList(article_id_list)
+            if article_id_list is not None and record is not None:
+                article_ids = ParseArticleIdList(article_id_list)
 
-            assert 'PMID' in record, \
-                'No PMID in record XML:\n{}'.format(tostring(element))
+                if 'ArticleIds' in record:
+                    record['ArticleIds'].update(article_ids)
+                else:
+                    record['ArticleIds'] = article_ids
 
-            yield record
+    if record is not None:
+        assert 'PMID' in record, \
+            'No PMID in record XML:\n{}'.format(tostring(last))
+        yield record
 
 # Main Element Parser and Regular Elements
 
@@ -415,6 +438,23 @@ def ParseArticleIdList(element):
     return articles
 
 
+def ParseOtherIds(element):
+    others = {}
+
+    for other_id in element.findall('OtherID'):
+        source = other_id.get('Source').lower()
+        if source == 'nlm' and other_id.text.startswith('PMC'): source = 'pmc'
+
+        if source in others:
+            msg = 'duplicate OtherID Source {}'.format(source)
+            LOGGER.error(msg)
+            assert False, '{}; XML:\n{}'.format(msg, tostring(element))
+
+        others[source] = other_id.text.strip()
+
+    return others
+
+
 def ParseMeshHeading(element):
     ParseMesh = lambda e: (e.text.strip(), e.get('MajorTopicYN') == 'Y')
 
@@ -446,10 +486,10 @@ def ParseAbstract(element):
             else:
                 raise
 
-    copyright = element.find('CopyrightInformation')
+    copyright_info = element.find('CopyrightInformation')
 
-    if copyright is not None:
-        abstract['CopyrightInformation'] = copyright.text.strip()
+    if copyright_info is not None:
+        abstract['CopyrightInformation'] = copyright_info.text.strip()
 
     return abstract
 
