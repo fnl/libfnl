@@ -3,7 +3,6 @@ Largely equal to the original code by Christopher Lenz for CouchDB-Python.
 """
 
 from datetime import datetime
-import os
 import os.path
 import shutil
 from io import StringIO
@@ -65,17 +64,12 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         del self.server['couchdb-python/missing']
 
     def test_create_db_conflict(self):
-        name, db = self.temp_db()
+        name, unused = self.temp_db()
         self.assertRaises(network.PreconditionFailed, self.server.create,
                           name)
 
     def test_get_db_none(self):
         self.assertRaises(ValueError, self.server.__getitem__, None)
-
-    def test_create_db_conflict(self):
-        name, db = self.temp_db()
-        self.assertRaises(network.PreconditionFailed, self.server.create,
-                          name)
 
     def test_delete_db(self):
         name, db = self.temp_db()
@@ -235,7 +229,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
     def test_fetching_rev(self):
         id, rev = self.db.save({})
         self.assertEqual(rev, self.db.rev(id))
-        
+
     def test_doc_revs(self):
         doc = {'bar': 42}
         self.db['foo'] = doc
@@ -411,7 +405,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         for d in docs:
             self.assertTrue(d['created'] == d['modified'], d)
 
-        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] == 
                         docs[2]['created'], [d['created'] for d in docs])
 
         # update the first doc to provoke a conflict in the next bulk update
@@ -427,7 +421,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertTrue(docs[2]['created'] < docs[2]['modified'], docs[2])
         self.assertTrue(docs[1]['modified'] == docs[2]['modified'],
                         (docs[1]['modified'], docs[2]['modified']))
-        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] == 
                         docs[2]['created'], [d['created'] for d in docs])
 
     def test_bulk_update_all_or_nothing(self):
@@ -454,7 +448,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         assert '_conflicts' in doc
         revs = self.db.get(doc['_id'], open_revs='all', chunked_response=True)
         assert len(revs) == 2
-        
+
         for d in docs:
             self.assertTrue(d['created'] < d['modified'], d)
 
@@ -612,15 +606,15 @@ class ViewTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
             return
 
         for i in range(1, 4):
-            self.db.save({'i': i, 'j':2*i})
+            self.db.save({'i': i, 'j':2 * i})
 
         def map_fun(doc):
             yield doc['i'], doc['j']
         res = list(self.db.query(map_fun, language='python'))
         self.assertEqual(3, len(res))
-        for idx, i in enumerate(list(range(1,4))):
+        for idx, i in enumerate(list(range(1, 4))):
             self.assertEqual(i, res[idx].key)
-            self.assertEqual(2*i, res[idx].value)
+            self.assertEqual(2 * i, res[idx].value)
 
         def reduce_fun(keys, values):
             return sum(values)
