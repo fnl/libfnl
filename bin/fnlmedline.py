@@ -8,7 +8,7 @@ import os
 import sys
 from libfnl.couch import COUCHDB_URL, Server
 from libfnl.couch.network import ResourceNotFound
-from libfnl.nlp.medline import Attach, Dump
+from libfnl.nlp.medline import Attach, Dump, ABSTRACT_ELEMENTS
 
 __author__ = "Florian Leitner"
 __version__ = "0.1"
@@ -40,7 +40,7 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
     except error:
         logging.error('cannot connect to %s', couchdb_url)
         return 1
-    
+
     done = 0
 
     if extract_fields:
@@ -93,6 +93,15 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
                             data = None
                             break
 
+                        if f_path == ['Article', 'Abstract']:
+                            tmp = []
+
+                            for key in ABSTRACT_ELEMENTS:
+                                if key in val:
+                                    tmp.append(val[key])
+                            val = '\n\n'.join(tmp)
+
+                        val = val.replace('\n', '\\n')
                         data.append(str(val.replace('"', '\\"')))
 
                     if data is None: continue
@@ -204,8 +213,9 @@ if __name__ == '__main__':
     )
     parser.add_option(
         "-x", "--extract-fields", action="append",
-        help="one or more fields to extract as TSV (using read);"\
-             "the field's path should be separated by slashes"
+        help="one or more fields to extract as TSV (using --read); "\
+             "the field's path should be separated by slashes; to extract "\
+             "the entire abstract as a single field, use Article/Abstract"
     )
     parser.add_option(
         "--encoding", action="store", default="utf-8",
