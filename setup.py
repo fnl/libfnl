@@ -27,6 +27,9 @@ setup(
         'libfnl.nlp.genia',
         'libfnl.stat',
     ],
+    package_dir={
+        '': 'src',
+    },
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Environment :: Console',
