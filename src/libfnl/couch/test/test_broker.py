@@ -72,7 +72,7 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertRaises(ValueError, self.server.__getitem__, None)
 
     def test_delete_db(self):
-        name, db = self.temp_db()
+        name, unused = self.temp_db()
         assert name in self.server
         self.del_db(name)
         assert name not in self.server
@@ -87,7 +87,7 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
     def test_replicate(self):
         aname, a = self.temp_db()
         bname, b = self.temp_db()
-        id, rev = a.save({'test': 'a'})
+        id, unused = a.save({'test': 'a'})
         result = self.server.replicate(aname, bname)
         self.assertEquals(result['ok'], True)
         self.assertEquals(b[id]['test'], 'a')
@@ -100,8 +100,8 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertEquals(b[id]['test'], 'b')
 
     def test_replicate_continuous(self):
-        aname, a = self.temp_db()
-        bname, b = self.temp_db()
+        aname, unused = self.temp_db()
+        bname, unused = self.temp_db()
         result = self.server.replicate(aname, bname, continuous=True)
         self.assertEquals(result['ok'], True)
         version = tuple(int(i) for i in self.server.version().split('.')[:2])
@@ -109,8 +109,8 @@ class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
             self.assertTrue('_local_id' in result)
 
     def test_iter(self):
-        aname, a = self.temp_db()
-        bname, b = self.temp_db()
+        aname, unused = self.temp_db()
+        bname, unused = self.temp_db()
         dbs = list(self.server)
         self.assertTrue(aname in dbs)
         self.assertTrue(bname in dbs)
@@ -269,8 +269,8 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.db['foo'] = doc
         old_rev = doc['_rev']
 
-        id, rev = self.db.saveAttachment(doc, 'Foo bar', 'foo.txt',
-                                         'text/plain')
+        id, rev = self.db.saveAttachment(doc, 'Foo bar',
+                                         'foo.txt', 'text/plain')
         self.assertEquals(old_rev, doc['_rev'])
         doc = self.db['foo']
         self.assertEquals(rev, doc['_rev'])
@@ -405,7 +405,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         for d in docs:
             self.assertTrue(d['created'] == d['modified'], d)
 
-        self.assertTrue(docs[0]['created'] == docs[1]['created'] == 
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
                         docs[2]['created'], [d['created'] for d in docs])
 
         # update the first doc to provoke a conflict in the next bulk update
@@ -421,7 +421,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
         self.assertTrue(docs[2]['created'] < docs[2]['modified'], docs[2])
         self.assertTrue(docs[1]['modified'] == docs[2]['modified'],
                         (docs[1]['modified'], docs[2]['modified']))
-        self.assertTrue(docs[0]['created'] == docs[1]['created'] == 
+        self.assertTrue(docs[0]['created'] == docs[1]['created'] ==
                         docs[2]['created'], [d['created'] for d in docs])
 
     def test_bulk_update_all_or_nothing(self):
@@ -508,7 +508,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
             time.sleep(.3)
             self.db.save({})
         threading.Thread(target=wakeup).start()
-        for _ in self.db.changes(feed='continuous', heartbeat=100):
+        for unused in self.db.changes(feed='continuous', heartbeat=100):
             break
 
     def test_purge(self):
@@ -519,7 +519,7 @@ class DatabaseTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
     def test_json_date_encoding(self):
         now = datetime.now()
         doc = {'now': now}
-        id, _ = self.db.save(doc)
+        id, unused = self.db.save(doc)
         doc = self.db[id]
         self.assertEqual(doc["now"], now.isoformat())
 
@@ -616,7 +616,7 @@ class ViewTestCase(testutil.TempDatabaseMixin, unittest.TestCase):
             self.assertEqual(i, res[idx].key)
             self.assertEqual(2 * i, res[idx].value)
 
-        def reduce_fun(keys, values):
+        def reduce_fun(unused, values):
             return sum(values)
         res = list(self.db.query(map_fun, reduce_fun, 'python'))
         self.assertEqual(1, len(res))
