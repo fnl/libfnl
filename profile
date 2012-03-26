@@ -1,1 +1,1 @@
-export PYTHONPATH=`pwd`/src
+export PYTHONPATH=`dirname "$_"`/src
