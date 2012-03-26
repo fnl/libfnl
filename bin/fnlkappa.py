@@ -32,29 +32,34 @@ def main(*file_names:tuple([str]), subject_col:int=1, rating_col:int=2, Kappa:Fu
     return 0
 
 
-def TsvReader(files:str, subject_col:int, rating_col:int):
+def TsvReader(file:str, subject_col:int, rating_col:int):
     """
-    Yield ``(str, str)`` tuples from a list of *files* in TSV format.
+    Yield ``(str, str)`` tuples from a *file* in TSV format.
 
     The first string is from the *subject_col* column, the second from the
     column number as indicated by *rating_col*.
     """
     rc = rating_col - 1
     sc = subject_col - 1
-    for lno, line in enumerate(open(files)):
-        if not line: continue
-        if ord(line[0]) == 0xFEFF: line = line[1:]
-        stripped = line.strip()
-        if not stripped or stripped[0] == "#": continue
-        items = stripped.split('\t')
 
-        try:
-            logging.debug("vote for %s: %s", items[sc], items[rc])
-            yield items[sc].strip(), items[rc].strip()
-        except IndexError:
-            raise ValueError(
-                "line {} in {} malformed".format(lno + 1, files)
-            )
+    try:
+        for lno, line in enumerate(open(file)):
+            if not line: continue
+            if ord(line[0]) == 0xFEFF: line = line[1:]
+            stripped = line.strip()
+            if not stripped or stripped[0] == "#": continue
+            items = stripped.split('\t')
+
+            try:
+                logging.debug("vote for %s: %s", items[sc], items[rc])
+                yield items[sc].strip(), items[rc].strip()
+            except IndexError:
+                raise ValueError(
+                    "line {} in {} malformed".format(lno + 1, file)
+                )
+    except Exception as err:
+        logging.error('%s while reading %s', err, file)
+        raise
 
 if __name__ == '__main__':
     from optparse import OptionParser
