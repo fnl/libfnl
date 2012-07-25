@@ -21,6 +21,7 @@ READ = 2
 UPDATE = 3
 DELETE = 4
 READ_ATT = 5
+READ_RAW = 6
 
 ACTIONS = {
     ATTACH: 'attach',
@@ -28,7 +29,7 @@ ACTIONS = {
     READ: 'extract',
     UPDATE: 'updat',
     DELETE: 'delet',
-    READ_ATT: 'extract',
+    READ_RAW: 'download',
 }
 
 NULL_VALUE = '\\N'
@@ -94,8 +95,9 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
                         else:
                             done += WriteFile('{}.txt'.format(id),
                                               text, encoding, id)
-        elif action is READ_ATT:
-            # read attachment plain-text from the DB (and write to file system)
+        elif action in (READ_ATT, READ_RAW):
+            # read attachment plain-text or raw from the DB
+            # (and write to file system)
             for id in pmids:
                 try:
                     rows = list(db.view('attachment/xrefs', key=id))
@@ -103,16 +105,34 @@ def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
                     logging.error('attachment/xrefs view not installed')
                     return 1
 
-                for r in rows:
-                    try:
-                        text = db[r.id]['text']
-                    except KeyError:
-                        logging.warn("attachment %s has no text", r.id)
-                        print('{}@{}'.format(id, r.id), file=sys.stderr)
-                    else:
-                        done += WriteFile('{}.{}.txt'.format(id, r.id),
-                                          text, encoding,
-                                          '{}@{}'.format(id, r.id))
+                if action is READ_ATT:
+                    logging.debug('downloading plain-text for %s', id)
+
+                    for r in rows:
+                        try:
+                            text = db[r.id]['text']
+                        except KeyError:
+                            logging.warn("attachment %s has no text", r.id)
+                            print('{}@{}'.format(id, r.id), file=sys.stderr)
+                        else:
+                            done += WriteFile('{}.{}.txt'.format(id, r.id),
+                                              text, encoding,
+                                              '{}@{}'.format(id, r.id))
+                else:
+                    logging.debug('downloading raw attachments for %s', id)
+
+                    for r in rows:
+                        doc = db[r.id]
+
+                        for fn in doc.attachments:
+                            base, ext = os.path.splitext(fn)
+                            if not ext: ext = '.txt'
+                            done += WriteAttachment(
+                                '{}.{}{}'.format(id, r.id, ext),
+                                db.getAttachment(doc, fn),
+                                '{}@{}'.format(id, r.id)
+                            )
+
         else:
             # create/update PubMed records in the DB
             done, failed_ids = Dump(pmids, db, action is UPDATE, force)
@@ -187,6 +207,24 @@ def WriteFile(name, text, encoding, id):
         print(id, file=sys.stderr)
         return 0
 
+def WriteAttachment(name, att, id):
+    try:
+        file = open(name, mode='wb')
+
+        if att.data:
+            file.write(att.data)
+        else:
+            for data in att.stream:
+                file.write(data)
+
+        file.close()
+        return 1
+    except IOError:
+        logging.warn('could not write %s', name)
+        print(id, file=sys.stderr)
+        return 0
+
+
 if __name__ == '__main__':
     from optparse import OptionParser
 
@@ -218,6 +256,13 @@ if __name__ == '__main__':
         help="save the attachment texts of existing records to files "\
              "named <PMID>.<ATT_ID>.txt in the current directory; "\
              "extracts all attachment texts if no PMIDs are given"
+    )
+    parser.add_option(
+        "--read-raw-attachments", action="store_const", const=READ_RAW,
+        dest="action",
+        help="save the raw attachment data of existing records to files "\
+             "named <PMID>.<ATT_ID>.<ext> in the current directory; "\
+             "extracts all attachment data if no PMIDs are given"
     )
     parser.add_option(
         "-u", "--update", action="store_const", const=UPDATE, dest="action",
