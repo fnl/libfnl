@@ -1,4 +1,4 @@
-#!/Users/fleitner/work/dev/libfnl/bin/python
+#!/usr/bin/env python3
 """calculate inter-rater agreements from per-rater TSV files of subject-votes"""
 import logging
 import os

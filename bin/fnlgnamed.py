@@ -1,4 +1,4 @@
-#!/Users/fleitner/work/dev/libfnl/bin/python
+#!/usr/bin/env python3
 """bootstrap a gene/protein name/reference repository"""
 import libfnl.gnamed
 import logging

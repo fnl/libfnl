@@ -1,4 +1,4 @@
-#!/Users/fleitner/work/dev/libfnl/bin/python
+#!/usr/bin/env python3
 """maintain a MEDLINE/PubMed repository"""
 import logging
 import os
