@@ -5,15 +5,16 @@
 Introduction
 ============
 
-**libfnl** provides an environment and tools for mining biological texts and by
+**libfnl** is an API and CLI for mining biological texts by
 providing data management tools to facilitate this task. The library is
-exclusively designed to work with Python 3000 (3.x).
+exclusively designed to work with Python 3000 (3.x). It is targeted
+to cooperate with the parallel txtfnnl_ UIMA text mininig library.
 
 The library contains the following packages:
 
 ``libfnl.gnamed``
-    providing a management and storage facility for gene/protein symbols,
-    names, keywords and their literature references
+    providing management and storage facilities for gene/protein symbols,
+    names, keywords and their references into literature
 ``libfnl.medline``
     providing a management and storage facility for MEDLINE and PubMed records
 ``libfnl.nlp``
@@ -27,15 +28,18 @@ The library contains the following packages:
 
 The library provides the following command-line tools:
 
-- `fnlgnamed.py <https://github.com/fnl/libfnl/wiki/fnlgnamed.py>`_ A tool to manage a gnamed gene/protein repository.
-- `fnlmedline.py <https://github.com/fnl/libfnl/wiki/fnlmedline.py>`_ A tool to manage a local MEDLINE storage.
-- ``fnlkappa.py`` A tool to calculate inter-rater agreement scores.
+- fnlgnamed_ A CLI to create a gene/protein repository.
+- fnlmedline_ A CLI to manage a local MEDLINE storage.
+- ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
 
 .. warning:: This API is under development (alpha).
 
 .. _JSON: http://www.json.org
 .. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
+.. _txtfnnl: http://github.com/fnl/txtfnnl
+.. _fnlgnamed: http://github.com/fnl/libfnl/wiki/fnlgnamed.py
+.. _fnlmedline: http://github.com/fnl/libfnl/wiki/fnlmedline.py
 
 Requirements
 ============
