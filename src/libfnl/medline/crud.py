@@ -9,7 +9,6 @@ import logging
 
 from gzip import open as gunzip
 from os.path import join
-from io import TextIOWrapper
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,7 +34,7 @@ def _createOrMerge(session:Session, files_or_pmids:iter, update):
                 pubmed = False
                 if arg.lower().endswith('.gz'):
                     # use wrapper to support pre-3.3
-                    stream = TextIOWrapper(gunzip(arg, 'r'))
+                    stream = gunzip(arg, 'rb')
                 else:
                     stream = open(arg)
 
@@ -98,7 +97,7 @@ def dump(files:iter, output_dir:str) -> bool:
     for f in files:
         if f.lower().endswith('.gz'):
             # use wrapper to support pre-3.3
-            in_stream = TextIOWrapper(gunzip(f, 'r'))
+            in_stream = gunzip(f, 'rb')
         else:
             in_stream = open(f)
 
