@@ -27,8 +27,8 @@ The library contains the following packages:
 
 The library provides the following command-line tools:
 
-- ``fnlgnamed.py`` A tool to manage a gnamed gene/protein repository.
-- ``fnlmedline.py`` A tool to manage a local MEDLINE storage.
+- `fnlgnamed.py<https://github.com/fnl/libfnl/wiki/fnlgnamed.py>`_ A tool to manage a gnamed gene/protein repository.
+- `fnlmedline.py<https://github.com/fnl/libfnl/wiki/fnlmedline.py>`_ A tool to manage a local MEDLINE storage.
 - ``fnlkappa.py`` A tool to calculate inter-rater agreement scores.
 
 .. warning:: This API is under development (alpha).
