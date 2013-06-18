@@ -75,7 +75,7 @@ See the general setup instructions for libfnl in the README.
 Install all dependencies/requirements::
 
     pip install argparse # only for python3 < 3.2
-    pip install SQLAlchemy
+    pip install sqlalchemy
     pip install psycopg2 # optional, can use any other DB driver
 
 Create the database::

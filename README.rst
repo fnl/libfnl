@@ -46,10 +46,10 @@ Requirements
 
 External binaries:
 
-* Python 3.0+ (3.3 or newer recommended)
-* Postgres 8.0+ (9.0 or newer recommended)
-* SQLite 3.5+ (3.7 or newer recommended)
-* GENIA Tagger (optional, latest version)
+* Python 3.0+ (3.2+ recommended)
+* Postgres 8.3+ (9.0+ recommended)
+* SQLite 3.5+ (3.7+ recommended)
+* GENIA Tagger (optional, version 3.0.1 (2007))
 * Git (optional, to clone the library from GitHub)
 
 Python packages:
@@ -82,7 +82,5 @@ All parts of this library are licensed under the `GNU Affero GPL v3`_
 
 Copyright
 =========
-
-.. include:: <isonum.txt>
 
 © 2006-2013 fnl™. All rights reserved.
