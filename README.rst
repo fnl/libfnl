@@ -55,6 +55,7 @@ External binaries:
 Python packages:
 
 * virtualenv (suggested/optional)
+* argparse (pre-Python 3.2)
 * SQL Alchemy 0.8+ (0.8.1 or newer recommended)
 * Psycopg2 2.2+ (2.5 or newer recommended)
 
@@ -69,6 +70,7 @@ Into a **Python 3** environment::
     cd libfnl
     . bin/activate # optional; if using a virual environment
     pip install argparse # only required for python3 < 3.2
+    pip install sqlalchemy
     python setup.py install
 
 License
