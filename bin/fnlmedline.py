@@ -114,16 +114,18 @@ if __name__ == '__main__':
         format='%(asctime)s %(name)s %(levelname)s: %(message)s'
     )
 
-    try:
-        initdb(args.url)
-    except OperationalError as e:
-        logging.fatal(str(e))
-        sys.exit(-1)
+    if args.command not in ('dump', 'create', 'write', 'update', 'delete'):
+        parser.error('illegal command "{}"'.format(args.command))
 
     if (args.command == 'dump'):
         from libfnl.medline.crud import dump
         result = dump(args.files, args.output)
     else:
+        try:
+            initdb(args.url)
+        except OperationalError as e:
+            parser.error(str(e))
+
         result = Main(args.command, args.files, Session())
 
         if args.command == 'read':
