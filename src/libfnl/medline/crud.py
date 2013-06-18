@@ -9,6 +9,7 @@ import logging
 
 from gzip import open as gunzip
 from os.path import join
+from io import TextIOWrapper
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,7 +34,8 @@ def _createOrMerge(session:Session, files_or_pmids:iter, update):
                 logging.debug("reading infile %s", arg)
                 pubmed = False
                 if arg.lower().endswith('.gz'):
-                    stream = gunzip(arg, 'rt')
+                    # use wrapper to support pre-3.3
+                    stream = TextIOWrapper(gunzip(arg, 'r'))
                 else:
                     stream = open(arg)
 
@@ -94,7 +96,11 @@ def dump(files:iter, output_dir:str) -> bool:
     count = 0
 
     for f in files:
-        in_stream = gunzip(f, 'rt') if f.lower().endswith('.gz') else open(f)
+        if f.lower().endswith('.gz'):
+            # use wrapper to support pre-3.3
+            in_stream = TextIOWrapper(gunzip(f, 'r'))
+        else:
+            in_stream = open(f)
 
         for i in Parse(in_stream):
             out_stream[i.__tablename__].write(str(i))
