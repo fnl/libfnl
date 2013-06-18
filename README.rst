@@ -1,6 +1,6 @@
-##################################################
-libfnl: tools for text-mining in molecular biology
-##################################################
+##########
+``libfnl``
+##########
 
 Introduction
 ============
@@ -11,28 +11,25 @@ exclusively designed to work with Python 3000 (3.x).
 
 The library contains the following packages:
 
-gnamed
+``libfnl.gnamed``
     providing a management and storage facility for gene/protein symbols,
     names, keywords and their literature references
-medline
+``libfnl.medline``
     providing a management and storage facility for MEDLINE and PubMed records
-nlp
+``libfnl.nlp``
     currently, just a Python wrapper for the GENIA_ Tagger_
-stat
+``libfnl.stat``
     currently, only a module to evaluate inter-rate Kappa scores
-text
+``libfnl.text``
     modules to annotate and tokenize text (strings)
-utils
-    utilities
+``libfnl.utils``
+    utilities/tools
 
 The library provides the following command-line tools:
 
-fnlgnamed
-    A tool to manage a gnamed gene/protein repository.
-fnlmedline
-    A tool to manage a local MEDLINE storage.
-fnlkappa
-    A tool to calculate inter-rater agreement scores.
+- ``fnlgnamed.py`` A tool to manage a gnamed gene/protein repository.
+- ``fnlmedline.py`` A tool to manage a local MEDLINE storage.
+- ``fnlkappa.py`` A tool to calculate inter-rater agreement scores.
 
 .. warning:: This API is under development (alpha).
 
@@ -80,4 +77,4 @@ All parts of this library are licensed under the `GNU Affero GPL v3`_
 Copyright
 =========
 
-(c) 2006-2013 Florian Leitner. All rights reserved.
+&copy; 2006-2013 Florian Leitner. All rights reserved.
