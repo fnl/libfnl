@@ -1,6 +1,6 @@
-##########
-``libfnl``
-##########
+###########
+``libfnl``™
+###########
 
 Introduction
 ============
@@ -79,4 +79,4 @@ Copyright
 
 .. include:: <isonum.txt>
 
-© 2006-2013 Florian Leitner™. All rights reserved.
+© 2006-2013 fnl™. All rights reserved.
