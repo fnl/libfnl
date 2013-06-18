@@ -79,4 +79,4 @@ Copyright
 
 .. include:: <isonum.txt>
 
-|copy| 2006-2013 Florian Leitner\ |trade|. All rights reserved.
+© 2006-2013 Florian Leitner™. All rights reserved.
