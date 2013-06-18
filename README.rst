@@ -77,6 +77,6 @@ All parts of this library are licensed under the `GNU Affero GPL v3`_
 Copyright
 =========
 
-.. include:: isonum.txt
+.. include:: <isonum.txt>
 
-|copy| 2006-2013 Florian Leitner|trade|. All rights reserved.
+|copy| 2006-2013 Florian Leitner\ |trade|. All rights reserved.
