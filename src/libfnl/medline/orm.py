@@ -20,17 +20,17 @@ from sqlalchemy.schema import \
 from sqlalchemy.types import \
     Boolean, BigInteger, Date, SmallInteger, Unicode, UnicodeText
 
-__ALL__ = ['initdb', 'Session', 'Identifier', 'Author', 'Qualifier', 'Descriptor', 'Medline']
+__ALL__ = ['InitDb', 'Session', 'Identifier', 'Author', 'Qualifier', 'Descriptor', 'Medline']
 
 _Base = declarative_base()
 _db = None
 _session = lambda *args, **kwds: None
 
+STRING = lambda s: None if s is None else repr(s)[1:-1]
 NULL = lambda s: '\\N' if s is None else s
 DATE = lambda s: '\\N' if s is None else s.isoformat()
 
-
-def initdb(*args, **kwds):
+def InitDb(*args, **kwds):
     """
     Create a new DBAPI connection pool.
 
@@ -187,7 +187,7 @@ class Identifier(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.namespace), NULL(self.value)
+            NULL(self.pmid), NULL(STRING(self.namespace)), NULL(STRING(self.value))
         )
 
     def __repr__(self):
@@ -314,8 +314,8 @@ class Author(_Base, SelectMixin):
 
     def __str__(self):
         return "{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            NULL(self.pmid), NULL(self.pos), NULL(self.name),
-            NULL(self.initials), NULL(self.forename), NULL(self.suffix))
+            NULL(self.pmid), NULL(self.pos), NULL(STRING(self.name)),
+            NULL(STRING(self.initials)), NULL(STRING(self.forename)), NULL(STRING(self.suffix)))
 
     def __repr__(self):
         return "Author<{}:{}>".format(self.pmid, self.pos)
@@ -406,7 +406,7 @@ class Qualifier(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.num), NULL(self.sub), NULL(self.name),
+            NULL(self.pmid), NULL(self.num), NULL(self.sub), NULL(STRING(self.name)),
             'T' if self.major else 'F'
         )
 
@@ -472,7 +472,7 @@ class Descriptor(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.num), NULL(self.name),
+            NULL(self.pmid), NULL(self.num), NULL(STRING(self.name)),
             'T' if self.major else 'F'
         )
 
@@ -535,7 +535,8 @@ class Section(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.seq), NULL(self.name), NULL(self.label), NULL(self.content)
+            NULL(self.pmid), NULL(self.seq), NULL(self.name),
+            NULL(STRING(self.label)), NULL(STRING(self.content))
         )
 
     def __repr__(self):
@@ -646,9 +647,9 @@ class Medline(_Base):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.status), NULL(self.journal),
+            NULL(self.pmid), NULL(self.status), NULL(STRING(self.journal)),
             DATE(self.created), DATE(self.completed), DATE(self.revised),
-            DATE(self.modified)
+            DATE(date.today() if self.modified is None else self.modified)
         )
 
     def __repr__(self):

@@ -14,17 +14,17 @@ URI = "sqlite+pysqlite://" # use in-memmory SQLite DB for testing
 
 class InitdbTest(TestCase):
     def testUsingURI(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.assertEqual('sqlite', Session().connection().dialect.name)
 
     def testUsingURL(self):
-        initdb(URL('sqlite'), module=dbapi2)
+        InitDb(URL('sqlite'), module=dbapi2)
         self.assertEqual('sqlite', Session().connection().dialect.name)
 
 
 class MedlineTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
 
     def testCreate(self):
@@ -155,8 +155,8 @@ class MedlineTest(TestCase):
 
     def testToString(self):
         d = date.today()
-        r = Medline(1, 'MEDLINE', 'journal', d)
-        line = "1\tMEDLINE\tjournal\t{}\t\\N\t\\N\t\\N\n".format(d.isoformat())
+        r = Medline(1, 'MEDLINE', 'journal\\.', d)
+        line = "1\tMEDLINE\tjournal\\\\.\t{}\t\\N\t\\N\t{}\n".format(d.isoformat(), d.isoformat())
         self.assertEqual(line, str(r))
 
     def testToRepr(self):
@@ -247,7 +247,7 @@ class MedlineTest(TestCase):
 
 class SectionTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
         self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
         self.sess.add(self.M)
@@ -334,8 +334,8 @@ class SectionTest(TestCase):
         self.assertRaises(IntegrityError, self.sess.commit)
 
     def testToString(self):
-        self.assertEqual('1\t1\tTitle\tlabel\tcontent\n',
-                         str(Section(1, 1, 'Title', 'content', 'label')))
+        self.assertEqual('1\t1\tTitle\tlabel\tco\\n\\tent\\\\\n',
+                         str(Section(1, 1, 'Title', "co\n\tent\\", 'label')))
 
     def testToRepr(self):
         self.assertEqual('Section<1:1>',
@@ -358,7 +358,7 @@ class SectionTest(TestCase):
 
 class DescriptorTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
         self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
         self.sess.add(self.M)
@@ -470,7 +470,7 @@ class DescriptorTest(TestCase):
 
 class QualifierTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
         self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
         self.sess.add(self.M)
@@ -592,7 +592,7 @@ class QualifierTest(TestCase):
 
 class AuthorTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
         self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
         self.sess.add(self.M)
@@ -711,7 +711,7 @@ class AuthorTest(TestCase):
 
 class IdentifierTest(TestCase):
     def setUp(self):
-        initdb(URI, module=dbapi2)
+        InitDb(URI, module=dbapi2)
         self.sess = Session()
         self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
         self.sess.add(self.M)

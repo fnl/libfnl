@@ -52,7 +52,7 @@ class ParserTest(TestCase):
 
     def testParseToDB(self):
         logging.getLogger().setLevel(logging.ERROR)
-        initdb(URL('sqlite'), module=dbapi2)
+        InitDb(URL('sqlite'), module=dbapi2)
         self.sess = Session()
         count = 0
         for item in Parse(self.file):
