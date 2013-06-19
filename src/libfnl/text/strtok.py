@@ -6,7 +6,7 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 from io import StringIO
-from libfnl.nlp.text import Text
+from libfnl.text.text import Text
 from types import FunctionType
 from unicodedata import category
 
@@ -170,20 +170,20 @@ class Category:
     Co = ord('[')
     "``[`` - other, private use"
 
-    CONTROLS = frozenset({ Cc, Cf, Cn, Co, Cs })
-    WORD = frozenset({ Lu, Ll, LG, Lg, Lt, LC, Lm, Lo, Nd, Nl, Zl, Zp, Zs })
-    ALNUM = frozenset({ Lu, Ll, Nd, Nl, LG, Lg, Lt, LC, Lm, Lo })
-    LETTERS = frozenset({ Lu, LG, Lt, Ll, Lg, LC, Lm, Lo })
-    UPPERCASE_LETTERS = frozenset({ Lu, LG, Lt })
-    LOWERCASE_LETTERS = frozenset({ Ll, Lg })
-    OTHER_LETTERS = frozenset({ LC, Lm, Lo })
-    NUMBERS = frozenset({ Nd, Nl, No })
-    NUMERIC = frozenset({ Nd, Nl })
-    MARKS = frozenset({ Mc, Me, Mn })
-    PUNCTUATION = frozenset({ Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts })
-    SYMBOLS = frozenset({ Sc, Sk, Sm, So })
-    SEPARATORS = frozenset({ Zl, Zp, Zs })
-    BREAKS = frozenset({ Zl, Zp, })
+    CONTROLS = frozenset({Cc, Cf, Cn, Co, Cs})
+    WORD = frozenset({Lu, Ll, LG, Lg, Lt, LC, Lm, Lo, Nd, Nl, Zl, Zp, Zs})
+    ALNUM = frozenset({Lu, Ll, Nd, Nl, LG, Lg, Lt, LC, Lm, Lo})
+    LETTERS = frozenset({Lu, LG, Lt, Ll, Lg, LC, Lm, Lo})
+    UPPERCASE_LETTERS = frozenset({Lu, LG, Lt})
+    LOWERCASE_LETTERS = frozenset({Ll, Lg})
+    OTHER_LETTERS = frozenset({LC, Lm, Lo})
+    NUMBERS = frozenset({Nd, Nl, No})
+    NUMERIC = frozenset({Nd, Nl})
+    MARKS = frozenset({Mc, Me, Mn})
+    PUNCTUATION = frozenset({Pc, Pd, Pe, Pf, Pi, Po, Ps, Ts})
+    SYMBOLS = frozenset({Sc, Sk, Sm, So})
+    SEPARATORS = frozenset({Zl, Zp, Zs})
+    BREAKS = frozenset({Zl, Zp, })
 
     @classmethod
     def control(cls, cat:int) -> bool:
@@ -430,6 +430,31 @@ REMAPPED_CHARACTERS = {
 # IMPLEMENTATION #
 ##################
 
+def TokenOffsets(string):
+    """
+    **Yield** the offsets of all Unicode category border in the *string*.
+    """
+    if string:
+        yield 0
+        last = category(string[0])
+
+        for i in range(1, len(string)):
+            current = category(string[i])
+
+            if last != current:
+                # ignore capitalized tokens:
+                if last == 'Lu' \
+                    and current == 'Ll' \
+                    and (i == 1 or (i > 1 and category(string[i - 2]) != 'Lu')):
+                    pass
+                else:
+                    yield i
+
+            last = current
+
+        yield len(string)
+
+
 class Tokenizer:
     """
     Abstract tokenizer implementing the actual procedure.
@@ -592,6 +617,7 @@ def CategoryIter(text:Text) -> iter:
     for char in text.string:
         yield GetCharCategoryValue(char)
 
+
 def GetCharCategoryValue(character:chr) -> int:
     """
     Return the (remapped) Unicode category value of a *character*.
@@ -603,8 +629,10 @@ def GetCharCategoryValue(character:chr) -> int:
 
     if cat in GREEK_REMAPPED:
         if IsGreek(character):
-            if cat == Category.Ll: return Category.Lg
-            else:                  return Category.LG
+            if cat == Category.Ll:
+                return Category.Lg
+            else:
+                return Category.LG
     elif cat in REMAPPED_CHARACTERS and character in REMAPPED_CHARACTERS[cat]:
         cat = REMAPPED_CHARACTERS[cat][character]
 
@@ -784,8 +812,8 @@ class Tag:
         if the *tag* is one of the specialized case-tokens or the tags LETTERS
         or ALPHANUMERIC.
         """
-        return tag == cls.LETTERS or\
-               tag == cls.ALPHANUMERIC or\
+        return tag == cls.LETTERS or \
+               tag == cls.ALPHANUMERIC or \
                tag > cls._WORDS
 
     @classmethod
@@ -853,7 +881,7 @@ def CasetagLetters(cats:bytearray) -> int:
         if len(cats) > 1: return CasetagLetters(cats[1:])
         return Tag.LETTERS
     else:
-        raise RuntimeError("no provisions for cats %s" % 
+        raise RuntimeError("no provisions for cats %s" %
                            cats.decode("ASCII"))
 
 
@@ -875,11 +903,16 @@ def CasetagAlphanumeric(cats:bytearray) -> int:
     :raises: RuntimeError If no matching category can be found.
     """
     c = cats[0]
-    if c in Category.UPPERCASE_LETTERS:   return Tag.ALNUM_UPPER
-    elif c in Category.LOWERCASE_LETTERS: return Tag.ALNUM_LOWER
-    elif c == Category.Nd:                return Tag.ALNUM_DIGIT
-    elif c == Category.Nl:                return Tag.ALNUM_NUMERAL
-    elif c == Category.Lo:                return Tag.ALNUM_OTHER
+    if c in Category.UPPERCASE_LETTERS:
+        return Tag.ALNUM_UPPER
+    elif c in Category.LOWERCASE_LETTERS:
+        return Tag.ALNUM_LOWER
+    elif c == Category.Nd:
+        return Tag.ALNUM_DIGIT
+    elif c == Category.Nl:
+        return Tag.ALNUM_NUMERAL
+    elif c == Category.Lo:
+        return Tag.ALNUM_OTHER
     elif c == Category.Lm and len(cats) > 1:
         return CasetagAlphanumeric(cats[1:])
     else:
