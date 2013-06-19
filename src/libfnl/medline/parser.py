@@ -51,49 +51,79 @@ def Parse(xml_stream, pubmed=False) -> iter:
     @dispatch
     def ArticleTitle(element):
         nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Title', element.text.strip())
+
+        if element.text is not None:
+            seq += 1
+            return Section(pmid, seq, 'Title', element.text.strip())
+        else:
+            logging.warning("empty ArticleTitle in %i", pmid)
+            return None
 
     @dispatch
     def VernacularTitle(element):
         nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Vernacular', element.text.strip())
+
+        if element.text is not None:
+            seq += 1
+            return Section(pmid, seq, 'Vernacular', element.text.strip())
+        else:
+            logging.warning("empty VernacularTitle in %i", pmid)
+            return None
 
     @dispatch
     def AbstractText(element):
         nonlocal seq
-        seq += 1
-        section = element.get('NlmCategory', 'Abstract').capitalize()
-        return Section(
-            pmid, seq, section, element.text.strip(), element.get('Label', None)
-        )
+
+        if element.text is not None:
+            seq += 1
+            section = element.get('NlmCategory', 'Abstract').capitalize()
+            return Section(
+                pmid, seq, section, element.text.strip(), element.get('Label', None)
+            )
+        else:
+            logging.warning("empty AbstractText in %i", pmid)
+            return None
 
     @dispatch
     def CopyrightInformation(element):
         nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Copyright', element.text.strip())
+
+        if element.text is not None:
+            seq += 1
+            return Section(pmid, seq, 'Copyright', element.text.strip())
+        else:
+            logging.warning("empty CopyrightInformation in %i", pmid)
+            return None
 
     @dispatch
     def DescriptorName(element):
         nonlocal num
         nonlocal sub
-        num += 1
-        sub = 0
-        return Descriptor(
-            pmid, num, element.text.strip(),
-            (element.get('MajorTopicYN', 'N') == 'Y')
-        )
+
+        if element.text is not None:
+            num += 1
+            sub = 0
+            return Descriptor(
+                pmid, num, element.text.strip(),
+                (element.get('MajorTopicYN', 'N') == 'Y')
+            )
+        else:
+            logging.warning("empty DescriptorName in %i", pmid)
+            return None
 
     @dispatch
     def QualifierName(element):
         nonlocal sub
-        sub += 1
-        return Qualifier(
-            pmid, num, sub, element.text.strip(),
-            (element.get('MajorTopicYN', 'N') == 'Y')
-        )
+
+        if element.text is not None:
+            sub += 1
+            return Qualifier(
+                pmid, num, sub, element.text.strip(),
+                (element.get('MajorTopicYN', 'N') == 'Y')
+            )
+        else:
+            logging.warning("empty QualifierName in %i", pmid)
+            return None
 
     @dispatch
     def Author(element):
@@ -102,69 +132,94 @@ def Parse(xml_stream, pubmed=False) -> iter:
         forename = None
         initials = None
         suffix = None
-        pos += 1
+
         for child in element.getchildren():
-            text = child.text.strip()
-            if child.tag == 'LastName':
-                name = text
-            elif child.tag == 'ForeName':
-                forename = text
-            elif child.tag == 'Initials':
-                initials = text
-            elif child.tag == 'Suffix':
-                suffix = text
-            elif child.tag == 'CollectiveName':
-                name = text
-                forename = ''
-                initials= ''
-                suffix = ''
-            elif child.tag == 'Identifier':
-                pass
+            if child.text is not None:
+                text = child.text.strip()
+                if child.tag == 'LastName':
+                    name = text
+                elif child.tag == 'ForeName':
+                    forename = text
+                elif child.tag == 'Initials':
+                    initials = text
+                elif child.tag == 'Suffix':
+                    suffix = text
+                elif child.tag == 'CollectiveName':
+                    name = text
+                    forename = ''
+                    initials= ''
+                    suffix = ''
+                elif child.tag == 'Identifier':
+                    pass
+                else:
+                    logging.warning('unknown Author element %s "%s" in %i', child.tag, text, pmid)
             else:
-                logging.warning('unknown Author element %s "%s"', child.tag, text)
+                logging.warning('empty Author element %s in %i"', child.tag, pmid)
+
         if initials == forename and initials is not None:
-            # prune the repetition of initials in the forename field
+            # prune the repetition of initials in the forename
             forename = None
-        return Author_(pmid, pos, name, initials, forename, suffix)
+
+        if name is not None:
+            pos += 1
+            return Author_(pmid, pos, name, initials, forename, suffix)
+        else:
+            logging.warning("empty or missing Author/LastName or CollectiveName in %i", pmid)
+            return None
 
     @dispatch
     def ELocationID(element):
-        ns = element.get('EIdType').strip().lower()
-        if ns not in namespaces:
-            namespaces.add(ns)
-            return Identifier(pmid, ns, element.text.strip())
+        if element.text is not None:
+            ns = element.get('EIdType').strip().lower()
+
+            if ns not in namespaces:
+                namespaces.add(ns)
+                return Identifier(pmid, ns, element.text.strip())
+
+            return None
         else:
+            logging.warning("empty ELocationID in %i", pmid)
             return None
 
     @dispatch
     def OtherID(element):
-        if element.get('Source', None) == 'NLM':
-            text = element.text.strip()
-            if text.startswith('PMC'):
-                if 'pmc' not in namespaces:
-                    namespaces.add('pmc')
-                    return Identifier(pmid, 'pmc', text.split(' ', 1)[0])
-        return None
+        if element.text is not None:
+            if element.get('Source', None) == 'NLM':
+                text = element.text.strip()
+
+                if text.startswith('PMC'):
+                    if 'pmc' not in namespaces:
+                        namespaces.add('pmc')
+                        return Identifier(pmid, 'pmc', text.split(' ', 1)[0])
+
+            return None
+        else:
+            logging.warning("empty OtherID in %i", pmid)
+            return None
 
     @dispatch
     def ArticleId(element):
         "This element is only present in the online PubMed XML, not the MEDLINE XML."
-        ns = element.get('IdType').strip().lower()
-        text = element.text.strip()
-        instance = None
+        if element.text is not None:
+            instance = None
+            ns = element.get('IdType').strip().lower()
+            text = element.text.strip()
 
-        if ns in namespaces:
-            if re.match('\d[\d\.]+\/.+', element.text.strip()) and \
-                            'doi' not in namespaces:
-                namespaces.add('doi')
-                instance = Identifier(pmid, 'doi', text)
+            if ns in namespaces:
+                if re.match('\d[\d\.]+\/.+', element.text.strip()) and \
+                                'doi' not in namespaces:
+                    namespaces.add('doi')
+                    instance = Identifier(pmid, 'doi', text)
+                else:
+                    logging.warning('duplicate %s identifier "%s"', ns, text)
             else:
-                logging.warning('duplicate %s identifier "%s"', ns, text)
-        else:
-            namespaces.add(ns)
-            instance = Identifier(pmid, ns, text)
+                namespaces.add(ns)
+                instance = Identifier(pmid, ns, text)
 
-        return instance
+            return instance
+        else:
+            logging.warning("empty ArticleId in %i", pmid)
+            return None
 
     @dispatch
     def MedlineCitation(element):
@@ -175,17 +230,21 @@ def Parse(xml_stream, pubmed=False) -> iter:
                           ('DateCreated', 'created'),
                           ('DateRevised', 'revised')):
             e = element.find(name)
+
             if e is not None:
                 dates[key] = ParseDate(e)
-        journal = element.find('MedlineJournalInfo').find('MedlineTA').text.strip()
+
         status = element.get('Status')
+        journal = element.find('MedlineJournalInfo').find('MedlineTA').text.strip()
+
         if not pubmed:
             element.clear()
             pmid = -1
+
         return Medline(p, status, journal, **dates)
 
-    # === MAIN PARSER LOOP ===
     logging.debug("parsing input stream")
+    # === MAIN PARSER LOOP ===
     for _, element in iterparse(xml_stream):
         if element.tag == 'PMID' and pmid == -1:
             pmid = int(element.text)
@@ -197,6 +256,7 @@ def Parse(xml_stream, pubmed=False) -> iter:
             pos = 0
         elif element.tag in make:
             instance = make[element.tag](element)
+
             if instance is not None:
                 logging.debug("parsed %s", element.tag)
                 yield instance
