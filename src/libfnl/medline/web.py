@@ -36,5 +36,5 @@ def Download(pmids:list, timeout:int=60) -> HTTPResponse:
     """
     assert len(pmids) <= 100, 'too many PMIDs'
     url = EUTILS_URL + ','.join(map(str, pmids))
-    logging.debug('fetching MEDLINE records from %s', url)
+    logging.info('fetching %i MEDLINE records from %s', len(pmids), url)
     return URL_OPENER.open(url, timeout=timeout)

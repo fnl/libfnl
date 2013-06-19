@@ -16,12 +16,12 @@ def Main(command, files_or_pmids, session):
     :param command: one of create/read/update/delete
     :param files_or_pmids: the list of files or PMIDs to process
     """
-    from libfnl.medline.crud import create, read, update, delete
+    from libfnl.medline.crud import insert, select, update, delete
 
     if command == 'create':
-        return create(session, files_or_pmids)
+        return insert(session, files_or_pmids)
     elif command == 'read':
-        return read(session, [int(i) for i in files_or_pmids])
+        return select(session, [int(i) for i in files_or_pmids])
     elif command == 'update':
         return update(session, files_or_pmids)
     elif command == 'delete':
@@ -67,7 +67,7 @@ def WriteSection(file, rec, sec):
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
-    from libfnl.medline.orm import initdb, Session
+    from libfnl.medline.orm import InitDb, Session
 
     epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
 
@@ -122,7 +122,7 @@ if __name__ == '__main__':
         result = dump(args.files, args.output)
     else:
         try:
-            initdb(args.url)
+            InitDb(args.url)
         except OperationalError as e:
             parser.error(str(e))
 

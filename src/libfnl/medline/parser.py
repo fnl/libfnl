@@ -38,6 +38,7 @@ def Parse(xml_stream, pubmed=False) -> iter:
     make = {}
 
     def dispatch(f):
+        "Decorator to populate a dispatcher using the element tag as function name."
         make[f.__name__] = f
         return f
 
@@ -243,7 +244,6 @@ def Parse(xml_stream, pubmed=False) -> iter:
 
         return Medline(p, status, journal, **dates)
 
-    logging.debug("parsing input stream")
     # === MAIN PARSER LOOP ===
     for _, element in iterparse(xml_stream):
         if element.tag == 'PMID' and pmid == -1:
@@ -263,6 +263,7 @@ def Parse(xml_stream, pubmed=False) -> iter:
     # ========================
 
 def ParseDate(date_element):
+    "Parse a **valid** date that (at least) has to have a Year element."
     year = int(date_element.find('Year').text)
     month, day = 1, 1
     month_element = date_element.find('Month')

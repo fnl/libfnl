@@ -17,7 +17,7 @@ from libfnl.medline.parser import Parse
 from libfnl.medline.web import Download
 
 
-def _createOrMerge(session:Session, files_or_pmids:iter, update):
+def _add(session:Session, files_or_pmids:select, update):
     pmid_buffer = []
     count = 0
     initial = session.query(Medline).count()
@@ -30,7 +30,7 @@ def _createOrMerge(session:Session, files_or_pmids:iter, update):
                 pmid_buffer.append(pmid)
                 stream = Download(pmid_buffer) if (len(pmid_buffer) == 100) else None
             except ValueError:
-                logging.debug("reading infile %s", arg)
+                logging.info("parsing %s", arg)
                 pubmed = False
                 if arg.lower().endswith('.gz'):
                     # use wrapper to support pre-3.3
@@ -67,22 +67,39 @@ def _createOrMerge(session:Session, files_or_pmids:iter, update):
         return False
 
 
-def create(session:Session, files_or_pmids:iter) -> bool:
-    "Create all records in the *files* (paths) or download the *PMIDs*."
-    _createOrMerge(session, files_or_pmids, lambda i: session.add(i))
+def insert(session:Session, files_or_pmids:select) -> bool:
+    "Insert all records by parsing the *files* or downloading the *PMIDs*."
+    _add(session, files_or_pmids, lambda i: session.add(i))
 
 
-def read(session:Session, pmids:list([int])) -> iter([Medline]):
+def update(session:Session, files_or_pmids:select) -> bool:
+    "Update all records in the *files* (paths) or download the *PMIDs*."
+    _add(session, files_or_pmids, lambda i: session.merge(i))
+
+
+def select(session:Session, pmids:list([int])) -> iter([Medline]):
     "Return an iterator over all `Medline` records for the *PMIDs*."
     count = 0
     # noinspection PyUnresolvedReferences
     for record in session.query(Medline).filter(Medline.pmid.in_(pmids)):
         count += 1
         yield record
-    logging.info("wrote %i records", count)
+    logging.info("retrieved %i records", count)
 
 
-def dump(files:iter, output_dir:str) -> bool:
+# noinspection PyUnusedLocal
+def delete(session:Session, pmids:list([int])) -> bool:
+    "Delete all records for the *PMIDs*."
+    # noinspection PyUnresolvedReferences
+    count = session.query(Medline).filter(Medline.pmid.in_(pmids)).delete(
+        synchronize_session=False
+    )
+    session.commit()
+    logging.info("deleted %i records", count)
+    return True
+
+
+def dump(files:select, output_dir:str) -> bool:
     "Parse MEDLINE XML files into tabular flat-files for each DB table."
     out_stream = {
         Medline.__tablename__: open(join(output_dir, "records.tab"), "wt"),
@@ -95,6 +112,8 @@ def dump(files:iter, output_dir:str) -> bool:
     count = 0
 
     for f in files:
+        logging.info('dumping %s', f)
+
         if f.lower().endswith('.gz'):
             # use wrapper to support pre-3.3
             in_stream = gunzip(f, 'rb')
@@ -111,20 +130,3 @@ def dump(files:iter, output_dir:str) -> bool:
         stream.close()
 
     logging.info("parsed %i records", count)
-
-
-def update(session:Session, files_or_pmids:iter) -> bool:
-    "Update all records in the *files* (paths) or download the *PMIDs*."
-    _createOrMerge(session, files_or_pmids, lambda i: session.merge(i))
-
-
-# noinspection PyUnusedLocal
-def delete(session:Session, pmids:list([int])) -> bool:
-    "Delete all records for the *PMIDs*."
-    # noinspection PyUnresolvedReferences
-    count = session.query(Medline).filter(Medline.pmid.in_(pmids)).delete(
-        synchronize_session=False
-    )
-    session.commit()
-    logging.info("deleted %i records", count)
-    return True
