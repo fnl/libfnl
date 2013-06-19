@@ -509,8 +509,9 @@ class Section(_Base, SelectMixin):
     Parent: :class:`Medline`
     """
 
-    SECTIONS = frozenset({'Title', 'Abstract', 'Vernacular', 'Copyright', 'Background',
-                          'Objective', 'Methods', 'Results', 'Conclusions', 'Unlabelled'})
+    SECTIONS = frozenset({'Title', 'Abstract', 'Vernacular', 'Copyright',
+                          'Background', 'Objective', 'Methods', 'Results', 'Conclusions',
+                          'Unassigned', 'Unlabelled'})
 
     __tablename__ = 'sections'
 
