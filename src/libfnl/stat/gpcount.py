@@ -1,6 +1,6 @@
 """
 .. py:module:: genecount
-   :synopsis: Count the number of times a gene symbol appears in MEDLINE.
+   :synopsis: Count the number of times a symbol appears in MEDLINE.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
