@@ -17,7 +17,7 @@ from libfnl.medline.parser import Parse
 from libfnl.medline.web import Download
 
 
-def _add(session:Session, files_or_pmids:select, update):
+def _add(session:Session, files_or_pmids:iter, update):
     pmid_buffer = []
     count = 0
     initial = session.query(Medline).count()
@@ -67,12 +67,12 @@ def _add(session:Session, files_or_pmids:select, update):
         return False
 
 
-def insert(session:Session, files_or_pmids:select) -> bool:
+def insert(session:Session, files_or_pmids:iter) -> bool:
     "Insert all records by parsing the *files* or downloading the *PMIDs*."
     _add(session, files_or_pmids, lambda i: session.add(i))
 
 
-def update(session:Session, files_or_pmids:select) -> bool:
+def update(session:Session, files_or_pmids:iter) -> bool:
     "Update all records in the *files* (paths) or download the *PMIDs*."
     _add(session, files_or_pmids, lambda i: session.merge(i))
 
@@ -99,7 +99,7 @@ def delete(session:Session, pmids:list([int])) -> bool:
     return True
 
 
-def dump(files:select, output_dir:str) -> bool:
+def dump(files:iter, output_dir:str) -> bool:
     "Parse MEDLINE XML files into tabular flat-files for each DB table."
     out_stream = {
         Medline.__tablename__: open(join(output_dir, "records.tab"), "wt"),
