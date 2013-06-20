@@ -31,6 +31,7 @@ The library provides the following command-line tools:
 - fnlgnamed_ A CLI to create a gene/protein repository.
 - fnlmedline_ A CLI to manage a local MEDLINE storage.
 - ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
+- ``fnlgpcounter`` A CLI to count gene/protein symbols in MEDLINE.
 
 .. warning:: This API is under development (alpha).
 
@@ -58,6 +59,7 @@ Python packages:
 * argparse (pre-Python 3.2)
 * SQL Alchemy 0.8+ (0.8.1 or newer recommended)
 * Psycopg2 2.2+ (2.5 or newer recommended)
+* DAWG (`my <https://github.com/fnl/DAWG>`_ special offset-version of `DAWG <https://github.com/kmike/DAWG>`_)
 
 Installation
 ============
@@ -71,7 +73,12 @@ Into a **Python 3** environment::
     . bin/activate # optional; if using a virual environment
     pip install argparse # only required for python3 < 3.2
     pip install sqlalchemy
+    pip install psycopg2
+    # special steps to install DAWG
+    git clone git@github.com:fnl/DAWG.git
+    cd DAWG
     python setup.py install
+    cd ..
 
 License
 =======

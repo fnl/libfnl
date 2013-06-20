@@ -20,23 +20,26 @@ def CountGenes():
     This produces a table with the format:
     GID <tab> SYMBOL <tab> NUM_ALL <tab> NUM_REF
     """
-    sym2gid = defaultdict(list)
-
+    sym2gid = defaultdict(set)
+    pmid2gid = defaultdict(set)
     gnamed = GnamedSession()
 
     for sym, gid in gnamed.query(GeneString.value, GeneString.id
-    ).filter(GeneString.cat == 'symbol'):
+    ).filter(GeneString.cat == 'symbol').yield_per(100):
         sym2gid[sym].append(gid)
-
-    gnamed = GnamedSession()
 
     for sym, gid in gnamed.query(ProteinString.value, Gene.id
-    ).join(Gene.proteins
-    ).join(ProteinString
-    ).filter(ProteinString.cat == 'symbol'):
+    ).join(Gene.proteins).join(ProteinString).filter(ProteinString.cat == 'symbol').yield_per(100):
         sym2gid[sym].append(gid)
 
-    _count(sym2gid)
+    for pmid, gid in gnamed.query(Gene2PubMed.pmid, Gene2PubMed.id).yield_per(100):
+        pmid2gid[pmid].add(gid)
+
+    for pmid, gid in gnamed.query(Protein2PubMed.pmid, Gene.id
+    ).join(Gene.proteins).join(Protein2PubMed).yield_per(100):
+        pmid2gid[pmid].add(gid)
+
+    _count(sym2gid, pmid2gid)
 
 
 def CountProteins():
@@ -48,50 +51,54 @@ def CountProteins():
     This produces a table with the format:
     PID <tab> SYMBOL <tab> NUM_ALL <tab> NUM_REF
     """
-    sym2pid = defaultdict(list)
-
+    sym2pid = defaultdict(set)
+    pmid2pid = defaultdict(set)
     gnamed = GnamedSession()
 
     for sym, pid in gnamed.query(ProteinString.value, ProteinString.id
-    ).filter(ProteinString.cat == 'symbol'):
+    ).filter(ProteinString.cat == 'symbol').yield_per(100):
         sym2pid[sym].append(pid)
-
-    gnamed = GnamedSession()
 
     for sym, pid in gnamed.query(GeneString.value, Protein.id
-    ).join(Protein.genes
-    ).join(GeneString
-    ).filter(GeneString.cat == 'symbol'):
+    ).join(Protein.genes).join(GeneString).filter(GeneString.cat == 'symbol').yield_per(100):
         sym2pid[sym].append(pid)
 
-    _count(sym2pid)
+    for pmid, pid in gnamed.query(Protein2PubMed.pmid, Protein2PubMed.id).yield_per(100):
+        pmid2pid[pmid].add(pid)
+
+    for pmid, pid in gnamed.query(Gene2PubMed.pmid, Protein.id
+    ).join(Protein.genes).join(Gene2PubMed).yield_per(100):
+        pmid2pid[pmid].add(pid)
+
+    _count(sym2pid, pmid2pid)
 
 
-def _count(sym2_id):
-    pmid2sym = defaultdict(set)
+def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
+    # pruning: remove the "empty" symbol
+    if '' in sym2_id:
+        del sym2_id['']
+
+    symbols = {s: 0 for s in sym2_id.keys()} # global count per symbol
+    references = {} # count per id & symbol in the referenced titles
+
+    for sym, ids in sym2_id.items():
+        for id_ in ids:
+            if id_ in references:
+                references[id_][sym] = 0
+            else:
+                references[id_] = {sym: 0}
+
     dwag = DAWG(sym2_id.keys())
-    globalCounters = defaultdict(lambda: defaultdict(int))
-    refCounters = defaultdict(lambda: defaultdict(int))
+    medline = MedlineSession()
 
-    gnamed = GnamedSession()
-
-    for pmid, sym in gnamed.query(Gene2PubMed.pmid, GeneString.value
-    ).join(GeneString, GeneString.id == Gene2PubMed.id):
-        pmid2sym[pmid].add(sym)
-
-    gnamed = GnamedSession()
-
-    for pmid, sym in gnamed.query(Protein2PubMed.pmid, ProteinString.value
-    ).join(ProteinString, ProteinString.id == Protein2PubMed.id):
-        pmid2sym[pmid].add(sym)
-
-    for pmid, symbols in pmid2sym.items():
-        medline = MedlineSession()
+    for pmid, known_ids in pmid2_id.items():
+        relevant = {} # checked symbols
 
         for txt in medline.query(Section.content
         ).filter(Section.pmid == pmid
         ).filter(Section.name != 'Copyright'
-        ).filter(Section.name != 'Vernacular'):
+        ).filter(Section.name != 'Vernacular'
+        ):
             offsets = set(TokenOffsets(txt))
 
             # only attempt prefix matches at offsets
@@ -103,17 +110,19 @@ def _count(sym2_id):
 
                     # only offset-delimited matches
                     if idx + len(sym) in offsets:
-                        id_list = sym2_id[sym]
+                        symbols[sym] += 1
 
-                        if sym in symbols:
-                            for _id in id_list:
-                                refCounters[_id][sym] += 1
+                        if sym in relevant:
+                            if relevant[sym]:
+                                for id_ in known_ids & sym2_id[sym]:
+                                    references[id_][sym] += 1
+                        else:
+                            relevant[sym] = False
 
-                        for _id in id_list:
-                            globalCounters[_id][sym] += 1
+                            for id_ in known_ids & sym2_id[sym]:
+                                references[id_][sym] += 1
+                                relevant[sym] = True
 
-    for _id, global_counts in globalCounters.items():
-        refCounts = refCounters[_id]
-
-        for sym, count in global_counts.items():
-            print("{}\t{}\t{}\t{}".format(_id, sym, count, refCounts[sym]))
+    for _id, counts in references.items():
+        for sym, count in counts.items():
+            print("{}\t{}\t{}\t{}".format(_id, sym, count, symbols[sym]))

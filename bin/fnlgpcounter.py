@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 
-"""Count the number of times a gene/protein appears in MEDLINE."""
+"""
+Count the referenced and global occurrences of a gene or protein in MEDLINE.
+Running this script over a fully loaded gnamed DB requires ~12 GB of memory.
+Do not forget to pipe the output (STDOUT) somewhere
+"""
+# The reason for the memory hug is that all symbol-id and all id-pmid
+# references are loaded first to make the scanning as quick as possible
+# and then all id-symbol-counter and symbol-counter tables are initialized.
 
 import logging
 import os
@@ -15,7 +22,7 @@ __version__ = '1'
 
 def main(proteins:bool):
     """
-    :param proteins: count protein symbols instead of gene symbols
+    :param proteins: report for proteins instead of genes
     """
     from libfnl.stat.gpcount import CountGenes, CountProteins
 

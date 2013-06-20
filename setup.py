@@ -33,7 +33,7 @@ setup(
     package_dir={
         '': 'src',
     },
-    scripts=['bin/fnlgnamed.py', 'bin/fnlmedline.py', 'bin/fnlkappa.py'],
+    scripts=['bin/fnlgnamed.py', 'bin/fnlmedline.py', 'bin/fnlkappa.py', 'bin/fnlgpcounter.py'],
     requires=[
         'sqlalchemy (>=0.8)',
         'psycopg2 (>=2.5)',
