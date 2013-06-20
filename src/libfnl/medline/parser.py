@@ -52,79 +52,59 @@ def Parse(xml_stream, pubmed=False) -> iter:
     @dispatch
     def ArticleTitle(element):
         nonlocal seq
-
-        if element.text is not None:
-            seq += 1
-            return Section(pmid, seq, 'Title', element.text.strip())
-        else:
-            logging.warning("empty ArticleTitle in %i", pmid)
-            return None
+        seq += 1
+        return Section(pmid, seq, 'Title', element.text.strip())
 
     @dispatch
     def VernacularTitle(element):
         nonlocal seq
-
-        if element.text is not None:
-            seq += 1
-            return Section(pmid, seq, 'Vernacular', element.text.strip())
-        else:
-            logging.warning("empty VernacularTitle in %i", pmid)
-            return None
+        seq += 1
+        return Section(pmid, seq, 'Vernacular', element.text.strip())
 
     @dispatch
     def AbstractText(element):
         nonlocal seq
 
+        # infrequently, there are non-content AbstractText elements
+        # in MEDLINE/PubMed ("<AbstractText/>"), so:
         if element.text is not None:
-            seq += 1
-            section = element.get('NlmCategory', 'Abstract').capitalize()
-            return Section(
-                pmid, seq, section, element.text.strip(), element.get('Label', None)
-            )
-        else:
-            logging.warning("empty AbstractText in %i", pmid)
-            return None
+            text = element.text.strip()
+            # and even less frequently, they might only contain whitespaces, so:
+            if text:
+                seq += 1
+                section = element.get('NlmCategory', 'Abstract').capitalize()
+                return Section(
+                    pmid, seq, section, element.text.strip(), element.get('Label', None)
+                )
+        logging.info("empty %s AbstractText in %i",
+                     element.get('NlmCategory', 'ABSTRACT'), pmid)
+        return None
 
     @dispatch
     def CopyrightInformation(element):
         nonlocal seq
-
-        if element.text is not None:
-            seq += 1
-            return Section(pmid, seq, 'Copyright', element.text.strip())
-        else:
-            logging.warning("empty CopyrightInformation in %i", pmid)
-            return None
+        seq += 1
+        return Section(pmid, seq, 'Copyright', element.text.strip())
 
     @dispatch
     def DescriptorName(element):
         nonlocal num
         nonlocal sub
-
-        if element.text is not None:
-            num += 1
-            sub = 0
-            return Descriptor(
-                pmid, num, element.text.strip(),
-                (element.get('MajorTopicYN', 'N') == 'Y')
-            )
-        else:
-            logging.warning("empty DescriptorName in %i", pmid)
-            return None
+        num += 1
+        sub = 0
+        return Descriptor(
+            pmid, num, element.text.strip(),
+            (element.get('MajorTopicYN', 'N') == 'Y')
+        )
 
     @dispatch
     def QualifierName(element):
         nonlocal sub
-
-        if element.text is not None:
-            sub += 1
-            return Qualifier(
-                pmid, num, sub, element.text.strip(),
-                (element.get('MajorTopicYN', 'N') == 'Y')
-            )
-        else:
-            logging.warning("empty QualifierName in %i", pmid)
-            return None
+        sub += 1
+        return Qualifier(
+            pmid, num, sub, element.text.strip(),
+            (element.get('MajorTopicYN', 'N') == 'Y')
+        )
 
     @dispatch
     def Author(element):
@@ -170,57 +150,45 @@ def Parse(xml_stream, pubmed=False) -> iter:
 
     @dispatch
     def ELocationID(element):
-        if element.text is not None:
-            ns = element.get('EIdType').strip().lower()
+        ns = element.get('EIdType').strip().lower()
 
-            if ns not in namespaces:
-                namespaces.add(ns)
-                return Identifier(pmid, ns, element.text.strip())
+        if ns not in namespaces:
+            namespaces.add(ns)
+            return Identifier(pmid, ns, element.text.strip())
 
-            return None
-        else:
-            logging.warning("empty ELocationID in %i", pmid)
-            return None
+        return None
 
     @dispatch
     def OtherID(element):
-        if element.text is not None:
-            if element.get('Source', None) == 'NLM':
-                text = element.text.strip()
+        if element.get('Source', None) == 'NLM':
+            text = element.text.strip()
 
-                if text.startswith('PMC'):
-                    if 'pmc' not in namespaces:
-                        namespaces.add('pmc')
-                        return Identifier(pmid, 'pmc', text.split(' ', 1)[0])
+            if text.startswith('PMC'):
+                if 'pmc' not in namespaces:
+                    namespaces.add('pmc')
+                    return Identifier(pmid, 'pmc', text.split(' ', 1)[0])
 
-            return None
-        else:
-            logging.warning("empty OtherID in %i", pmid)
-            return None
+        return None
 
     @dispatch
     def ArticleId(element):
         "This element is only present in the online PubMed XML, not the MEDLINE XML."
-        if element.text is not None:
-            instance = None
-            ns = element.get('IdType').strip().lower()
-            text = element.text.strip()
+        instance = None
+        ns = element.get('IdType').strip().lower()
+        text = element.text.strip()
 
-            if ns in namespaces:
-                if re.match('\d[\d\.]+\/.+', element.text.strip()) and \
-                                'doi' not in namespaces:
-                    namespaces.add('doi')
-                    instance = Identifier(pmid, 'doi', text)
-                else:
-                    logging.warning('duplicate %s identifier "%s"', ns, text)
+        if ns in namespaces:
+            if re.match('\d[\d\.]+\/.+', element.text.strip()) and \
+                            'doi' not in namespaces:
+                namespaces.add('doi')
+                instance = Identifier(pmid, 'doi', text)
             else:
-                namespaces.add(ns)
-                instance = Identifier(pmid, ns, text)
-
-            return instance
+                logging.warning('duplicate %s identifier "%s"', ns, text)
         else:
-            logging.warning("empty ArticleId in %i", pmid)
-            return None
+            namespaces.add(ns)
+            instance = Identifier(pmid, ns, text)
+
+        return instance
 
     @dispatch
     def MedlineCitation(element):
