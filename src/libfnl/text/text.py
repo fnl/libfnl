@@ -275,9 +275,9 @@ class Text:
             offsets = (int(key),)
 
         if len(value) == 3:
-            ns, id, attributes = value[0], value[1], dict(value[2])
+            ns, id_, attributes = value[0], value[1], dict(value[2])
         else:
-            ns, id = value
+            ns, id_ = value
             attributes = None
 
         try:
@@ -285,7 +285,7 @@ class Text:
         except KeyError:
             tags = list()
 
-        tag = (ns, id, offsets)
+        tag = (ns, id_, offsets)
 
         if tag not in tags:
             tags.append(tag)

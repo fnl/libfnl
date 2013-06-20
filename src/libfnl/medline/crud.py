@@ -41,12 +41,14 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
 
             if stream is not None:
                 pmid_buffer = []
+                # noinspection PyTypeChecker
                 for i in Parse(stream, done, pubmed=pubmed):
                     count += 1
                     update(i)
                 pubmed = True
 
         if len(pmid_buffer):
+            # noinspection PyTypeChecker
             for i in Parse(Download(pmid_buffer), done, pubmed=True):
                 count += 1
                 update(i)
@@ -122,6 +124,7 @@ def dump(files:iter, output_dir:str, uniq:bool) -> bool:
         else:
             in_stream = open(f)
 
+        # noinspection PyTypeChecker
         for i in Parse(in_stream, done):
             out_stream[i.__tablename__].write(str(i))
 

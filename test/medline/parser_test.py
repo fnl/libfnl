@@ -55,7 +55,7 @@ class ParserTest(TestCase):
         InitDb(URL('sqlite'), module=dbapi2)
         self.sess = Session()
         count = 0
-        for item in Parse(self.file):
+        for item in Parse(self.file, None):
             count += 1
             self.sess.add(item)
         self.assertEqual(len(ParserTest.ITEMS), count)
@@ -64,9 +64,13 @@ class ParserTest(TestCase):
     def testParseAll(self):
         logging.getLogger().setLevel(logging.ERROR)
         items = ParserTest.ITEMS
-        for i, item in enumerate(Parse(self.file)):
+        for i, item in enumerate(Parse(self.file, None)):
             self.assertEqual(str(items[i]), str(item))
             self.assertEqual(items[i], item)
+
+    def testSkipRecords(self):
+        for i in Parse(self.file, {123}):
+            self.fail(str(i))
 
 if __name__ == '__main__':
     main()
