@@ -17,11 +17,12 @@ from libfnl.medline.parser import Parse
 from libfnl.medline.web import Download
 
 
-def _add(session:Session, files_or_pmids:iter, update):
+def _add(session:Session, files_or_pmids:iter, update, uniq=True):
     pmid_buffer = []
     count = 0
     initial = session.query(Medline).count()
     pubmed = True
+    done = set() if uniq else None
 
     try:
         for arg in files_or_pmids:
@@ -40,13 +41,13 @@ def _add(session:Session, files_or_pmids:iter, update):
 
             if stream is not None:
                 pmid_buffer = []
-                for i in Parse(stream, pubmed=pubmed):
+                for i in Parse(stream, done, pubmed=pubmed):
                     count += 1
                     update(i)
                 pubmed = True
 
         if len(pmid_buffer):
-            for i in Parse(Download(pmid_buffer), pubmed=True):
+            for i in Parse(Download(pmid_buffer), done, pubmed=True):
                 count += 1
                 update(i)
 
@@ -67,9 +68,9 @@ def _add(session:Session, files_or_pmids:iter, update):
         return False
 
 
-def insert(session:Session, files_or_pmids:iter) -> bool:
+def insert(session:Session, files_or_pmids:iter, uniq:bool) -> bool:
     "Insert all records by parsing the *files* or downloading the *PMIDs*."
-    _add(session, files_or_pmids, lambda i: session.add(i))
+    _add(session, files_or_pmids, lambda i: session.add(i), uniq)
 
 
 def update(session:Session, files_or_pmids:iter) -> bool:
@@ -99,7 +100,7 @@ def delete(session:Session, pmids:list([int])) -> bool:
     return True
 
 
-def dump(files:iter, output_dir:str) -> bool:
+def dump(files:iter, output_dir:str, uniq:bool) -> bool:
     "Parse MEDLINE XML files into tabular flat-files for each DB table."
     out_stream = {
         Medline.__tablename__: open(join(output_dir, "records.tab"), "wt"),
@@ -110,6 +111,7 @@ def dump(files:iter, output_dir:str) -> bool:
         Identifier.__tablename__: open(join(output_dir, "identifiers.tab"), "wt"),
     }
     count = 0
+    done = set() if uniq else None
 
     for f in files:
         logging.info('dumping %s', f)
@@ -120,7 +122,7 @@ def dump(files:iter, output_dir:str) -> bool:
         else:
             in_stream = open(f)
 
-        for i in Parse(in_stream):
+        for i in Parse(in_stream, done):
             out_stream[i.__tablename__].write(str(i))
 
             if i.__tablename__ == Medline.__tablename__:

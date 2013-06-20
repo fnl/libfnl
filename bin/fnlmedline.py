@@ -11,15 +11,17 @@ __author__ = 'Florian Leitner'
 __version__ = '1'
 
 
-def Main(command, files_or_pmids, session):
+def Main(command, files_or_pmids, session, uniq=False):
     """
     :param command: one of create/read/update/delete
     :param files_or_pmids: the list of files or PMIDs to process
+    :param session: the DB session
+    :param uniq: flag to skip duplicate records on insert
     """
     from libfnl.medline.crud import insert, select, update, delete
 
-    if command == 'create':
-        return insert(session, files_or_pmids)
+    if command == 'insert':
+        return insert(session, files_or_pmids, uniq)
     elif command == 'read':
         return select(session, [int(i) for i in files_or_pmids])
     elif command == 'update':
@@ -91,6 +93,10 @@ if __name__ == '__main__':
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument('--tiab', action='store_true', help='write only title/abstract')
     parser.add_argument(
+        '--uniq', action='store_true',
+        help='do not insert/dump duplicate records'
+    )
+    parser.add_argument(
         '--output', metavar='DIR', default=os.path.curdir,
         help='dump/write to a specific directory'
     )
@@ -119,14 +125,14 @@ if __name__ == '__main__':
 
     if (args.command == 'dump'):
         from libfnl.medline.crud import dump
-        result = dump(args.files, args.output)
+        result = dump(args.files, args.output, args.uniq)
     else:
         try:
             InitDb(args.url)
         except OperationalError as e:
             parser.error(str(e))
 
-        result = Main(args.command, args.files, Session())
+        result = Main(args.command, args.files, Session(), args.uniq)
 
         if args.command == 'read':
             WriteRecords(result, args.tiab, args.output)

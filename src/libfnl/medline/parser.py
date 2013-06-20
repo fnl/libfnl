@@ -21,21 +21,28 @@ MONTHS_SHORT = (None, 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
 # to translate three-letter month strings to integers
 
-def Parse(xml_stream, pubmed=False) -> iter:
+def Parse(xml_stream, skip:set, pubmed=False) -> iter:
     """
     :param xml_stream: A stream as returned by :func:`.Download` or the XML
         found in the MEDLINE distribution XML files.
+    :param skip: A set of PMIDs that will be skipped, and updated with every
+        new PMID encountered.
     :param pubmed: ``True`` if parsing eUtils PubMed XML, not MEDLINE XML
 
     :return: an iterator over Medline ORM instances
     """
-    pmid = -1
+    pmid = -1 # -1 => outside record; -2 => skipping record; otherwise => parsing
     seq = 0
     num = 0
     sub = 0
     pos = 0
     namespaces = set()
     make = {}
+
+    if not pubmed:
+        check = lambda element: element.tag == 'MedlineCitation'
+    else:
+        check = lambda element: element.tag == 'PubmedArticle'
 
     def dispatch(f):
         "Decorator to populate a dispatcher using the element tag as function name."
@@ -216,18 +223,28 @@ def Parse(xml_stream, pubmed=False) -> iter:
     for _, element in iterparse(xml_stream):
         if element.tag == 'PMID' and pmid == -1:
             pmid = int(element.text)
-            logging.debug("PMID %i", pmid)
-            namespaces = set()
-            seq = 0
-            num = 0
-            sub = 0
-            pos = 0
+            if skip is not None and pmid in skip:
+                logging.info("skipping PMID %i", pmid)
+                pmid = -2
+            else:
+                if skip is not None: skip.add(pmid)
+                logging.debug("parsing PMID %i", pmid)
+                namespaces = set()
+                seq = 0
+                num = 0
+                sub = 0
+                pos = 0
         elif element.tag in make:
-            instance = make[element.tag](element)
+            # pmid == -2 means skip this record
+            if pmid == -2:
+                if check(element):
+                    pmid = -1
+            else:
+                instance = make[element.tag](element)
 
-            if instance is not None:
-                logging.debug("parsed %s", element.tag)
-                yield instance
+                if instance is not None:
+                    logging.debug("parsed %s", element.tag)
+                    yield instance
     # ========================
 
 def ParseDate(date_element):
