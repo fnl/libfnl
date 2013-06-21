@@ -24,23 +24,17 @@ MONTHS_SHORT = (None, 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
 def ArtifactFix(string:str):
     """
     NLM MEDLINE contains encoding artifacts (errors). This function tries to
-    at least partially remedy them.
+    at least partially remedy them (no more errors) - it is impossible to
+    guarantee all errors made by the NLM will have been removed.
 
     MEDLINE contains byte artifacts from a CP1252 (Windows) encoding that have
     been wrongly encoded using UTF-8. To (as much as possible) remedy this
-    mistake, it is necessary detect strings where the Unicode representation
-    contains byte escapes and "re-encode" those UTF-8 characters using CP1252
-    instead.
+    mistake, it is possible detect strings where the Unicode representation
+    contains byte escapes ("\xNN") and re-encode those non-UTF-8 texts using
+    CP1252 instead.
     """
     if '\\x' in repr(string):
-        # Quick and dirty solution:
         string = string.encode('utf-8').decode('cp1252').replace('Â', '')
-        # Full "explanation":
-        # single = [repr(i)[1:-1] for i in string]
-        # for i in range(len(single)):
-        #     if single[i].startswith('\\x'):
-        #         single[i] = string[i].encode('utf-8').decode('cp1252')[1:]
-        # string = ''.join(single)
     return string
 
 
