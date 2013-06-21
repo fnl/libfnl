@@ -22,7 +22,7 @@ class ParserTest(TestCase):
         Section(PMID, 5, 'Methods', 'duplicate methods', 'methods label'),
         Section(PMID, 6, 'Results', 'results text', 'results label'),
         Section(PMID, 7, 'Conclusions', 'conclusions text', 'conclusions label'),
-        Section(PMID, 8, 'Unlabelled', 'unlabelled text'),
+        Section(PMID, 8, 'Unlabelled', 'unlabelled text with encoding–errors'),
         Section(PMID, 9, 'Abstract', 'abstract text', 'abstract label'),
         Section(PMID, 10, 'Abstract', 'default text'),
         Section(PMID, 11, 'Copyright', 'copyright info'),
@@ -55,6 +55,7 @@ class ParserTest(TestCase):
         InitDb(URL('sqlite'), module=dbapi2)
         self.sess = Session()
         count = 0
+        # noinspection PyTypeChecker
         for item in Parse(self.file, None):
             count += 1
             self.sess.add(item)
@@ -64,6 +65,7 @@ class ParserTest(TestCase):
     def testParseAll(self):
         logging.getLogger().setLevel(logging.ERROR)
         items = ParserTest.ITEMS
+        # noinspection PyTypeChecker
         for i, item in enumerate(Parse(self.file, None)):
             self.assertEqual(str(items[i]), str(item))
             self.assertEqual(items[i], item)

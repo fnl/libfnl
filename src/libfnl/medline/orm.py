@@ -30,6 +30,7 @@ STRING = lambda s: None if s is None else repr(s)[1:-1]
 NULL = lambda s: '\\N' if s is None else s
 DATE = lambda s: '\\N' if s is None else s.isoformat()
 
+
 def InitDb(*args, **kwds):
     """
     Create a new DBAPI connection pool.

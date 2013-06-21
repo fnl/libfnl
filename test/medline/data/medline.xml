@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE MedlineCitationSet PUBLIC "-//NLM//DTD Medline Citation, 1st January, 2013//EN"
           "http://www.nlm.nih.gov/databases/dtd/nlmmedlinecitationset_130101.dtd">
-<!-- An XML containing all content maximally possible except for Season in PubDate -->
+<!-- An XML containing all possible elements except for the Season element in PubDate; also covers the frequent encoding artifacts found in MEDLINE -->
 <MedlineCitationSet>
     <MedlineCitation Owner="NLM" Status="MEDLINE" VersionID="versionID" VersionDate="2012/02/01">
         <PMID Version="1">123</PMID>
@@ -55,7 +55,7 @@
                               NlmCategory="RESULTS">results text</AbstractText>
                 <AbstractText Label="conclusions label"
                               NlmCategory="CONCLUSIONS">conclusions text</AbstractText>
-                <AbstractText NlmCategory="UNLABELLED">unlabelled text</AbstractText>
+                <AbstractText NlmCategory="UNLABELLED">unlabelled text with&#xa0;encoding&#x96;errors</AbstractText>
                 <AbstractText Label="abstract label">abstract text</AbstractText>
                 <AbstractText>default text</AbstractText>
                 <CopyrightInformation>copyright info</CopyrightInformation>
