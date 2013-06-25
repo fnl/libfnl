@@ -106,34 +106,39 @@ def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
         logging.info("counting PMID %d", pmid)
         relevant = {} # checked symbols
 
-        for (txt,) in medline.query(Section.content
-        ).filter(Section.pmid == pmid
-        ).filter(Section.name != 'Copyright'
-        ).filter(Section.name != 'Vernacular'
-        ):
-            offsets = set(TokenOffsets(txt))
+        while True:
+            try:
+                for (txt,) in medline.query(Section.content
+                ).filter(Section.pmid == pmid
+                ).filter(Section.name != 'Copyright'
+                ).filter(Section.name != 'Vernacular'
+                ):
+                    offsets = set(TokenOffsets(txt))
 
-            # only attempt prefix matches at offsets
-            for idx in offsets:
-                keys = dwag.prefixes(txt[idx:])
+                    # only attempt prefix matches at offsets
+                    for idx in offsets:
+                        keys = dwag.prefixes(txt[idx:])
 
-                if keys:
-                    sym = keys[-1]
+                        if keys:
+                            sym = keys[-1]
 
-                    # only offset-delimited matches
-                    if idx + len(sym) in offsets:
-                        symbols[sym] += 1
+                            # only offset-delimited matches
+                            if idx + len(sym) in offsets:
+                                symbols[sym] += 1
 
-                        if sym in relevant:
-                            if relevant[sym]:
-                                for id_ in known_ids & sym2_id[sym]:
-                                    references[id_][sym] += 1
-                        else:
-                            relevant[sym] = False
+                                if sym in relevant:
+                                    if relevant[sym]:
+                                        for id_ in known_ids & sym2_id[sym]:
+                                            references[id_][sym] += 1
+                                else:
+                                    relevant[sym] = False
 
-                            for id_ in known_ids & sym2_id[sym]:
-                                references[id_][sym] += 1
-                                relevant[sym] = True
+                                    for id_ in known_ids & sym2_id[sym]:
+                                        references[id_][sym] += 1
+                                        relevant[sym] = True
+                break
+            except DatabaseError:
+                medline = MedlineSession()
 
     for _id, counts in references.items():
         for sym, count in counts.items():
