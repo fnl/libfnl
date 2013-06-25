@@ -434,7 +434,7 @@ def TokenOffsets(string):
     """
     **Yield** the offsets of all Unicode category border in the *string*.
     """
-    if string:
+    if string is not None and len(string) > 0:
         yield 0
         last = category(string[0])
 
