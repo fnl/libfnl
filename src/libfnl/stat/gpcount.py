@@ -5,6 +5,7 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+import logging
 from dawg import DAWG
 from collections import defaultdict
 from libfnl.gnamed.orm import Session as GnamedSession, GeneString, Gene, ProteinString, Gene2PubMed, Protein2PubMed, Protein
@@ -24,17 +25,21 @@ def CountGenes():
     pmid2gid = defaultdict(set)
     gnamed = GnamedSession()
 
+    logging.info("loading gene symbol to id map")
     for sym, gid in gnamed.query(GeneString.value, GeneString.id
     ).filter(GeneString.cat == 'symbol').yield_per(100):
-        sym2gid[sym].append(gid)
+        sym2gid[sym].add(gid)
 
+    logging.info("loading protein symbol to id map")
     for sym, gid in gnamed.query(ProteinString.value, Gene.id
     ).join(Gene.proteins).join(ProteinString).filter(ProteinString.cat == 'symbol').yield_per(100):
-        sym2gid[sym].append(gid)
+        sym2gid[sym].add(gid)
 
+    logging.info("loading gene pmid to gene id map")
     for pmid, gid in gnamed.query(Gene2PubMed.pmid, Gene2PubMed.id).yield_per(100):
         pmid2gid[pmid].add(gid)
 
+    logging.info("loading protein pmid to gene id map")
     for pmid, gid in gnamed.query(Protein2PubMed.pmid, Gene.id
     ).join(Gene.proteins).join(Protein2PubMed).yield_per(100):
         pmid2gid[pmid].add(gid)
@@ -55,17 +60,21 @@ def CountProteins():
     pmid2pid = defaultdict(set)
     gnamed = GnamedSession()
 
+    logging.info("loading protein symbol to id map")
     for sym, pid in gnamed.query(ProteinString.value, ProteinString.id
     ).filter(ProteinString.cat == 'symbol').yield_per(100):
-        sym2pid[sym].append(pid)
+        sym2pid[sym].add(pid)
 
+    logging.info("loading gene symbol to id map")
     for sym, pid in gnamed.query(GeneString.value, Protein.id
     ).join(Protein.genes).join(GeneString).filter(GeneString.cat == 'symbol').yield_per(100):
-        sym2pid[sym].append(pid)
+        sym2pid[sym].add(pid)
 
+    logging.info("loading protein pmid to gene id map")
     for pmid, pid in gnamed.query(Protein2PubMed.pmid, Protein2PubMed.id).yield_per(100):
         pmid2pid[pmid].add(pid)
 
+    logging.info("loading gene pmid to gene id map")
     for pmid, pid in gnamed.query(Gene2PubMed.pmid, Protein.id
     ).join(Protein.genes).join(Gene2PubMed).yield_per(100):
         pmid2pid[pmid].add(pid)
@@ -78,6 +87,7 @@ def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
     if '' in sym2_id:
         del sym2_id['']
 
+    logging.info("initalizing counters")
     symbols = {s: 0 for s in sym2_id.keys()} # global count per symbol
     references = {} # count per id & symbol in the referenced titles
 
@@ -88,13 +98,15 @@ def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
             else:
                 references[id_] = {sym: 0}
 
+    logging.info("initializing DAFSA graph")
     dwag = DAWG(sym2_id.keys())
     medline = MedlineSession()
 
     for pmid, known_ids in pmid2_id.items():
+        logging.info("counting PMID %d", pmid)
         relevant = {} # checked symbols
 
-        for txt in medline.query(Section.content
+        for (txt,) in medline.query(Section.content
         ).filter(Section.pmid == pmid
         ).filter(Section.name != 'Copyright'
         ).filter(Section.name != 'Vernacular'
@@ -103,7 +115,7 @@ def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
 
             # only attempt prefix matches at offsets
             for idx in offsets:
-                keys = dwag.prefixes(txt, idx)
+                keys = dwag.prefixes(txt[idx:])
 
                 if keys:
                     sym = keys[-1]
