@@ -11,6 +11,7 @@ from collections import defaultdict
 from libfnl.gnamed.orm import Session as GnamedSession, GeneString, Gene, ProteinString, Gene2PubMed, Protein2PubMed, Protein
 from libfnl.medline.orm import Session as MedlineSession, Section
 from libfnl.text.strtok import TokenOffsets
+from sqlalchemy.exc import DatabaseError
 
 
 def CountGenes():
@@ -142,4 +143,4 @@ def _count(sym2_id:defaultdict(set), pmid2_id:defaultdict(set)):
 
     for _id, counts in references.items():
         for sym, count in counts.items():
-            print("{}\t{}\t{}\t{}".format(_id, sym, count, symbols[sym]))
+            print("{}\t{}\t{}\t{}".format(_id, repr(sym)[1:-1], count, symbols[sym]))
