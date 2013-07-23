@@ -14,8 +14,6 @@ __version__ = "1.0"
 
 def main(*file_names:tuple([str]), subject_col:int=1, rating_col:int=2, Kappa:FunctionType=Fleiss):
     """
-    :param file_names: File names of subject-vote TSV files; one per rater.
-    :param subject_col: Subject IDs are read from the given column.
     :param rating_col: Ratings (votes) are expected to be in the given column.
     :param Kappa: The :py:module:`libfnl.stat.kappa` function to use.
     """

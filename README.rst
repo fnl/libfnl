@@ -45,26 +45,24 @@ The library provides the following command-line tools:
 Requirements
 ============
 
-External binaries:
+* Python 3.0+ (3.1 or newer recommended)
+* CouchDB 1.0+ (1.0.1 or newer recommended)
+* GENIA Tagger (optional, latest version)
 
-* Python 3.0+ (3.2+ recommended)
-* Postgres 8.3+ (9.0+ recommended)
-* SQLite 3.5+ (3.7+ recommended)
-* GENIA Tagger (optional, version 3.0.1 (2007))
-* Git (optional, to clone the library from GitHub)
+Planned extensions of this library will also require:
 
-Python packages:
-
-* virtualenv (suggested/optional)
-* argparse (pre-Python 3.2)
-* SQL Alchemy 0.8+ (0.8.1 or newer recommended)
-* Psycopg2 2.2+ (2.5 or newer recommended)
-* DAWG (`my <https://github.com/fnl/DAWG>`_ special offset-version of `DAWG <https://github.com/kmike/DAWG>`_)
+* CRFSuite (A CRF tagger in pure C)
+* Cython (C/C++ bindings in Python)
+* Neo4j (A open-source graph database)
+* Postgres (The open-source relational database)
+* psycopg2 (A Python Postgres client)
+* RE2 (Google's DFA-based regular expression library)
+* SVMlib (A Support Vector Machine library)
 
 Installation
 ============
 
-Into a **Python 3** environment::
+Into a **Python 3** virtual environment::
 
     pip install virtualenv # optional; if virtualenv is not yet installed
     git clone git://github.com/fnl/libfnl.git libfnl
