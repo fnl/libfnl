@@ -190,7 +190,7 @@ elif args.command == 'load' and args.repository:
 
     if args.repository in ('entrezpg', 'uniprotpg'):
         repo_parser_module = __import__(
-            'libgnamed.parsers.' + args.repository[:-2], globals(),
+            'libfnl.gnamed.parsers.' + args.repository[:-2], globals(),
             fromlist=['SpeedLoader']
         )
         repo_parser = repo_parser_module.SpeedLoader(
@@ -204,7 +204,7 @@ elif args.command == 'load' and args.repository:
         ))
     else:
         repo_parser_module = __import__(
-            'libgnamed.parsers.' + args.repository, globals(),
+            'libfnl.gnamed.parsers.' + args.repository, globals(),
             fromlist=['Parser']
         )
         repo_parser = repo_parser_module.Parser(*args.files,
