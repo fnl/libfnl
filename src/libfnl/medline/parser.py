@@ -30,7 +30,7 @@ def ArtifactFix(string:str):
     MEDLINE contains byte artifacts from a CP1252 (Windows) encoding that have
     been wrongly encoded using UTF-8. To (as much as possible) remedy this
     mistake, it is possible detect strings where the Unicode representation
-    contains byte escapes ("\xNN") and re-encode those non-UTF-8 texts using
+    contains byte escapes ("\\xNN") and re-encode those non-UTF-8 texts using
     CP1252 instead.
     """
     if '\\x' in repr(string):
