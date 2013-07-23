@@ -150,7 +150,7 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
                 elif child.tag == 'Suffix':
                     suffix = text
                 elif child.tag == 'CollectiveName':
-                    name = text
+                    name = ArtifactFix(text)
                     forename = ''
                     initials= ''
                     suffix = ''
