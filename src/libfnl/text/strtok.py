@@ -11,7 +11,6 @@ from types import FunctionType
 from unicodedata import category
 
 __author__ = "Florian Leitner"
-__version__ = "1.0"
 
 #################
 # CONFIGURATION #

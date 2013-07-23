@@ -6,5 +6,4 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 
-__version__ = "0.1"
 __author__ = "Florian Leitner"
