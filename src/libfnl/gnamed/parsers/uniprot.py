@@ -251,7 +251,7 @@ class Parser(AbstractLoader):
         # UniProt sometimes has species not (yet) in the NCBI Taxonomy;
         # To avoid issues, map these IDs to the "unknown" species ID;
         # However, to do this, all valid species IDs need to be known:
-        self._species_ids = frozenset(self.session.query(Species.id))
+        self._species_ids = frozenset(i[0] for i in self.session.query(Species.id))
 
         return lines
 
