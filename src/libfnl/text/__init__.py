@@ -1,7 +1,8 @@
 """
-.. py:module:: libfnl.nlp.genia
-   :synopsis: NLP modules related to the GENIA project.
+.. py:module:: libfnl.text
+   :synopsis: Modules for working with text.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+

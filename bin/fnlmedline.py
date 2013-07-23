@@ -1,365 +1,141 @@
 #!/usr/bin/env python3
-
-"""Create PubMed/MEDLINE documents with attached abstracts in a Couch DB."""
-from _socket import error
-
+"""maintain a MEDLINE/PubMed repository"""
 import logging
 import os
-import re
 import sys
-from libfnl.couch import COUCHDB_URL, Server
-from libfnl.couch.network import ResourceNotFound
-from libfnl.couch.serializer import Encode
-from libfnl.nlp.medline import Attach, Dump, ABSTRACT_ELEMENTS
 
-__author__ = "Florian Leitner"
-__version__ = "0.1"
+from sqlalchemy.exc import OperationalError
 
-ATTACH = 0
-CREATE = 1
-READ = 2
-UPDATE = 3
-DELETE = 4
-READ_ATT = 5
-READ_RAW = 6
 
-ACTIONS = {
-    ATTACH: 'attach',
-    CREATE: 'creat',
-    READ: 'extract',
-    UPDATE: 'updat',
-    DELETE: 'delet',
-    READ_ATT: 'extract',
-    READ_RAW: 'download',
-}
+__author__ = 'Florian Leitner'
+__version__ = '1'
 
-NULL_VALUE = '\\N'
 
-def main(pmids:list, action:int=CREATE, couchdb_url:str=COUCHDB_URL,
-         database:str='medline', encoding:str='utf-8', extract_fields=None,
-         force:bool=False) -> int:
-    logging.info("%sing %i %s%s in %s/%s", ACTIONS[action], len(pmids),
-                 'PMIDs' if action else 'files',
-                 ' (forced)' if force else '', couchdb_url, database)
-    try:
-        db = Server(couchdb_url)[database]
-    except error:
-        logging.error('cannot connect to %s', couchdb_url)
-        return 1
-
-    done = 0
-
-    if action is READ and extract_fields:
-        # Print the TSV table header as the field names
-        print('PMID\t{}'.format('\t'.join(extract_fields)))
-
-        for idx in range(len(extract_fields)):
-            extract_fields[idx] = [int(f) if f.isnumeric() else f
-                                   for f in extract_fields[idx].split('/')]
-
-    if action == ATTACH:
-        # "attach" (fulltext) files to PubMed records in the DB
-        done = sum(len(i) for i in Attach(pmids, db, encoding, force).values())
-    else:
-        if not pmids and action in (UPDATE, READ, READ_ATT):
-            # command to read/update *all* records: collect the known PMIDs
-            pmids = [id for id in db if len(id) <= 10 and id.isdigit()]
-
-        if action is DELETE:
-            # delete PubMed records from the DB
-            for id in pmids:
-                try:
-                    del db[id]
-                    done += 1
-                except ResourceNotFound:
-                    logging.warn("PMID {} not in DB".format(id))
-                    print(id, file=sys.stderr)
-        elif action is READ:
-            # read PubMed records from the DB (and write to file system)
-            for id in pmids:
-                try:
-                    record = db[id]
-                except ResourceNotFound:
-                    logging.warn("PMID %s not in DB", id)
-                    print(id, file=sys.stderr)
-                else:
-                    if extract_fields:
-                        values = Extract(record, extract_fields)
-                        print('{}'.format('\t'.join(values)))
-                        done += 1
-                    else:
-                        try:
-                            text = record['text']
-                        except KeyError:
-                            logging.warn("PMID %s has no text", id)
-                            print(id, file=sys.stderr)
-                        else:
-                            done += WriteFile('{}.txt'.format(id),
-                                              text, encoding, id)
-        elif action in (READ_ATT, READ_RAW):
-            # read attachment plain-text or raw from the DB
-            # (and write to file system)
-            for id in pmids:
-                try:
-                    rows = list(db.view('attachment/xrefs', key=id))
-                except ResourceNotFound:
-                    logging.error('attachment/xrefs view not installed')
-                    return 1
-
-                if action is READ_ATT:
-                    logging.debug('downloading plain-text for %s', id)
-
-                    for r in rows:
-                        try:
-                            text = db[r.id]['text']
-                        except KeyError:
-                            logging.warn("attachment %s has no text", r.id)
-                            print('{}@{}'.format(id, r.id), file=sys.stderr)
-                        else:
-                            done += WriteFile('{}.{}.txt'.format(id, r.id),
-                                              text, encoding,
-                                              '{}@{}'.format(id, r.id))
-                else:
-                    logging.debug('downloading raw attachments for %s', id)
-
-                    for r in rows:
-                        doc = db[r.id]
-
-                        for fn in doc.attachments:
-                            base, ext = os.path.splitext(fn)
-                            if not ext: ext = '.txt'
-                            done += WriteAttachment(
-                                '{}.{}{}'.format(id, r.id, ext),
-                                db.getAttachment(doc, fn),
-                                '{}@{}'.format(id, r.id)
-                            )
-
-        else:
-            # create/update PubMed records in the DB
-            done, failed_ids = Dump(pmids, db, action is UPDATE, force)
-
-            for id in failed_ids:
-                print(id, file=sys.stderr)
-
-    logging.info("%sed %i %s", ACTIONS[action], done,
-                 'PMIDs' if action else 'files')
-
-    return 0
-
-def Extract(doc, fields):
+def Main(command, files_or_pmids, session, uniq=False):
     """
-    Extract the given *fields* from the *doc* and return these fields'
-    values.
-
-    :param doc: a PubMed/MEDLINE :class:`libfnl.couch.broker.Document` from the
-                DB
-    :param fields: a list of lists with the paths to each field to extract
-    :return: a list of strings; if the value is an integer or float, it is
-             given unquoted; if the field value was not a string, it is
-             JSON-encoded and quoted; otherwise, it is the quoted string value
+    :param command: one of create/read/update/delete
+    :param files_or_pmids: the list of files or PMIDs to process
+    :param session: the DB session
+    :param uniq: flag to skip duplicate records on insert
     """
-    data = [doc.id]
+    from libfnl.medline.crud import insert, select, update, delete
 
-    for f_path in fields:
-        val = doc
+    if command == 'insert':
+        return insert(session, files_or_pmids, uniq)
+    elif command == 'read':
+        return select(session, [int(i) for i in files_or_pmids])
+    elif command == 'update':
+        return update(session, files_or_pmids)
+    elif command == 'delete':
+        return delete(session, [int(i) for i in files_or_pmids])
 
-        for f in f_path:
-            try:
-                val = val[f]
-            except KeyError:
-                logging.warn("PMID %s has no field '%s' in %s",
-                             doc.id, f, f_path)
-                val = None
 
-        if val is None:
-            data.append(NULL_VALUE)
-            continue
+def WriteRecords(query, tiab:bool, output_dir:str):
+    for rec in query:
+        logging.debug("writing%s PMID %i", " TIAB from" if tiab else "", rec.pmid)
+        file = open(os.path.join(output_dir, "{}.txt".format(rec.pmid)), 'wt')
+        WriteSection(file, rec, 'Title')
 
-        if f_path == ['Article', 'Abstract']:
-            val = '\n\n'.join([val[key] for key in ABSTRACT_ELEMENTS
-                               if key in val])
+        if not tiab:
+            WriteSection(file, rec, 'Vernacular')
 
-        if not isinstance(val, str): val = Encode(val)
+            for author in rec.authors:
+                print(author.fullName(), file=file)
 
-        if val.isnumeric():
-            pass # an integer value - nothing to do
-        elif re.match('\d*\.\d+', val, re.A):
-            pass # a float value - nothing to do, either
-        else:
-            # a string value - replace newlines, tabs, quotes
-            val = val.replace('\n', '\\n')
-            val = val.replace('\t', '\\t')
-            val = val.replace('"', '\\"')
-            # surround the string with quotes
-            val = '"{}"'.format(val)
+            print('', file=file)
 
-        data.append(val)
+        for sec in ('Abstract', 'Background', 'Objective', 'Methods', 'Results',
+                    'Conclusions', 'Unlabelled'):
+            WriteSection(file, rec, sec)
 
-    return data
+        if not tiab:
+            WriteSection(file, rec, 'Copyright')
+            for desc in rec.descriptors:
+                print('+' if desc.major else '-', desc.name, file=file)
+                for qual in desc.qualifiers:
+                    print('+' if qual.major else '-', qual.name, file=file)
+                print('', file=file)
+            for ns, i in rec.identifiers.items():
+                print('{}:{}'.format(ns, i.value), file=file)
 
-def WriteFile(name, text, encoding, id):
-    try:
-        file = open(name, mode='w', encoding=encoding)
-        file.write(text)
-        file.close()
-        return 1
-    except IOError:
-        logging.warn('could not write %s', name)
-        print(id, file=sys.stderr)
-        return 0
 
-def WriteAttachment(name, att, id):
-    try:
-        file = open(name, mode='wb')
-
-        if att.data:
-            file.write(att.data)
-        else:
-            for data in att.stream:
-                file.write(data)
-
-        file.close()
-        return 1
-    except IOError:
-        logging.warn('could not write %s', name)
-        print(id, file=sys.stderr)
-        return 0
+def WriteSection(file, rec, sec):
+    if sec in rec.sections:
+        s = rec.sections[sec]
+        if (s.label is not None):
+            print(s.label, file=file)
+        print(s.content, end='\n\n', file=file)
 
 
 if __name__ == '__main__':
-    from optparse import OptionParser
+    from argparse import ArgumentParser
+    from libfnl.medline.orm import InitDb, Session
 
-    usage = "%prog [options] <infile or PMID>..."
-    epilog = "infile format: newline-separated lists of PMIDs; "\
-             "attachments: HTML or text"
+    epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
 
-    parser = OptionParser(
-        usage=usage, version=__version__, description=__doc__,
-        prog=os.path.basename(sys.argv[0]), epilog=epilog
+    parser = ArgumentParser(
+        usage='%(prog)s [options] URL CMD FILE/PMID ...',
+        description=__doc__, epilog=epilog,
+        prog=os.path.basename(sys.argv[0])
     )
 
     parser.set_defaults(loglevel=logging.WARNING)
-    parser.set_defaults(action=CREATE)
 
-    parser.add_option(
-        "-c", "--create", action="store_const", const=CREATE, dest="action",
-        help="only create records if they do not exist already [default]"
+    parser.add_argument(
+        'url', metavar='URL', help='a database URL string'
     )
-    parser.add_option(
-        "-r", "--read", action="store_const", const=READ, dest="action",
-        help="save the abstracts (incl. titles) of existing records to files "\
-             "named <PMID>.txt in the current directory; "\
-             "extracts all records if no PMIDs are given"
+    parser.add_argument(
+        'command', metavar='CMD', help='command: [dump|create|write|update|delete]'
     )
-    parser.add_option(
-        "--read-attachments", action="store_const", const=READ_ATT,
-        dest="action",
-        help="save the attachment texts of existing records to files "\
-             "named <PMID>.<ATT_ID>.txt in the current directory; "\
-             "extracts all attachment texts if no PMIDs are given"
+    parser.add_argument(
+        'files', metavar='FILE/PMID', nargs='+', help='MEDLINE XML files or PMIDs'
     )
-    parser.add_option(
-        "--read-raw-attachments", action="store_const", const=READ_RAW,
-        dest="action",
-        help="save the raw attachment data of existing records to files "\
-             "named <PMID>.<ATT_ID>.<ext> in the current directory; "\
-             "extracts all attachment data if no PMIDs are given"
+    parser.add_argument('--version', action='version', version=__version__)
+    parser.add_argument('--tiab', action='store_true', help='write only title/abstract')
+    parser.add_argument(
+        '--uniq', action='store_true',
+        help='do not insert/dump duplicate records'
     )
-    parser.add_option(
-        "-u", "--update", action="store_const", const=UPDATE, dest="action",
-        help="update records that are likely to have been revised or "\
-             "completed; updates all records if no PMIDs are given; " \
-             "use --force to update all records"
+    parser.add_argument(
+        '--output', metavar='DIR', default=os.path.curdir,
+        help='dump/write to a specific directory'
     )
-    parser.add_option(
-        "-d", "--delete", action="store_const", const=DELETE, dest="action",
-        help="delete records from the database"
+    parser.add_argument(
+        '--error', action='store_const', const=logging.ERROR,
+        dest='loglevel', help='error log level only [warn]'
     )
-    parser.add_option(
-        "-a", "--attach", action="store_const", const=ATTACH, dest="action",
-        help="upload files that are related to MEDLINE records; the files' "\
-             "names (w/o extension) should be the PMIDs to attach to, eg., "\
-             "1234567.html; use --force to replace existing attachments"
+    parser.add_argument(
+        '--info', action='store_const', const=logging.INFO,
+        dest='loglevel', help='info log level [warn]'
     )
-    parser.add_option(
-        "-f", "--force", action="store_true", default=False,
-        help="force writing documents, even if they are stored already"
+    parser.add_argument(
+        '--debug', action='store_const', const=logging.DEBUG,
+        dest='loglevel', help='debug log level [warn]'
     )
-    parser.add_option(
-        "-x", "--extract-fields", action="append",
-        help="one or more fields to extract as TSV (using --read); "\
-             "the field's path should be separated by slashes; to extract "\
-             "the entire abstract as a single field, use Article/Abstract"
-    )
-    parser.add_option(
-        "--encoding", action="store", default="utf-8",
-        help="the encoding of the files to attach or write [%default]"
-    )
-    parser.add_option(
-        "--couchdb-url", default=COUCHDB_URL,
-        help="COUCHDB_URL [%default]"
-    )
-    parser.add_option(
-        "--database", default='medline',
-        help="Couch DB name [%default]"
-    )
-    parser.add_option(
-        "--error", action="store_const", const=logging.ERROR,
-        dest="loglevel", help="error log level only [warn]"
-    )
-    parser.add_option(
-        "--info", action="store_const", const=logging.INFO,
-        dest="loglevel", help="info log level [warn]"
-    )
-    parser.add_option(
-        "--debug", action="store_const", const=logging.DEBUG,
-        dest="loglevel", help="debug log level [warn]"
-    )
-    parser.add_option("--logfile", help="log to file, not STDERR")
+    parser.add_argument('--logfile', metavar='FILE', help='log to file, not STDERR')
 
-    opts, args = parser.parse_args()
-    if len(args) < 1 and opts.action not in (UPDATE, READ):
-        parser.error("no input files or PMIDs")
-
+    args = parser.parse_args()
     logging.basicConfig(
-        filename=opts.logfile, level=opts.loglevel,
-        format="%(asctime)s %(name)s %(levelname)s: %(message)s"
+        filename=args.logfile, level=args.loglevel,
+        format='%(asctime)s %(name)s %(levelname)s: %(message)s'
     )
-    kwds = opts.__dict__
-    del kwds["logfile"]
-    del kwds["loglevel"]
-    pmid_list = []
 
-    if opts.action == ATTACH:
-        for item in args:
-            if not os.path.isfile(item):
-                parser.error('{} not a file'.format(item))
+    if args.command not in ('dump', 'create', 'write', 'update', 'delete'):
+        parser.error('illegal command "{}"'.format(args.command))
 
-            base = os.path.basename(item)
-            pmid, ext = os.path.splitext(base)
-
-            if not pmid.isdigit():
-                parser.error('name {} of {} not a PMID'.format(pmid, item))
-
-        pmid_list = args
+    if (args.command == 'dump'):
+        from libfnl.medline.crud import dump
+        result = dump(args.files, args.output, args.uniq)
     else:
-        for item in args:
-            if os.path.isfile(item):
-                found = len(pmid_list)
+        try:
+            InitDb(args.url)
+        except OperationalError as e:
+            parser.error(str(e))
 
-                try:
-                    with open(item) as file:
-                        pmid_list.extend(pmid.strip() for pmid in file if
-                                      pmid.strip().isdigit())
-                except IOError:
-                    parser.error("could not read {}".format(item))
+        result = Main(args.command, args.files, Session(), args.uniq)
 
-                found = len(pmid_list) - found
-                if not found: parser.error('no PMIDs in {}'.format(item))
-                else: logging.info('read %s PMIDs from %s', found, item)
-            elif item.isdigit():
-                pmid_list.append(item)
-            else:
-                parser.error("{} not a PMID or file".format(item))
+        if args.command == 'read':
+            WriteRecords(result, args.tiab, args.output)
+            result = True
 
-    sys.exit(main(list(frozenset(pmid_list)), **kwds))
+    sys.exit(0 if result else 1)

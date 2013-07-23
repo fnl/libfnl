@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-
-"""Calculate inter-rater agreements from subject-vote TSV's per rater."""
-
+"""calculate inter-rater agreements from per-rater TSV files of subject-votes"""
 import logging
 import os
 import sys
@@ -16,8 +14,6 @@ __version__ = "1.0"
 
 def main(*file_names:tuple([str]), subject_col:int=1, rating_col:int=2, Kappa:FunctionType=Fleiss):
     """
-    :param file_names: File names of subject-vote TSV's; one per rater.
-    :param subject_col: Subjects are read from the given column.
     :param rating_col: Ratings (votes) are expected to be in the given column.
     :param Kappa: The :py:module:`libfnl.stat.kappa` function to use.
     """

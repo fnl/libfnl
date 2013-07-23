@@ -8,12 +8,12 @@ for scheme in INSTALL_SCHEMES.values():
 
 import libfnl
 
-# TODO: MANIFEST.in with the .rst files (README and doc)
+# TODO: MANIFEST.in with the .rst files in doc
 
 setup(
     name='libfnl',
-    version='.'.join(map(str, libfnl.__version__)),
-    description='A toolset for real-world NLP.',
+    version=libfnl.__version__,
+    description='tools for text mining in molecular biology',
     license='GNU AGPL v3',
     author='Florian Leitner',
     author_email='florian.leitner@gmail.com',
@@ -22,10 +22,13 @@ setup(
 #    ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
     packages=[
         'libfnl',
-        'libfnl.couch',
-        'libfnl.nlp',
+        'libfnl.gnamed',
+        'libfnl.gnamed.parsers',
+        'libfnl.medline',
         'libfnl.nlp.genia',
         'libfnl.stat',
+        'libfnl.text',
+        'libfnl.utils',
     ],
     package_dir={
         '': 'src',
@@ -43,5 +46,4 @@ setup(
         'Topic :: Text Processing',
         'Topic :: Text Processing :: Linguistic',
     ],
-    scripts=['bin/fnlmedline.py', 'bin/fnlkappa.py']
 )

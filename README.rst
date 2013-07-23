@@ -1,26 +1,46 @@
-####################################
-libfnl: A toolset for real-world NLP
-####################################
+#############
+``libfnl``\ ™
+#############
 
 Introduction
 ============
 
-**libfnl** is an API for interactively processing natural language (**NLP**) and provides statistical functions and storage mechanisms associated to this task. In addition, it provides a collection of command line scripts to do some of this work in a (UNIX) shell. The library is exclusively designed to work with Python 3000 (3.x). All data storage is managed via CouchDB_, although highly relational data will be stored in Posgres, and Neo4j might be used one day for graph data. External algorithms are provided as wrapped Python classes of C or C++ implementations if available off the Internet, for example the GENIA_ Tagger_. These design choices should ensure a good performance of this library, sufficient for many NLP problems, while maintaining, storing, and sharing data is straight-forward because of CouchDB. For NLP researchers, this library is (1) targeted at BioNLP, and (2) entirely based on offset-based annotations using "plain text" and JSON_ for the annotations, while avoiding XML as much as possible.
+**libfnl** is an API and CLI for mining biological texts by
+providing data management tools to facilitate this task. The library is
+exclusively designed to work with Python 3000 (3.x). It is targeted
+to cooperate with the parallel txtfnnl_ UIMA text mininig library.
 
-.. _CouchDB: http://couch.apache.org
-.. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
+The library contains the following packages:
+
+``libfnl.gnamed``
+    providing management and storage facilities for gene/protein symbols,
+    names, keywords and their references into literature
+``libfnl.medline``
+    providing a management and storage facility for MEDLINE and PubMed records
+``libfnl.nlp``
+    currently, just a Python wrapper for the GENIA_ Tagger_
+``libfnl.stat``
+    currently, only a module to evaluate inter-rate Kappa scores
+``libfnl.text``
+    modules to annotate and tokenize text (strings)
+``libfnl.utils``
+    utilities/tools
+
+The library provides the following command-line tools:
+
+- fnlgnamed_ A CLI to create a gene/protein repository.
+- fnlmedline_ A CLI to manage a local MEDLINE storage.
+- ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
+- ``fnlgpcounter`` A CLI to count gene/protein symbols in MEDLINE.
+
+.. warning:: This API is under development (alpha).
+
 .. _JSON: http://www.json.org
+.. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
-
-.. warning:: This API is currently under heavy development and by no means to be
-    considered stable.
-
-License
-=======
-
-The entire API/code-base is licensed under the `GNU Affero GPL v3`_
-
-.. _GNU Affero GPL v3: http://www.gnu.org/licenses/agpl.html
+.. _txtfnnl: http://github.com/fnl/txtfnnl
+.. _fnlgnamed: http://github.com/fnl/libfnl/wiki/fnlgnamed.py
+.. _fnlmedline: http://github.com/fnl/libfnl/wiki/fnlmedline.py
 
 Requirements
 ============
@@ -42,4 +62,30 @@ Planned extensions of this library will also require:
 Installation
 ============
 
-Has to be done manually, for now...
+Into a **Python 3** virtual environment::
+
+    pip install virtualenv # optional; if virtualenv is not yet installed
+    git clone git://github.com/fnl/libfnl.git libfnl
+    virtualenv libfnl # optional; if using a virtual environment
+    cd libfnl
+    . bin/activate # optional; if using a virual environment
+    pip install argparse # only required for python3 < 3.2
+    pip install sqlalchemy
+    pip install psycopg2
+    # special steps to install DAWG
+    git clone git@github.com:fnl/DAWG.git
+    cd DAWG
+    python setup.py install
+    cd ..
+
+License
+=======
+
+All parts of this library are licensed under the `GNU Affero GPL v3`_
+
+.. _GNU Affero GPL v3: http://www.gnu.org/licenses/agpl.html
+
+Copyright
+=========
+
+© 2006-2013 fnl™. All rights reserved.

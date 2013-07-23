@@ -1,9 +1,7 @@
 """
-.. py:module:: nlp
-   :synopsis: Modules for Natural Language Processing.
+.. py:module:: libfnl.nlp
+   :synopsis: Modules for natural language processing.
 
-.. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
+.. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
-
-Modules for Natural Language Processing.
 """

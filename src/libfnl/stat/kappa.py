@@ -1,7 +1,7 @@
 # coding=utf-8
 """
-.. py:module:: kappa
-   :synopsis: Inter-rater agreement functions.
+.. py:module:: libfnl.stat.kappa
+   :synopsis: Functions to calculate inter-rater agreements.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)

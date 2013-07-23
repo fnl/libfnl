@@ -1,11 +1,9 @@
 """
-.. py:module:: tagger
+.. py:module:: libfnl.nlp.genia.tagger
    :synopsis: A subprocess wrapper for the GENIA Tagger.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
-
-This module works with both Python 3000 and Python 2.4+.
 """
 
 import logging
@@ -14,19 +12,16 @@ import os
 from subprocess import Popen, PIPE
 from threading import Thread
 
-GENIATAGGER_DIR = os.environ.get('GENIATAGGER_DIR', '/opt/genia')
+GENIATAGGER_DIR = os.environ.get('GENIATAGGER_DIR', '/usr/local/share/geniatagger')
 """
 The directory containing the ``geniatagger`` binary and ``morphdic`` directory,
-defaulting to ``/opt/genia``, or as set in the environment.
+defaulting to ``/usr/local/share/geniatagger``, or as set in the environment.
 """
 
-GENIATAGGER = "{}/geniatagger".format(GENIATAGGER_DIR)
+GENIATAGGER = "geniatagger"
 """
-The default path of the ``geniatagger``, created by appending the regular name
-of the binary to the :data:`GENIATAGGER_DIR`.
-
-If the GENIA Tagger is on the ``PATH``, only the name of the binary will do,
-too.
+The default path of the ``geniatagger``. If the GENIA Tagger is on the ``PATH``,
+the name of the binary will do.
 """
 
 class GeniaTagger(object):
