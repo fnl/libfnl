@@ -29,6 +29,7 @@ ACTIONS = {
     READ: 'extract',
     UPDATE: 'updat',
     DELETE: 'delet',
+    READ_ATT: 'extract',
     READ_RAW: 'download',
 }
 
