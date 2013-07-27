@@ -203,6 +203,7 @@ TRANSLATE = {
     'TIGRFAMs': None,
     'TubercuList': None,
     'UCD-2DPAGE': None,
+    'UniCarbKB': None,
     'UniGene': None,
     'UniPathway': None,
     'UCSC': None,
