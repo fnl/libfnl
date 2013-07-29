@@ -10,13 +10,15 @@ stored in the protein strings table using the category (cat) values
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
-from libfnl.gnamed.orm import Species
 import re
 import io
 import logging
 
 from libfnl.gnamed.constants import Namespace, Species as SpeciesIds
 from libfnl.gnamed.loader import ProteinRecord, AbstractLoader, DBRef
+from libfnl.gnamed.orm import Species
+from libfnl.utils.progress_bar import initBarForInfile
+
 from sqlalchemy.schema import Sequence
 
 
@@ -537,6 +539,20 @@ class SpeedLoader(Parser):
         self._connect()
         self._db_key2gid_map = dict()
         self._loadExistingLinks()
+
+        # after the setup, the session object is no longer needed; close it:
+        try:
+            self.session.close()
+        except Exception as e:
+            logging.warning("%s while closing the session", e.__class__.__name__)
+
+            if logging.getLogger().getEffectiveLevel() <= logging.INFO:
+                logging.exception(e)
+            else:
+                logging.fatal(str(e).strip())
+        finally:
+            self.session = None
+
         return lines
 
     def _initBuffers(self):

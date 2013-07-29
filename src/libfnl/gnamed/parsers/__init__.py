@@ -47,9 +47,8 @@ class AbstractParser:
         Manages DB session state/handling and flushes parsed records to the
         DB every `flush` records.
         """
-        self.session = Session(autoflush=False)
-
         for file in self.files:
+            self.session = Session(autoflush=False)
             logging.info('parsing %s (%s)', file, self.encoding)
             stream = open(file, encoding=self.encoding)
             progress_bar = None
@@ -92,7 +91,7 @@ class AbstractParser:
                     else:
                         logging.fatal(str(e).strip())
 
-                    if isinstance(e, Error):
+                    if self.session is not None and isinstance(e, Error):
                         self.session.rollback()
 
                     return
@@ -102,31 +101,32 @@ class AbstractParser:
             if progress_bar is not None:
                 del progress_bar
 
-            try:
-                self.session.commit()
-            except Exception as e:
-                self.session.rollback()
-                logging.warning("%s while committing the parsed data",
-                                e.__class__.__name__)
+            if self.session is not None:
+                try:
+                    self.session.commit()
+                except Exception as e:
+                    self.session.rollback()
+                    logging.warning("%s while committing the parsed data",
+                                    e.__class__.__name__)
 
-                if logging.getLogger().getEffectiveLevel() <= logging.INFO:
-                    logging.exception(e)
+                    if logging.getLogger().getEffectiveLevel() <= logging.INFO:
+                        logging.exception(e)
+                    else:
+                        logging.error(str(e).strip())
                 else:
-                    logging.error(str(e).strip())
-            else:
-                logging.info("parsed %s records from %s", num_records, file)
+                    logging.info("parsed %s records from %s", num_records, file)
 
-        try:
-            self.session.close()
-        except Exception as e:
-            logging.warning("%s while closing the session", e.__class__.__name__)
+                try:
+                    self.session.close()
+                except Exception as e:
+                    logging.warning("%s while closing the session", e.__class__.__name__)
 
-            if logging.getLogger().getEffectiveLevel() <= logging.INFO:
-                logging.exception(e)
-            else:
-                logging.fatal(str(e).strip())
-        finally:
-            self.session = None
+                    if logging.getLogger().getEffectiveLevel() <= logging.INFO:
+                        logging.exception(e)
+                    else:
+                        logging.fatal(str(e).strip())
+                finally:
+                    self.session = None
 
     def _setup(self, stream:io.TextIOWrapper) -> int:
         """
