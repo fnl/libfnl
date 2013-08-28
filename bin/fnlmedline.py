@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""maintain a MEDLINE/PubMed repository"""
+"""Maintain a MEDLINE/PubMed repository:
+
+"parse"   PubMed XML files into raw table files for DB dumping -
+"insert"  PubMed XML files or a list of PMIDs (contacting EUtils) into the DB
+          (but slower than using "parse" and a DB dump) -
+"update"  existing or add new records from PubMed XML files or a list of PMIDs (slow!) -
+"write"   DB records to a directory starting from a given list of PMIDs -
+"delete"  records from the DB for a given list of PMIDs"""
 import logging
 import os
 import sys
@@ -22,7 +29,7 @@ def Main(command, files_or_pmids, session, uniq=False):
 
     if command == 'insert':
         return insert(session, files_or_pmids, uniq)
-    elif command == 'read':
+    elif command == 'write':
         return select(session, [int(i) for i in files_or_pmids])
     elif command == 'update':
         return update(session, files_or_pmids)
@@ -60,11 +67,11 @@ def WriteRecords(query, tiab:bool, output_dir:str):
 
 
 def WriteSection(file, rec, sec):
-    if sec in rec.sections:
-        s = rec.sections[sec]
-        if (s.label is not None):
-            print(s.label, file=file)
-        print(s.content, end='\n\n', file=file)
+    for s in rec.sections:
+        if s.name == sec:
+            if (s.label is not None):
+                print(s.label, file=file)
+            print(s.content, end='\n\n', file=file)
 
 
 if __name__ == '__main__':
@@ -85,7 +92,7 @@ if __name__ == '__main__':
         'url', metavar='URL', help='a database URL string'
     )
     parser.add_argument(
-        'command', metavar='CMD', help='command: [dump|create|write|update|delete]'
+        'command', metavar='CMD', help='command: [parse|insert|write|update|delete]'
     )
     parser.add_argument(
         'files', metavar='FILE/PMID', nargs='+', help='MEDLINE XML files or PMIDs'
@@ -95,6 +102,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--uniq', action='store_true',
         help='do not insert/dump duplicate records'
+    )
+    parser.add_argument(
+        '--pmid-lists', action='store_true',
+        help='assume input files are lists of PMIDs, not XML files'
     )
     parser.add_argument(
         '--output', metavar='DIR', default=os.path.curdir,
@@ -120,10 +131,13 @@ if __name__ == '__main__':
         format='%(asctime)s %(name)s %(levelname)s: %(message)s'
     )
 
-    if args.command not in ('dump', 'create', 'write', 'update', 'delete'):
+    if args.command not in ('parse', 'write', 'insert', 'update', 'delete'):
         parser.error('illegal command "{}"'.format(args.command))
 
-    if (args.command == 'dump'):
+    if args.pmid_lists:
+        args.files = [int(line) for f in args.files for line in open(f)]
+
+    if (args.command == 'parse'):
         from libfnl.medline.crud import dump
         result = dump(args.files, args.output, args.uniq)
     else:
@@ -134,7 +148,7 @@ if __name__ == '__main__':
 
         result = Main(args.command, args.files, Session(), args.uniq)
 
-        if args.command == 'read':
+        if args.command == 'write':
             WriteRecords(result, args.tiab, args.output)
             result = True
 
