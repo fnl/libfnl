@@ -75,23 +75,24 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
 
     @dispatch
     def ArticleTitle(element):
-        nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Title', ArtifactFix(element.text.strip()))
+        if element.text is not None:
+            nonlocal seq
+            seq += 1
+            return Section(pmid, seq, 'Title', ArtifactFix(element.text.strip()))
 
     @dispatch
     def VernacularTitle(element):
-        nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Vernacular', ArtifactFix(element.text.strip()))
+        if element.text is not None:
+            nonlocal seq
+            seq += 1
+            return Section(pmid, seq, 'Vernacular', ArtifactFix(element.text.strip()))
 
     @dispatch
     def AbstractText(element):
-        nonlocal seq
-
         # infrequently, there are non-content AbstractText elements
         # in MEDLINE/PubMed ("<AbstractText/>"), so:
         if element.text is not None:
+            nonlocal seq
             text = element.text.strip()
             # and even less frequently, they might only contain whitespaces, so:
             if text:
@@ -106,29 +107,32 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
 
     @dispatch
     def CopyrightInformation(element):
-        nonlocal seq
-        seq += 1
-        return Section(pmid, seq, 'Copyright', element.text.strip())
+        if element.text is not None:
+            nonlocal seq
+            seq += 1
+            return Section(pmid, seq, 'Copyright', element.text.strip())
 
     @dispatch
     def DescriptorName(element):
-        nonlocal num
-        nonlocal sub
-        num += 1
-        sub = 0
-        return Descriptor(
-            pmid, num, element.text.strip(),
-            (element.get('MajorTopicYN', 'N') == 'Y')
-        )
+        if element.text is not None:
+            nonlocal num
+            nonlocal sub
+            num += 1
+            sub = 0
+            return Descriptor(
+                pmid, num, element.text.strip(),
+                (element.get('MajorTopicYN', 'N') == 'Y')
+            )
 
     @dispatch
     def QualifierName(element):
-        nonlocal sub
-        sub += 1
-        return Qualifier(
-            pmid, num, sub, element.text.strip(),
-            (element.get('MajorTopicYN', 'N') == 'Y')
-        )
+        if element.text is not None:
+            nonlocal sub
+            sub += 1
+            return Qualifier(
+                pmid, num, sub, element.text.strip(),
+                (element.get('MajorTopicYN', 'N') == 'Y')
+            )
 
     @dispatch
     def Author(element):
