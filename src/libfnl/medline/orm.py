@@ -577,8 +577,7 @@ class Medline(_Base):
     Relations:
 
         sections
-            a :class:`dict` of the record's text sections using the
-            :attr:`Section.name` as dictionary keys
+            a :class:`list` of the record's text sections
         authors
             a :class:`list` of the record's author names
         identifiers
