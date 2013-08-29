@@ -34,7 +34,11 @@ def ArtifactFix(string:str):
     CP1252 instead.
     """
     if '\\x' in repr(string):
-        string = string.encode('utf-8').decode('cp1252').replace('Â', '')
+        try:
+            string = string.encode('utf-8').decode('cp1252').replace('Â', '')
+        except UnicodeDecodeError:
+            # potentially OK (e.g., a NBS [0xa0] character); let it pass
+            pass
     return string
 
 
@@ -211,7 +215,7 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
                 namespaces.add('doi')
                 instance = Identifier(pmid, 'doi', text)
             else:
-                logging.warning('duplicate %s identifier "%s"', ns, text)
+                logging.info('skipping duplicate %s identifier "%s"', ns, text)
         else:
             namespaces.add(ns)
             instance = Identifier(pmid, ns, text)
