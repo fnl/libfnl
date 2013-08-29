@@ -45,10 +45,7 @@ def WriteTabular(query, output_file:str):
     def prune(strings):
         return ' '.join(s.replace('\n', ' ').replace('\t', ' ') for s in strings)
 
-    if output_file == '.':
-        output_file = None
-
-    file = open(output_dir, 'wt') if output_dir != '.' else sys.stdout
+    file = open(output_file, 'wt') if output_file != '.' else sys.stdout
 
     try:
         for rec in query:
@@ -58,7 +55,7 @@ def WriteTabular(query, output_file:str):
             )])
             print(rec.pmid, title, abstract, sep='\t', file=file)
     finally:
-        if output_file:
+        if output_file != '.':
             file.close()
 
 
@@ -187,7 +184,10 @@ if __name__ == '__main__':
         result = Main(args.command, args.files, Session(), args.uniq)
 
         if args.command == 'write':
-            WriteRecords(result, args.format, args.output)
+            if args.format == 'tab':
+                WriteTabular(result, args.output)
+            else:
+                WriteRecords(result, args.format, args.output)
             result = True
 
     sys.exit(0 if result else 1)
