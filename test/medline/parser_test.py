@@ -1,4 +1,5 @@
 from sqlite3 import dbapi2
+from os.path import dirname
 from unittest import main, TestCase
 from sqlalchemy.engine.url import URL
 
@@ -10,7 +11,7 @@ __author__ = 'Florian Leitner'
 
 
 class ParserTest(TestCase):
-    MEDLINE_STRUCTURE_FILE = 'data/medline.xml'
+    MEDLINE_STRUCTURE_FILE = dirname(__file__) + '/data/medline.xml'
     PMID = 123
     ITEMS = [
         Section(PMID, 1, 'Title', '[a translated title].'),
@@ -29,6 +30,10 @@ class ParserTest(TestCase):
         Author(PMID, 1, 'Author', forename='First'),
         Author(PMID, 2, 'Middle', suffix='Suf'),
         Author(PMID, 3, 'Author', forename='P Last', initials='PL'),
+        Database(PMID, 'db1', 'acc1'),
+        Database(PMID, 'db1', 'acc2'),
+        Database(PMID, 'db1', 'acc3'),
+        Database(PMID, 'db2', 'acc'),
         Section(PMID, 12, 'Vernacular', 'non-english article title'),
         Descriptor(PMID, 1, 'minor geographic descriptor'),
         Qualifier(PMID, 1, 1, 'minor qualifier'),

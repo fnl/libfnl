@@ -65,6 +65,7 @@
                 <Author ValidYN="Y">
                     <LastName>Author</LastName>
                     <ForeName>First</ForeName>
+                    <Affiliation>affiliation</Affiliation>
                 </Author>
                 <Author ValidYN="Y">
                     <LastName>Middle</LastName>
@@ -74,6 +75,7 @@
                     <LastName>Author</LastName>
                     <ForeName>P Last</ForeName>
                     <Initials>PL</Initials>
+                    <Affiliation>affiliation</Affiliation>
                 </Author>
             </AuthorList>
             <Language>ger</Language>
@@ -84,15 +86,24 @@
                     <DataBankName>db1</DataBankName>
                     <AccessionNumberList>
                         <AccessionNumber>acc1</AccessionNumber>
+                        <AccessionNumber/>
                         <AccessionNumber>acc2</AccessionNumber>
+                        <AccessionNumber>acc3</AccessionNumber>
                     </AccessionNumberList>
                 </DataBank>
+                <DataBank/>
                 <DataBank>
                     <DataBankName>db2</DataBankName>
                     <AccessionNumberList>
-                        <AccessionNumber>acc1</AccessionNumber>
-                        <AccessionNumber>acc2</AccessionNumber>
+                        <AccessionNumber>acc</AccessionNumber>
+                        <AccessionNumber>acc</AccessionNumber>
                     </AccessionNumberList>
+                </DataBank>
+                <DataBank>
+                  <DataBankName/>
+                  <AccessionNumberList>
+                    <AccessionNumber>junk</AccessionNumber>
+                  </AccessionNumberList>
                 </DataBank>
             </DataBankList>
             <GrantList CompleteYN="N">

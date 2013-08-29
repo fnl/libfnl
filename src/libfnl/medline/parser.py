@@ -7,12 +7,13 @@
 """
 
 import logging
+import types
 from xml.etree.ElementTree import iterparse
 from datetime import date
 
 import re
 from libfnl.medline.orm import \
-    Identifier, Author as Author_, Qualifier, Descriptor, Section, Medline
+    Database, Identifier, Author as Author_, Qualifier, Descriptor, Section, Medline
 
 
 __ALL__ = ['Parse']
@@ -164,6 +165,8 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
                     suffix = ''
                 elif child.tag == 'Identifier':
                     pass
+                elif child.tag == 'Affiliation':
+                    pass
                 else:
                     logging.warning('unknown Author element %s "%s" in %i', child.tag, text, pmid)
             else:
@@ -244,6 +247,18 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
 
         return Medline(p, status, journal, **dates)
 
+    @dispatch
+    def DataBank(element):
+        nonlocal pmid
+        name = element.find('DataBankName')
+        if name is not None and name.text:
+            done = set()
+            for acc in element.find('AccessionNumberList').getchildren():
+                if acc.text and acc.text not in done:
+                    done.add(acc.text)
+                    yield Database(pmid, name.text, acc.text)
+
+
     # === MAIN PARSER LOOP ===
     for _, element in iterparse(xml_stream):
         if element.tag == 'PMID' and pmid == -1:
@@ -269,7 +284,12 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
 
                 if instance is not None:
                     logging.debug("parsed %s", element.tag)
-                    yield instance
+
+                    if type(instance) is types.GeneratorType:
+                        for i in instance:
+                            yield i
+                    else:
+                        yield instance
     # ========================
 
 def ParseDate(date_element):

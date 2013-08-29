@@ -20,7 +20,10 @@ from sqlalchemy.schema import \
 from sqlalchemy.types import \
     Boolean, BigInteger, Date, SmallInteger, Unicode, UnicodeText
 
-__ALL__ = ['InitDb', 'Session', 'Identifier', 'Author', 'Qualifier', 'Descriptor', 'Medline']
+__ALL__ = [
+    'InitDb', 'Session',
+    'Identifier', 'Author', 'Qualifier', 'Descriptor', 'Database', 'Medline'
+]
 
 _Base = declarative_base()
 _db = None
@@ -164,8 +167,6 @@ class Identifier(_Base, SelectMixin):
             the actual ID string
 
     Primary Key: ``(pmid, namespace)``
-
-    Parent: :class:`Medline`
     """
 
     __tablename__ = 'identifiers'
@@ -286,8 +287,6 @@ class Author(_Base, SelectMixin):
     * empty string if explicitly non-existant, NULL if unknown
 
     Primary Key: ``(pmid, pos)``
-
-    Parent: :class:`Medline`
     """
 
     __tablename__ = 'authors'
@@ -374,8 +373,6 @@ class Qualifier(_Base, SelectMixin):
             ``True`` if major, ``False`` if minor
 
     Primary Key: ``(pmid, num, sub)``
-
-    Parent: :class:`Descriptor`
     """
 
     __tablename__ = 'qualifiers'
@@ -444,8 +441,6 @@ class Descriptor(_Base, SelectMixin):
             a :class:`list` of the descriptor's qualifiers
 
     Primary Key: ``(pmid, num)``
-
-    Parent: :class:`Medline`
     """
 
     __tablename__ = 'descriptors'
@@ -488,6 +483,51 @@ class Descriptor(_Base, SelectMixin):
                self.major == other.major
 
 
+class Database(_Base, SelectMixin):
+    """
+    References to external databases curated my the NLM.
+
+    Attributes:
+
+        pmid
+            the record's identifier (PubMed ID)
+        name
+            the referenced database' name
+        accession
+            the referenced record's identifier
+
+    Primary Key: ``(pmid, name, accession)``
+    """
+
+    __tablename__ = 'databases'
+
+    pmid = Column(BigInteger, ForeignKey('records', ondelete="CASCADE"), primary_key=True)
+    name = Column(Unicode(length=256), primary_key=True)
+    accession = Column(Unicode(length=256), primary_key=True)
+
+    def __init__(self, pmid:int, name:str, accession:str):
+        assert pmid > 0
+        assert name
+        assert accession, repr(accession)
+        self.pmid = pmid
+        self.name = name
+        self.accession = accession
+
+    def __str__(self):
+        return '{}\t{}\t{}\n'.format(
+            NULL(self.pmid), NULL(STRING(self.name)), NULL(STRING(self.accession))
+        )
+
+    def __repr__(self):
+        return "Database<{}:{}:{}>".format(self.pmid, self.name, self.accession)
+
+    def __eq__(self, other):
+        return isinstance(other, Database) and \
+               self.pmid == other.pmid and \
+               self.name == other.name and \
+               self.accession == other.accession
+
+
 class Section(_Base, SelectMixin):
     """
     The text sections of the records.
@@ -506,8 +546,6 @@ class Section(_Base, SelectMixin):
             the text content of this section
 
     Primary Key: ``(pmid, num)``
-
-    Parent: :class:`Medline`
     """
 
     SECTIONS = frozenset({'Title', 'Abstract', 'Vernacular', 'Copyright',
@@ -587,6 +625,8 @@ class Medline(_Base):
             a :class:`list` of the record's MeSH descriptors
         qualifiers
             a :class:`list` of the record's MeSH qualifiers
+        xrefs
+            a :class:`list` of the record's external DB references
 
     Primary Key: ``pmid``
     """
@@ -618,6 +658,7 @@ class Medline(_Base):
         order_by=Descriptor.__table__.c.num
     )
     qualifiers = relation(Qualifier, backref='medline')
+    xrefs = relation(Database, backref='medline')
 
     pmid = Column(BigInteger, CheckConstraint('pmid > 0'),
                   primary_key=True, autoincrement=False)
