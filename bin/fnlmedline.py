@@ -41,52 +41,61 @@ def Main(command, files_or_pmids, session, uniq=False):
         return delete(session, [int(i) for i in files_or_pmids])
 
 
-def WriteRecords(query, format:str, output_dir:str):
-    if format == 'tab':
-        file = open(output_dir, 'wt') if output_dir != '.' else sys.stdout
+def WriteTabular(query, output_file:str):
+    def prune(strings):
+        return ' '.join(s.replace('\n', ' ').replace('\t', ' ') for s in strings)
 
+    if output_file == '.':
+        output_file = None
+
+    file = open(output_dir, 'wt') if output_dir != '.' else sys.stdout
+
+    try:
+        for rec in query:
+            title = prune(s.content for s in rec.sections if s.name == 'Title')
+            abstract = prune([s.content for s in rec.sections if s.name not in (
+                'Title', 'Vernacular', 'Copyright'
+            )])
+            print(rec.pmid, title, abstract, sep='\t', file=file)
+    finally:
+        if output_file:
+            file.close()
+
+
+def WriteRecords(query, format:str, output_dir:str):
     for rec in query:
         logging.debug("writing PMID %i as %s", rec.pmid, format)
-
-        if format == 'tab':
-            title = ' '.join(
-                [s.content for s in rec.sections if s.name == 'Title']
-            ).replace('\n', ' ').replace('\t', ' ')
-            abstract = ' '.join([s.content for s in rec.sections if s.name not in (
-                'Title', 'Vernacular', 'Copyright'
-            )]).replace('\n', ' ').replace('\t', ' ')
-            print(rec.pmid, title, abstract, sep='\t', file=file)
-            continue
-
         file = open(os.path.join(output_dir, "{}.txt".format(rec.pmid)), 'wt')
-        WriteSection(file, rec, 'Title')
 
-        if format == 'full':
-            WriteSection(file, rec, 'Vernacular')
+        try:
+            WriteSection(file, rec, 'Title')
 
-            for author in rec.authors:
-                print(author.fullName(), file=file)
+            if format == 'full':
+                WriteSection(file, rec, 'Vernacular')
 
-            print('', file=file)
+                for author in rec.authors:
+                    print(author.fullName(), file=file)
 
-        for sec in ('Abstract', 'Background', 'Objective', 'Methods', 'Results',
-                    'Conclusions', 'Unlabelled'):
-            WriteSection(file, rec, sec)
-
-        if format == 'full':
-            WriteSection(file, rec, 'Copyright')
-            for desc in rec.descriptors:
-                print('+' if desc.major else '-', desc.name, file=file)
-                for qual in desc.qualifiers:
-                    print('+' if qual.major else '-', qual.name, file=file)
                 print('', file=file)
-            for ns, i in rec.identifiers.items():
-                print('{}:{}'.format(ns, i.value), file=file)
 
-        file.close()
+            for sec in ('Abstract', 'Background', 'Objective', 'Methods', 'Results',
+                        'Conclusions', 'Unlabelled'):
+                WriteSection(file, rec, sec)
 
-    if format == 'tab' and output_dir != '.':
-        file.close()
+            if format == 'full':
+                WriteSection(file, rec, 'Copyright')
+                for desc in rec.descriptors:
+                    print('+' if desc.major else '-', desc.name, file=file)
+                    for qual in desc.qualifiers:
+                        print('+' if qual.major else '-', qual.name, file=file)
+                    print('', file=file)
+                for xref in rec.xrefs:
+                    print('> {}:{}'.format(xref.name, xref.accession), file=file)
+                for ns, i in rec.identifiers.items():
+                    print('{}:{}'.format(ns, i.value), file=file)
+        finally:
+            file.close()
+
 
 
 def WriteSection(file, rec, sec):
@@ -125,8 +134,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--format', choices=['full', 'tiab', 'tab'], default='full',
         help='full: [default] write all content to one file per PMID; ' +
-        'tiab: write only TIAB to files; tab: only write PMID-TI-AB to one single TSV list/file'
-        'tab: only write PMID-TI-AB to one single .tsv list/file'
+        'tiab: write only title and abstract to files; ' +
+        'tab: only write per line PMID-title-abstract to a single .tsv list/file'
     )
     parser.add_argument(
         '--uniq', action='store_true',
