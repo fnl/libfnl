@@ -56,8 +56,9 @@ Requirements
 ============
 
 * Python 3.0+ (3.1 or newer recommended)
-* Postgres 8.4+ (9.0 or newer recommended)
+* Postgres 8.4+ (9.2 or newer recommended)
 * psycopg2 (A Python Postgres DB client)
+* SQLAlchemy 0.8+ (A Python ORM)
 
 Optional tools:
 
