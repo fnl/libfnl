@@ -6,13 +6,11 @@ from distutils.command.install import INSTALL_SCHEMES
 for scheme in INSTALL_SCHEMES.values():
     scheme['data'] = scheme['purelib']
 
-import libfnl
-
 # TODO: MANIFEST.in with the .rst files in doc
 
 setup(
     name='libfnl',
-    version=libfnl.__version__,
+    version='1',
     description='tools for text mining in molecular biology',
     license='GNU AGPL v3',
     author='Florian Leitner',
