@@ -12,7 +12,7 @@ from os.path import join
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from libfnl.medline.orm import Medline, Section, Descriptor, Qualifier, Author, Identifier
+from libfnl.medline.orm import Medline, Section, Descriptor, Qualifier, Author, Identifier, Database
 from libfnl.medline.parser import Parse
 from libfnl.medline.web import Download
 
@@ -111,6 +111,7 @@ def dump(files:iter, output_dir:str, uniq:bool) -> bool:
         Qualifier.__tablename__: open(join(output_dir, "qualifiers.tab"), "wt"),
         Author.__tablename__: open(join(output_dir, "authors.tab"), "wt"),
         Identifier.__tablename__: open(join(output_dir, "identifiers.tab"), "wt"),
+        Database.__tablename__: open(join(output_dir, "databases.tab"), "wt"),
     }
     count = 0
     done = set() if uniq else None
