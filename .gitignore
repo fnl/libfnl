@@ -10,3 +10,4 @@
 /man
 /src/libfnl.egg-info
 *__pycache__
+*.pyc
