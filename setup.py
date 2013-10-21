@@ -33,6 +33,7 @@ setup(
     package_dir={
         '': 'src',
     },
+    scripts=['bin/fnlcorpus.py', 'bin/fnlgnamed.py', 'bin/fnlgpcounter.py', 'bin/fnlkappa.py', 'bin/fnlmedline.py'],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Environment :: Console',
