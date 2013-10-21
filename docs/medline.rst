@@ -86,7 +86,7 @@ Install all dependencies/requirements::
 
 Create the database::
 
-    dbcreate medline # for example, to create a Postgres DB
+    createdb medline # for example, to create a Postgres DB
 
 Usage
 =====
@@ -103,8 +103,8 @@ SQLite
 
 The tool has five **COMMAND** options:
 
-``create``
-    insert records in the DB by parsing MEDLINE XML files or
+``insert``
+    create records in the DB by parsing MEDLINE XML files or
     by downloading PubMed XML from NCBI eUtils for a list of PMIDs
 ``write``
     write records as plaintext files to a directory, each file named as
@@ -117,7 +117,7 @@ The tool has five **COMMAND** options:
     not, use ``update`` (N.B. that ``update`` is slower).
 ``delete``
     delete records from the DB for a list of PMIDs
-``dump``
+``parse``
     does not interact with the DB, but rather creates ".tab" files for each
     table that later can be used to load a database, particularly useful when
     bootstrapping a large collection
@@ -153,16 +153,21 @@ Loading the MEDLINE baseline
 
 Please be aware that the MEDLINE baseline **is not unique**, meaning that it
 contains a few records multiple times. For example, in the 2013 baseline,
-records with PMID 20029614 are present a staggering ten times in the baseline,
-each version at a different stage of revision. Because it is the first entry
-(in the order they appear in the baseline files) that seems to be the relevant
-record (because it has the correct dates), it is possible to filter these
-dupes while doing a ``dump`` or ``insert`` by using the ``--uniq`` option.
+records with PMID 20029614 are present ten times in the baseline, each version
+at a different stage of revision. Because it is the first entry (in the order
+they appear in the baseline files) seems to be the relevant record (because it
+has the correct dates), it is possible to filter these dupes while doing a
+``parse`` or ``insert`` by using the ``--uniq`` option.
 
 Another way would be to load MEDLINE using ``update``, but you might not
-live long enough to see the loaded database... Last, you could ``dump`` all of
+live long enough to see the loaded database... Last, you could ``parse`` all of
 the MEDLINE baseline and then remove the duplicate records on your own::
 
-    fnlmedline.py dummy-url dump baseline/medline*.xml.gz
+    fnlmedline.py unused parse baseline/medline*.xml.gz
     cut -f1 records.tab | sort | uniq -cd
 
+Finally, to quickly load dumped files into a PostgreSQL DB on the same machine::
+
+    for table in records descriptors qualifiers authors sections databases identifiers;
+      do psql medline -c "COPY $table FROM '`pwd`/${table}.tab';";
+    done
