@@ -11,11 +11,16 @@ for scheme in INSTALL_SCHEMES.values():
 setup(
     name='libfnl',
     version='1',
-    description='tools for text mining in molecular biology',
     license='GNU AGPL v3',
     author='Florian Leitner',
     author_email='florian.leitner@gmail.com',
     url='https://github.com/fnl/libfnl',
+    description='tools for text mining in molecular biology',
+    long_description=open('README.rst').read(),
+    install_requires=[
+        'sqlalchemy >= 0.8',
+        'psycopg2 >= 2.4',
+    ],
 #    cmdclass = {'build_ext': build_ext},
 #    ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
     packages=[
