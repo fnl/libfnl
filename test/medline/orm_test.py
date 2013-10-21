@@ -156,7 +156,7 @@ class MedlineTest(TestCase):
     def testToString(self):
         d = date.today()
         r = Medline(1, 'MEDLINE', 'journal\\.', d)
-        line = "1\tMEDLINE\tjournal\\\\.\t{}\t\\N\t\\N\t{}\n".format(d.isoformat(), d.isoformat())
+        line = "1\tMEDLINE\tjournal\\.\t{}\t\\N\t\\N\t{}\n".format(d.isoformat(), d.isoformat())
         self.assertEqual(line, str(r))
 
     def testToRepr(self):
@@ -182,6 +182,9 @@ class MedlineTest(TestCase):
             ],
             Identifier.__tablename__: [
                 dict(pmid=1, namespace='ns', value='id')
+            ],
+            Database.__tablename__: [
+		dict(pmid=1, name='name', accession='accession')
             ],
         }
         Medline.insert(data)
@@ -334,8 +337,8 @@ class SectionTest(TestCase):
         self.assertRaises(IntegrityError, self.sess.commit)
 
     def testToString(self):
-        self.assertEqual('1\t1\tTitle\tlabel\tco\\n\\tent\\\\\n',
-                         str(Section(1, 1, 'Title', "co\n\tent\\", 'label')))
+        self.assertEqual('1\t1\tTitle\tlabel\t"co\\n\\tent"\\\n',
+                         str(Section(1, 1, 'Title', "\"co\n\tent\"\\", 'label')))
 
     def testToRepr(self):
         self.assertEqual('Section<1:1>',
@@ -740,14 +743,14 @@ class IdentifierTest(TestCase):
         m.namespace = ''
         self.assertRaises(IntegrityError, self.sess.commit)
 
-    def testRequireValue(self):
+    def testRequireAccession(self):
         self.assertRaises(AssertionError, Identifier, 1, 'ns', None)
         m = Identifier(1, 'ns', 'id')
         self.sess.add(m)
         m.value = None
         self.assertRaises(IntegrityError, self.sess.commit)
 
-    def testRequireNonEmptyValue(self):
+    def testRequireNonEmptyAccession(self):
         self.assertRaises(AssertionError, Identifier, 1, 'ns', '')
         m = Identifier(1, 'ns', 'id')
         self.sess.add(m)
@@ -802,6 +805,69 @@ class IdentifierTest(TestCase):
         self.assertDictEqual({'id1': 1, 'id2': 2},
                              Identifier.mapDois2Pmids(['id1', 'id2', 'id3']))
         self.assertDictEqual({}, Identifier.mapDois2Pmids(['id3', 'id4']))
+
+class DatabaseTest(TestCase):
+    def setUp(self):
+        InitDb(URI, module=dbapi2)
+        self.sess = Session()
+        self.M = Medline(1, 'MEDLINE', 'Journal', date.today())
+        self.sess.add(self.M)
+
+    def testCreate(self):
+        i = Database(1, 'name', 'accession')
+        self.sess.add(i)
+        self.sess.commit()
+        self.assertEqual(i, self.sess.query(Database).first())
+
+    def testEquals(self):
+        self.assertEqual(Database(1, 'name', 'accession'),
+                         Database(1, 'name', 'accession'))
+
+    def testRequireName(self):
+        self.assertRaises(AssertionError, Database, 1, None, 'accession')
+        m = Database(1, 'name', 'accession')
+        self.sess.add(m)
+        m.name = None
+        self.assertRaises(IntegrityError, self.sess.commit)
+
+    def testRequireNonEmptyName(self):
+        self.assertRaises(AssertionError, Database, 1, '', 'accession')
+        db = Database(1, 'name', 'accession')
+        self.sess.add(db)
+        db.name = ''
+        self.assertRaises(IntegrityError, self.sess.commit)
+
+    def testRequireAccession(self):
+        self.assertRaises(AssertionError, Database, 1, 'name', None)
+        m = Database(1, 'name', 'accession')
+        self.sess.add(m)
+        m.accession = None
+        self.assertRaises(IntegrityError, self.sess.commit)
+
+    def testRequireNonEmptyAccession(self):
+        self.assertRaises(AssertionError, Database, 1, 'name', '')
+        m = Database(1, 'name', 'accession')
+        self.sess.add(m)
+        m.accession = ''
+        self.assertRaises(IntegrityError, self.sess.commit)
+
+    def testToString(self):
+        self.assertEqual('1\tname\taccession\n', str(Database(1, 'name', 'accession')))
+
+    def testToRepr(self):
+        self.assertEqual('Database<1:name:accession>', repr(Database(1, 'name', 'accession')))
+
+    def testMedlineRelations(self):
+        i = Database(1, 'name', 'accession')
+        self.sess.add(i)
+        self.sess.commit()
+        self.assertEqual([i], self.M.databases)
+
+    def testIdentifierRelations(self):
+        i = Database(1, 'name', 'accession')
+        self.sess.add(i)
+        self.sess.commit()
+        self.assertEqual(self.M, i.medline)
 
 
 if __name__ == '__main__':

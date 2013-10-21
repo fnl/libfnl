@@ -34,12 +34,12 @@ def ArtifactFix(string:str):
     contains byte escapes ("\\xNN") and re-encode those non-UTF-8 texts using
     CP1252 instead.
     """
-    if '\\x' in repr(string):
-        try:
-            string = string.encode('utf-8').decode('cp1252').replace('Â', '')
-        except UnicodeDecodeError:
-            # potentially OK (e.g., a NBS [0xa0] character); let it pass
-            pass
+    #if '\\x' in repr(string):
+        #try:
+            #string = string.encode('utf-8').decode('cp1252').replace('Â', '')
+        #except UnicodeDecodeError:
+            ## potentially OK (e.g., a NBS [0xa0] character); let it pass
+            #string = string.encode('utf-8').decode('utf-8', errors="replace")
     return string
 
 

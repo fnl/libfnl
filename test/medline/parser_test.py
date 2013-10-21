@@ -23,7 +23,7 @@ class ParserTest(TestCase):
         Section(PMID, 5, 'Methods', 'duplicate methods', 'methods label'),
         Section(PMID, 6, 'Results', 'results text', 'results label'),
         Section(PMID, 7, 'Conclusions', 'conclusions text', 'conclusions label'),
-        Section(PMID, 8, 'Unlabelled', 'unlabelled text with encoding–errors'),
+        Section(PMID, 8, 'Unlabelled', 'unlabelled text with\xa0encoding\x96errors'),
         Section(PMID, 9, 'Abstract', 'abstract text', 'abstract label'),
         Section(PMID, 10, 'Abstract', 'default text'),
         Section(PMID, 11, 'Copyright', 'copyright info'),

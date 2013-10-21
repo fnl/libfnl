@@ -29,7 +29,6 @@ _Base = declarative_base()
 _db = None
 _session = lambda *args, **kwds: None
 
-STRING = lambda s: None if s is None else repr(s)[1:-1]
 NULL = lambda s: '\\N' if s is None else s
 DATE = lambda s: '\\N' if s is None else s.isoformat()
 
@@ -189,7 +188,7 @@ class Identifier(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(STRING(self.namespace)), NULL(STRING(self.value))
+            NULL(self.pmid), NULL(self.namespace), NULL(self.value)
         )
 
     def __repr__(self):
@@ -314,8 +313,8 @@ class Author(_Base, SelectMixin):
 
     def __str__(self):
         return "{}\t{}\t{}\t{}\t{}\t{}\n".format(
-            NULL(self.pmid), NULL(self.pos), NULL(STRING(self.name)),
-            NULL(STRING(self.initials)), NULL(STRING(self.forename)), NULL(STRING(self.suffix)))
+            NULL(self.pmid), NULL(self.pos), NULL(self.name),
+            NULL(self.initials), NULL(self.forename), NULL(self.suffix))
 
     def __repr__(self):
         return "Author<{}:{}>".format(self.pmid, self.pos)
@@ -404,7 +403,7 @@ class Qualifier(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.num), NULL(self.sub), NULL(STRING(self.name)),
+            NULL(self.pmid), NULL(self.num), NULL(self.sub), NULL(self.name),
             'T' if self.major else 'F'
         )
 
@@ -468,7 +467,7 @@ class Descriptor(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.num), NULL(STRING(self.name)),
+            NULL(self.pmid), NULL(self.num), NULL(self.name),
             'T' if self.major else 'F'
         )
 
@@ -502,8 +501,8 @@ class Database(_Base, SelectMixin):
     __tablename__ = 'databases'
 
     pmid = Column(BigInteger, ForeignKey('records', ondelete="CASCADE"), primary_key=True)
-    name = Column(Unicode(length=256), primary_key=True)
-    accession = Column(Unicode(length=256), primary_key=True)
+    name = Column(Unicode(length=256), CheckConstraint("name <> ''"), primary_key=True)
+    accession = Column(Unicode(length=256), CheckConstraint("accession <> ''"), primary_key=True)
 
     def __init__(self, pmid:int, name:str, accession:str):
         assert pmid > 0
@@ -515,7 +514,7 @@ class Database(_Base, SelectMixin):
 
     def __str__(self):
         return '{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(STRING(self.name)), NULL(STRING(self.accession))
+            NULL(self.pmid), NULL(self.name), NULL(self.accession)
         )
 
     def __repr__(self):
@@ -576,7 +575,7 @@ class Section(_Base, SelectMixin):
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\n'.format(
             NULL(self.pmid), NULL(self.seq), NULL(self.name),
-            NULL(STRING(self.label)), NULL(STRING(self.content))
+            NULL(self.label), NULL(self.content.replace('\t', '\\t').replace('\n', '\\n'))
         )
 
     def __repr__(self):
@@ -634,7 +633,7 @@ class Medline(_Base):
     STATES = frozenset({'Completed', 'In-Process', 'PubMed-not-MEDLINE',
                         'In-Data-Review', 'Publisher', 'MEDLINE', 'OLDMEDLINE'})
     CHILDREN = (
-        Section, Identifier, Author, Descriptor, Qualifier, # qualifiers have to come last!
+        Section, Identifier, Database, Author, Descriptor, Qualifier, # qualifiers last!
     )
     TABLENAMES = [cls.__tablename__ for cls in CHILDREN]
     TABLES = {cls.__tablename__: cls.__table__ for cls in CHILDREN}
@@ -653,12 +652,14 @@ class Medline(_Base):
         Identifier, backref='medline', cascade='all, delete-orphan',
         collection_class=column_mapped_collection(Identifier.namespace)
     )
+    databases = relation(
+        Database, backref='medline', cascade='all, delete-orphan',
+    )
     descriptors = relation(
         Descriptor, backref='medline', cascade='all, delete-orphan',
         order_by=Descriptor.__table__.c.num
     )
     qualifiers = relation(Qualifier, backref='medline')
-    xrefs = relation(Database, backref='medline')
 
     pmid = Column(BigInteger, CheckConstraint('pmid > 0'),
                   primary_key=True, autoincrement=False)
@@ -689,7 +690,7 @@ class Medline(_Base):
 
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(
-            NULL(self.pmid), NULL(self.status), NULL(STRING(self.journal)),
+            NULL(self.pmid), NULL(self.status), NULL(self.journal),
             DATE(self.created), DATE(self.completed), DATE(self.revised),
             DATE(date.today() if self.modified is None else self.modified)
         )
