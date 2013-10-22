@@ -36,7 +36,7 @@ Identifier (identifiers)
 Database (databases)
   **pmid**:FK(Medline), **name**:VARCHAR(32), **accession**:VARCHAR(256)
 
-Chemical (Chemicals)
+Chemical (chemicals)
   **pmid**:FK(Medline), **num**:VARCHAR(32), uid:VARCHAR(256), *name*:VARCHAR(256)
 
 Section (sections)
@@ -46,8 +46,8 @@ Section (sections)
 - **bold** (Composite) Primary Key
 - *italic* NOT NULL
 
-Supported XML Elements
-======================
+Supported PubMed XML Elements
+=============================
 
 - PMID
 - ArticleTitle (`Section.name` ``Title``)
@@ -86,7 +86,7 @@ for now, it is recommended to stick to this combo.
 Notice: VersionID
 =================
 
-Medline has began to use versions to allow publishers to add multiple citations
+MEDLINE has began to use versions to allow publishers to add multiple citations
 for the same PMID. This only occurs with 71 articles from one journal,
 "PLOS Curr", in the 2013 baseline, creating a total of 149 non-unique records.
 
@@ -149,19 +149,19 @@ The tool has five **COMMAND** options:
 For example, to download two PubMed records by PMID and put them into
 the DB::
 
-    fnlmedline.py create 1000 123456
+    fnlmedline.py update 1000 123456
 
 To insert a MEDLINE XML file into the DB::
 
-    fnlmedline.py create medline.xml
+    fnlmedline.py insert medline.xml
 
-Write out flat-files for dumping large collections::
+Read MEDLINE XML files for dumping large collections::
 
     fnlmedline.py parse medline*.xml.gz
 
 Note that in the last example, because of the suffix ".gz", the parser
 automatically decompresses the file(s) first. This feature *only*
-works with GNU-zipped files **and** requires the ".gz" suffix.
+works with GNU-zipped files and the ".gz" suffix must be present.
 
 Therefore, command line arguments are treated as follows:
 
@@ -181,8 +181,8 @@ For example, in the 2013 baseline, PMID 20029614 is present ten times in the
 baseline, each version at a different stage of revision. Because it is the first
 entry (in the order they appear in the baseline files) without a VersionID that
 seems to be the relevant record, it is possible to filter these duplicates while
-doing a ``parse`` or ``insert`` by using the ``--uniq`` option. This will simply
-skip citations that have a VersionID other than `1`.
+doing a ``parse``, ``insert`` or ``update`` by using the ``--uniq`` option. This
+will simply skip citations that have a VersionID other than `1`.
 
 To quickly load a parsed dump into a PostgreSQL DB on the same machine, do::
 
