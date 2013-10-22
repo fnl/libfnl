@@ -13,7 +13,7 @@ Entity Relationship Model
 
     [Author] → [Medline] ← [Descriptor] ← [Qualifier]
                 ↑     ↑
-      [Identifier]   [Section]
+      [Identifier]   [Section]  [Database]  [Chemical]
 
 Medline (records)
   **pmid**:BIGINT, *status*:ENUM(state), *journal*:VARCHAR(256),
@@ -31,7 +31,13 @@ Qualifier (qualifiers)
   *name*:TEXT, major:BOOL
 
 Identifier (identifiers)
-  **pmid**:FK(Medline), **namespace**:VARCHAR(32), **value**:VARCHAR(256)
+  **pmid**:FK(Medline), **namespace**:VARCHAR(32), *value*:VARCHAR(256)
+
+Database (databases)
+  **pmid**:FK(Medline), **name**:VARCHAR(32), **accession**:VARCHAR(256)
+
+Chemical (Chemicals)
+  **pmid**:FK(Medline), **num**:VARCHAR(32), uid:VARCHAR(256), *name*:VARCHAR(256)
 
 Section (sections)
   **pmid**:FK(Medline), **seq**:SMALLINT, *name*:ENUM(section),
@@ -48,16 +54,20 @@ Supported XML Elements
 - VernacularTitle (`Section.name` ``Vernacular``)
 - AbstractText (`Section.name` ``Abstract`` or capitalized NlmCategory)
 - CopyrightInformation (`Section.name` ``Copyright``)
-- DescriptorName
-- QualifierName
-- Author
-- ELocationID
-- OtherID
-- ArticleId (only available in PubMed XML)
-- MedlineCitation (`Medline.status` from Status)
-- DateCompleted
-- DateCreated
-- DateRevised
+- DescriptorName (`Descriptor.name` MeSH term descriptor)
+- QualifierName (`Qualifier.name` MeSH term qualifier)
+- Author (`Author`)
+- ELocationID (`Identifier`)
+- OtherID (`Identifier`)
+- DataBankName (`Database.name`)
+- AccessionNumber (`Database.accession`)
+- SubstanceName (`Chemcial.name`)
+- RegistryNumber (`Chemical.uid`)
+- ArticleId (`Identifier`; only available in online PubMed XML)
+- MedlineCitation (only Status; `Medline.status`)
+- DateCompleted (`Medline.completed`)
+- DateCreated (`Medline.created`)
+- DateRevised (`Medline.revised`)
 - MedlineTA (`Medline.journal`)
 
 Requirements
@@ -73,20 +83,34 @@ only combination in SQL Alchemy where data streaming from the DB actually
 works. You can use other DBs for small MEDLINE collections, but in general,
 for now, it is recommended to stick to this combo.
 
+Notice: VersionID
+=================
+
+Medline has began to use versions to allow publishers to add multiple citations
+for the same PMID. This only occurs with 71 articles from one journal,
+"PLOS Curr", in the 2013 baseline, creating a total of 149 non-unique records.
+
+As this is the only journal and as there should only be one abstract per
+publication in the database, alternative versions are currently being ignored.
+In other words, if a MedlineCitation has a VersionID value, that records can
+be skipped to avoid DB errors from non-unique records.
+
+In short, this tool currently **only removes** alternate citations.
+
 Setup
 =====
 
 See the general setup instructions for libfnl in the README.
 
-Install all dependencies/requirements::
+If needed, install all dependencies/requirements::
 
     pip install argparse # only for python3 < 3.2
     pip install sqlalchemy
     pip install psycopg2 # optional, can use any other DB driver
 
-Create the database::
+Create the PostreSQL database (optional)::
 
-    createdb medline # for example, to create a Postgres DB
+    createdb medline 
 
 Usage
 =====
@@ -152,22 +176,16 @@ Loading the MEDLINE baseline
 ============================
 
 Please be aware that the MEDLINE baseline **is not unique**, meaning that it
-contains a few records multiple times. For example, in the 2013 baseline,
-records with PMID 20029614 are present ten times in the baseline, each version
-at a different stage of revision. Because it is the first entry (in the order
-they appear in the baseline files) seems to be the relevant record (because it
-has the correct dates), it is possible to filter these dupes while doing a
-``parse`` or ``insert`` by using the ``--uniq`` option.
+contains a few records multiple times (see the above notice about the VersionID).
+For example, in the 2013 baseline, PMID 20029614 is present ten times in the
+baseline, each version at a different stage of revision. Because it is the first
+entry (in the order they appear in the baseline files) without a VersionID that
+seems to be the relevant record, it is possible to filter these duplicates while
+doing a ``parse`` or ``insert`` by using the ``--uniq`` option. This will simply
+skip citations that have a VersionID other than `1`.
 
-Another way would be to load MEDLINE using ``update``, but you might not
-live long enough to see the loaded database... Last, you could ``parse`` all of
-the MEDLINE baseline and then remove the duplicate records on your own::
+To quickly load a parsed dump into a PostgreSQL DB on the same machine, do::
 
-    fnlmedline.py unused parse baseline/medline*.xml.gz
-    cut -f1 records.tab | sort | uniq -cd
-
-Finally, to quickly load dumped files into a PostgreSQL DB on the same machine::
-
-    for table in records descriptors qualifiers authors sections databases identifiers;
+    for table in records descriptors qualifiers authors sections databases identifiers chemicals;
       do psql medline -c "COPY $table FROM '`pwd`/${table}.tab';";
     done
