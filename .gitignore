@@ -1,9 +1,5 @@
 /.*
-/bin/activate*
-/bin/easy_install*
-/bin/nosetests*
-/bin/pip*
-/bin/python*
+/bin
 /build
 /include
 /lib
