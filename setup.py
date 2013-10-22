@@ -20,6 +20,8 @@ setup(
     install_requires=[
         'sqlalchemy >= 0.8',
         'psycopg2 >= 2.4',
+        'nose',
+        'mock',
     ],
 #    cmdclass = {'build_ext': build_ext},
 #    ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
@@ -33,10 +35,14 @@ setup(
         'libfnl.text',
         'libfnl.utils',
     ],
-    package_dir={
-        '': 'src',
-    },
-    scripts=['bin/fnlcorpus.py', 'bin/fnlgnamed.py', 'bin/fnlgpcounter.py', 'bin/fnlkappa.py', 'bin/fnlmedline.py'],
+    package_dir={ '': 'src' },
+    scripts=[
+        'scripts/fnlcorpus.py',
+        'scripts/fnlgnamed.py',
+        'scripts/fnlgpcounter.py',
+        'scripts/fnlkappa.py',
+        'scripts/fnlmedline.py'
+    ],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Environment :: Console',
