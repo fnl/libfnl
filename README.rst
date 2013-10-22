@@ -40,8 +40,9 @@ The library provides the following command-line tools:
 - fnlmedline_ A CLI to maintain a local MEDLINE data warehouse.
 - ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
 - ``fnlgpcounter`` A CLI to count gene/protein symbols in MEDLINE.
+- ``fnlcorpus`` A CLIT to store corpora in JSON format in a CouchDB.
 
-.. warning:: The API (not the CLI) is under development (alpha-ish).
+.. warning:: The API (not the CLI) is under development (very alpha-ish).
 
 .. _CouchDB: http://couchdb.apache.org/
 .. _JSON: http://www.json.org
@@ -55,13 +56,13 @@ The library provides the following command-line tools:
 Requirements
 ============
 
-* Python 3.0+ (3.1 or newer recommended)
-* Postgres 8.4+ (9.2 or newer recommended)
-* psycopg2 (A Python Postgres DB client)
+* Python 3.0+ (3.2 or newer recommended)
 * SQLAlchemy 0.8+ (A Python ORM)
 
 Optional tools:
 
+* Postgres 8.4+ (9.2 or newer recommended)
+* psycopg2 (A Python Postgres DB client)
 * GENIA Tagger (optional, latest version)
 * CouchDB 1.0+ (1.3 or newer recommended)
 * RE2 (Google's DFA-based regular expression library)
@@ -71,14 +72,22 @@ Installation
 
 Into a **Python 3** virtual environment::
 
-    pip install virtualenv # optional; if virtualenv is not yet installed
+    pip install virtualenv # if virtualenv is not yet installed
     git clone git://github.com/fnl/libfnl.git libfnl
-    virtualenv libfnl # optional; if using a virtual environment
+    virtualenv libfnl
     cd libfnl
-    . bin/activate # optional; if using a virual environment
-    pip install argparse # only required for python3 < 3.2
+    . bin/activate
+    pip install argparse # for python3 < 3.2
+    pip install -e . # installs all dependencies
+
+    # if you prefer to install dependencies manually
+    # and/or prefer to use setup.py instead of pip:
+    # python setup.py install
     pip install sqlalchemy
     pip install psycopg2
+    pip install nose
+    pip install mock
+
     # special steps to install DAWG
     git clone git@github.com:fnl/DAWG.git
     cd DAWG
@@ -95,4 +104,4 @@ All parts of this library are licensed under the `GNU Affero GPL v3`_
 Copyright
 =========
 
-© 2006-2013 fnl™. All rights reserved.
+© 2006-2013 Florian Leitner. All rights reserved.
