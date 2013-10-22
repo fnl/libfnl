@@ -482,6 +482,54 @@ class Descriptor(_Base, SelectMixin):
                self.major == other.major
 
 
+class Chemical(_Base, SelectMixin):
+    """
+    References to chemicals and substances curated my the NLM.
+
+    Attributes:
+
+        pmid
+            the record's identifier (PubMed ID)
+        num
+            the order in the XML record
+        uid
+            the chemical's "unique identifier" (registry number, etc.)
+        name
+            the chemical's name
+
+    Primary Key: ``(pmid, num)``
+    """
+
+    __tablename__ = 'chemicals'
+
+    pmid = Column(BigInteger, ForeignKey('records', ondelete="CASCADE"), primary_key=True)
+    num = Column(SmallInteger, CheckConstraint("num > 0"), primary_key=True)
+    uid = Column(Unicode(length=256))
+    name = Column(Unicode(length=256), CheckConstraint("name <> ''"), nullable=False)
+
+    def __init__(self, pmid:int, num:int, uid:str, name:str):
+        assert pmid > 0
+        assert num > 0
+        assert name
+        self.pmid = pmid
+        self.num = num
+        self.uid = uid
+        self.name = name
+
+    def __str__(self):
+        return '{}\t{}\t{}\t{}\n'.format(
+            NULL(self.pmid), NULL(self.num), NULL(self.uid), self.name
+        )
+
+    def __repr__(self):
+        return "Chemical<{}:{}>".format(self.pmid, self.num)
+
+    def __eq__(self, other):
+        return isinstance(other, Chemical) and \
+               self.pmid == other.pmid and \
+               self.num == other.num
+
+
 class Database(_Base, SelectMixin):
     """
     References to external databases curated my the NLM.
@@ -575,7 +623,9 @@ class Section(_Base, SelectMixin):
     def __str__(self):
         return '{}\t{}\t{}\t{}\t{}\n'.format(
             NULL(self.pmid), NULL(self.seq), NULL(self.name),
-            NULL(self.label), NULL(self.content.replace('\t', '\\t').replace('\n', '\\n'))
+            NULL(self.label), NULL(self.content.replace('\\', '\\\\')
+                                               .replace('\t', '\\t')
+                                               .replace('\n', '\\n'))
         )
 
     def __repr__(self):
@@ -624,7 +674,9 @@ class Medline(_Base):
             a :class:`list` of the record's MeSH descriptors
         qualifiers
             a :class:`list` of the record's MeSH qualifiers
-        xrefs
+        chemicals
+            a :class:`list` of the record's chemicals
+        databases
             a :class:`list` of the record's external DB references
 
     Primary Key: ``pmid``
@@ -654,6 +706,10 @@ class Medline(_Base):
     )
     databases = relation(
         Database, backref='medline', cascade='all, delete-orphan',
+    )
+    chemicals = relation(
+        Chemical, backref='medline', cascade='all, delete-orphan',
+        order_by=Chemical.__table__.c.num
     )
     descriptors = relation(
         Descriptor, backref='medline', cascade='all, delete-orphan',

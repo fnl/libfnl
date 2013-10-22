@@ -337,7 +337,7 @@ class SectionTest(TestCase):
         self.assertRaises(IntegrityError, self.sess.commit)
 
     def testToString(self):
-        self.assertEqual('1\t1\tTitle\tlabel\t"co\\n\\tent"\\\n',
+        self.assertEqual('1\t1\tTitle\tlabel\t"co\\n\\tent"\\\\\n',
                          str(Section(1, 1, 'Title', "\"co\n\tent\"\\", 'label')))
 
     def testToRepr(self):

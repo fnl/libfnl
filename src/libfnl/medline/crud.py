@@ -12,7 +12,8 @@ from os.path import join
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from libfnl.medline.orm import Medline, Section, Descriptor, Qualifier, Author, Identifier, Database
+from libfnl.medline.orm import \
+        Medline, Section, Descriptor, Qualifier, Author, Identifier, Database, Chemical
 from libfnl.medline.parser import Parse
 from libfnl.medline.web import Download
 
@@ -21,8 +22,7 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
     pmid_buffer = []
     count = 0
     initial = session.query(Medline).count()
-    pubmed = True
-    done = set() if uniq else None
+    isPubmed = True # default: assume reading PubMed records
 
     try:
         for arg in files_or_pmids:
@@ -32,7 +32,7 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
                 stream = Download(pmid_buffer) if (len(pmid_buffer) == 100) else None
             except ValueError:
                 logging.info("parsing %s", arg)
-                pubmed = False
+                isPubmed = False # reading Medline records
                 if arg.lower().endswith('.gz'):
                     # use wrapper to support pre-3.3
                     stream = gunzip(arg, 'rb')
@@ -42,14 +42,14 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
             if stream is not None:
                 pmid_buffer = []
                 # noinspection PyTypeChecker
-                for i in Parse(stream, done, pubmed=pubmed):
+                for i in Parse(stream, isPubmed, uniq=uniq):
                     count += 1
                     update(i)
-                pubmed = True
+                isPubmed = True
 
         if len(pmid_buffer):
             # noinspection PyTypeChecker
-            for i in Parse(Download(pmid_buffer), done, pubmed=True):
+            for i in Parse(Download(pmid_buffer), True, uniq=uniq):
                 count += 1
                 update(i)
 
@@ -59,12 +59,11 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
                      count, initial, final)
         return True
     except IntegrityError as e:
-        logging.info(str(e))
-        logging.fatal('non-unique Entities added to DB')
+        logging.exception('DB integrity violated')
         session.rollback()
         return False
     except Exception as e:
-        logging.exception('create failed')
+        logging.exception('adding records failed')
         if session.dirty:
             session.rollback()
         return False
@@ -75,9 +74,9 @@ def insert(session:Session, files_or_pmids:iter, uniq:bool) -> bool:
     _add(session, files_or_pmids, lambda i: session.add(i), uniq)
 
 
-def update(session:Session, files_or_pmids:iter) -> bool:
+def update(session:Session, files_or_pmids:iter, uniq:bool) -> bool:
     "Update all records in the *files* (paths) or download the *PMIDs*."
-    _add(session, files_or_pmids, lambda i: session.merge(i))
+    _add(session, files_or_pmids, lambda i: session.merge(i), uniq)
 
 
 def select(session:Session, pmids:list([int])) -> iter([Medline]):
@@ -112,9 +111,9 @@ def dump(files:iter, output_dir:str, uniq:bool) -> bool:
         Author.__tablename__: open(join(output_dir, "authors.tab"), "wt"),
         Identifier.__tablename__: open(join(output_dir, "identifiers.tab"), "wt"),
         Database.__tablename__: open(join(output_dir, "databases.tab"), "wt"),
+        Chemical.__tablename__: open(join(output_dir, "chemicals.tab"), "wt"),
     }
     count = 0
-    done = set() if uniq else None
 
     for f in files:
         logging.info('dumping %s', f)
@@ -126,7 +125,7 @@ def dump(files:iter, output_dir:str, uniq:bool) -> bool:
             in_stream = open(f)
 
         # noinspection PyTypeChecker
-        for i in Parse(in_stream, done):
+        for i in Parse(in_stream, False, uniq=uniq):
             out_stream[i.__tablename__].write(str(i))
 
             if i.__tablename__ == Medline.__tablename__:

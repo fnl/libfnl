@@ -13,7 +13,8 @@ from datetime import date
 
 import re
 from libfnl.medline.orm import \
-    Database, Identifier, Author as Author_, Qualifier, Descriptor, Section, Medline
+    Chemical as Chemical_, Database, Identifier, Author as Author_, \
+    Qualifier, Descriptor, Section, Medline
 
 
 __ALL__ = ['Parse']
@@ -22,49 +23,32 @@ MONTHS_SHORT = (None, 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
                 'jul', 'aug', 'sep', 'oct', 'nov', 'dec')
 # to translate three-letter month strings to integers
 
-def ArtifactFix(string:str):
-    """
-    NLM MEDLINE contains encoding artifacts (errors). This function tries to
-    at least partially remedy them (no more errors) - it is impossible to
-    guarantee all errors made by the NLM will have been removed.
 
-    MEDLINE contains byte artifacts from a CP1252 (Windows) encoding that have
-    been wrongly encoded using UTF-8. To (as much as possible) remedy this
-    mistake, it is possible detect strings where the Unicode representation
-    contains byte escapes ("\\xNN") and re-encode those non-UTF-8 texts using
-    CP1252 instead.
-    """
-    #if '\\x' in repr(string):
-        #try:
-            #string = string.encode('utf-8').decode('cp1252').replace('Â', '')
-        #except UnicodeDecodeError:
-            ## potentially OK (e.g., a NBS [0xa0] character); let it pass
-            #string = string.encode('utf-8').decode('utf-8', errors="replace")
-    return string
-
-
-def Parse(xml_stream, skip:set, pubmed=False) -> iter:
+def Parse(xml_stream, pubmed, uniq=False) -> iter:
     """
     :param xml_stream: A stream as returned by :func:`.Download` or the XML
         found in the MEDLINE distribution XML files.
-    :param skip: A set of PMIDs that will be skipped, and updated with every
-        new PMID encountered.
     :param pubmed: ``True`` if parsing eUtils PubMed XML, not MEDLINE XML
+    :param uniq: ``True`` if citations with VersionID != "1" should be skipped
 
     :return: an iterator over Medline ORM instances
     """
     pmid = -1 # -1 => outside record; -2 => skipping record; otherwise => parsing
+    events = ['start', 'end'] if uniq else None
     seq = 0
     num = 0
     sub = 0
     pos = 0
+    chem = 0
     namespaces = set()
     make = {}
 
     if not pubmed:
         check = lambda element: element.tag == 'MedlineCitation'
+        logging.info('parsing Medline XML files')
     else:
         check = lambda element: element.tag == 'PubmedArticle'
+        logging.info('parsing PubMed XML stream')
 
     def dispatch(f):
         "Decorator to populate a dispatcher using the element tag as function name."
@@ -83,14 +67,14 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
         if element.text is not None:
             nonlocal seq
             seq += 1
-            return Section(pmid, seq, 'Title', ArtifactFix(element.text.strip()))
+            return Section(pmid, seq, 'Title', element.text.strip())
 
     @dispatch
     def VernacularTitle(element):
         if element.text is not None:
             nonlocal seq
             seq += 1
-            return Section(pmid, seq, 'Vernacular', ArtifactFix(element.text.strip()))
+            return Section(pmid, seq, 'Vernacular', element.text.strip())
 
     @dispatch
     def AbstractText(element):
@@ -104,11 +88,25 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
                 seq += 1
                 section = element.get('NlmCategory', 'Abstract').capitalize()
                 return Section(
-                    pmid, seq, section, ArtifactFix(text), element.get('Label', None)
+                    pmid, seq, section, text, element.get('Label', None)
                 )
         logging.info("empty %s AbstractText in %i",
                      element.get('NlmCategory', 'ABSTRACT'), pmid)
         return None
+
+    @dispatch
+    def Chemical(element):
+        nonlocal chem
+        chem += 1
+        e = element.find('RegistryNumber')
+
+        if e is not None and e.text is not None and e.text.strip() != "0":
+            uid = e.text.strip()
+        else:
+            uid = None
+
+        name = element.find('NameOfSubstance')
+        return Chemical_(pmid, chem, uid, name.text.strip())
 
     @dispatch
     def CopyrightInformation(element):
@@ -159,7 +157,7 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
                 elif child.tag == 'Suffix':
                     suffix = text
                 elif child.tag == 'CollectiveName':
-                    name = ArtifactFix(text)
+                    name = text
                     forename = ''
                     initials= ''
                     suffix = ''
@@ -260,20 +258,27 @@ def Parse(xml_stream, skip:set, pubmed=False) -> iter:
 
 
     # === MAIN PARSER LOOP ===
-    for _, element in iterparse(xml_stream):
+    for event, element in iterparse(xml_stream, events):
+        if event == 'start':
+            # check for non-unique (versioned) records
+            if uniq and element.tag == 'MedlineCitation':
+                version = element.get('VersionID')
+
+                if version is not None and version.strip() != "1":
+                    logging.info("skipping a non-unique, versioned citation")
+                    pmid = -2
+
+            continue # ignore other start events
+
         if element.tag == 'PMID' and pmid == -1:
             pmid = int(element.text)
-            if skip is not None and pmid in skip:
-                logging.info("skipping PMID %i", pmid)
-                pmid = -2
-            else:
-                if skip is not None: skip.add(pmid)
-                logging.debug("parsing PMID %i", pmid)
-                namespaces = set()
-                seq = 0
-                num = 0
-                sub = 0
-                pos = 0
+            logging.debug("parsing PMID %i", pmid)
+            namespaces = set()
+            seq = 0
+            num = 0
+            sub = 0
+            pos = 0
+            chem = 0
         elif element.tag in make:
             # pmid == -2 means skip this record
             if pmid == -2:

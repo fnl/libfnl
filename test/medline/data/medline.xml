@@ -3,7 +3,7 @@
           "http://www.nlm.nih.gov/databases/dtd/nlmmedlinecitationset_130101.dtd">
 <!-- An XML containing all possible elements except for the Season element in PubDate; also covers the frequent encoding artifacts found in MEDLINE -->
 <MedlineCitationSet>
-    <MedlineCitation Owner="NLM" Status="MEDLINE" VersionID="versionID" VersionDate="2012/02/01">
+    <MedlineCitation Owner="NLM" Status="MEDLINE" VersionID="1" VersionDate="2012/02/01">
         <PMID Version="1">123</PMID>
         <DateCreated>
             <Year>1974</Year>
@@ -142,7 +142,7 @@
         </MedlineJournalInfo>
         <ChemicalList>
             <Chemical>
-                <RegistryNumber>0-1-2</RegistryNumber>
+                <RegistryNumber>0</RegistryNumber>
                 <NameOfSubstance>chemical substance 1</NameOfSubstance>
             </Chemical>
             <Chemical>
@@ -238,5 +238,29 @@
         </InvestigatorList>
         <GeneralNote>NLM default note</GeneralNote>
         <GeneralNote Owner="NASA">NASA note</GeneralNote>
+    </MedlineCitation>
+    <MedlineCitation Owner="NLM" Status="MEDLINE" VersionID="2" VersionDate="2012/02/01">
+        <PMID Version="2">987</PMID>
+        <DateCreated>
+            <Year>1974</Year>
+            <Month>2</Month>
+            <Day>19</Day>
+        </DateCreated>
+        <DateCompleted>
+            <Year>1974</Year>
+            <Month>nov</Month>
+            <Day>19</Day>
+        </DateCompleted>
+        <DateRevised>
+            <Year>2006</Year>
+            <Month>FEB</Month>
+            <Day>14</Day>
+        </DateRevised>
+        <MedlineJournalInfo>
+            <Country>COUNTRY</Country>
+            <MedlineTA>NLM Jour Abbrev</MedlineTA>
+            <NlmUniqueID>0123ABC</NlmUniqueID>
+            <ISSNLinking>0000-0000</ISSNLinking>
+        </MedlineJournalInfo>
     </MedlineCitation>
 </MedlineCitationSet>

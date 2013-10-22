@@ -35,6 +35,8 @@ class ParserTest(TestCase):
         Database(PMID, 'db1', 'acc3'),
         Database(PMID, 'db2', 'acc'),
         Section(PMID, 12, 'Vernacular', 'non-english article title'),
+        Chemical(PMID, 1, None, "chemical substance 1"),
+        Chemical(PMID, 2, "EC 1.1.1.1", "chemical substance 2"),
         Descriptor(PMID, 1, 'minor geographic descriptor'),
         Qualifier(PMID, 1, 1, 'minor qualifier'),
         Descriptor(PMID, 2, 'major descriptor', True),
@@ -50,6 +52,8 @@ class ParserTest(TestCase):
         Section(PMID, 15, 'Copyright', 'NASA copyright'),
         Medline(PMID, 'MEDLINE', 'NLM Jour Abbrev',
                 date(1974, 2, 19), date(1974, 11, 19), date(2006, 2, 14)),
+        Medline(987, 'MEDLINE', 'NLM Jour Abbrev',
+                date(1974, 2, 19), date(1974, 11, 19), date(2006, 2, 14)),
         ]
 
     def setUp(self):
@@ -61,7 +65,7 @@ class ParserTest(TestCase):
         self.sess = Session()
         count = 0
         # noinspection PyTypeChecker
-        for item in Parse(self.file, None):
+        for item in Parse(self.file, False):
             count += 1
             self.sess.add(item)
         self.assertEqual(len(ParserTest.ITEMS), count)
@@ -71,13 +75,19 @@ class ParserTest(TestCase):
         logging.getLogger().setLevel(logging.ERROR)
         items = ParserTest.ITEMS
         # noinspection PyTypeChecker
-        for i, item in enumerate(Parse(self.file, None)):
+        for i, item in enumerate(Parse(self.file, False)):
             self.assertEqual(str(items[i]), str(item))
-            self.assertEqual(items[i], item)
+            self.assertEqual(items[i], item, "\n" + str(item) + str(items[i]))
+        self.assertEqual(len(items) - 1, i)
 
-    def testSkipRecords(self):
-        for i in Parse(self.file, {123}):
-            self.fail(str(i))
+    def testParseSkipVersion(self):
+        logging.getLogger().setLevel(logging.ERROR)
+        items = ParserTest.ITEMS[:-1]
+        # noinspection PyTypeChecker
+        for i, item in enumerate(Parse(self.file, False, uniq=True)):
+            self.assertEqual(str(items[i]), str(item), str(item))
+            self.assertEqual(items[i], item)
+        self.assertEqual(len(items) - 1, i)
 
 if __name__ == '__main__':
     main()
