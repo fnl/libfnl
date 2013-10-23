@@ -43,8 +43,17 @@ def _add(session:Session, files_or_pmids:iter, update, uniq=True):
                 pmid_buffer = []
                 # noinspection PyTypeChecker
                 for i in Parse(stream, isPubmed, uniq=uniq):
+                    if isinstance(i, Medline):
+                        update(i)
+                        for j in pmid_buffer:
+                            update(j)
+                        pmid_buffer = []
+                    else:
+                        pmid_buffer.append(i)
                     count += 1
-                    update(i)
+                for j in pmid_buffer:
+                    update(j)
+                pmid_buffer = []
                 isPubmed = True
 
         if len(pmid_buffer):
