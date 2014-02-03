@@ -1,4 +1,5 @@
 from sqlite3 import dbapi2
+import sys
 from os.path import dirname
 from unittest import main, TestCase
 from sqlalchemy.engine.url import URL
@@ -8,7 +9,6 @@ from libfnl.medline.parser import *
 
 
 __author__ = 'Florian Leitner'
-
 
 class ParserTest(TestCase):
     MEDLINE_STRUCTURE_FILE = dirname(__file__) + '/data/medline.xml'
@@ -54,18 +54,18 @@ class ParserTest(TestCase):
                 date(1974, 2, 19), date(1974, 11, 19), date(2006, 2, 14)),
         Medline(987, 'MEDLINE', 'NLM Jour Abbrev',
                 date(1974, 2, 19), date(1974, 11, 19), date(2006, 2, 14)),
-        ]
+    ]
 
     def setUp(self):
-        self.file = open(ParserTest.MEDLINE_STRUCTURE_FILE)
+        self.stream = open(ParserTest.MEDLINE_STRUCTURE_FILE)
 
     def testParseToDB(self):
         logging.getLogger().setLevel(logging.ERROR)
         InitDb(URL('sqlite'), module=dbapi2)
         self.sess = Session()
         count = 0
-        # noinspection PyTypeChecker
-        for item in Parse(self.file, False):
+        parser = PubMedXMLParser(False)
+        for item in parser.parse(self.stream):
             count += 1
             self.sess.add(item)
         self.assertEqual(len(ParserTest.ITEMS), count)
@@ -74,20 +74,26 @@ class ParserTest(TestCase):
     def testParseAll(self):
         logging.getLogger().setLevel(logging.ERROR)
         items = ParserTest.ITEMS
-        # noinspection PyTypeChecker
-        for i, item in enumerate(Parse(self.file, False)):
+        print('here', file=sys.stderr)
+        parser = PubMedXMLParser(False)
+        print('here', file=sys.stderr)
+        i = -1
+        item = None
+        for i, item in enumerate(parser.parse(self.stream)):
             self.assertEqual(str(items[i]), str(item))
             self.assertEqual(items[i], item, "\n" + str(item) + str(items[i]))
-        self.assertEqual(len(items) - 1, i)
+        self.assertEqual(len(items) - 1, i, repr(item))
 
     def testParseSkipVersion(self):
         logging.getLogger().setLevel(logging.ERROR)
         items = ParserTest.ITEMS[:-1]
-        # noinspection PyTypeChecker
-        for i, item in enumerate(Parse(self.file, False, uniq=True)):
+        parser = MedlineXMLParser()
+        i = -1
+        item = None
+        for i, item in enumerate(parser.parse(self.stream)):
             self.assertEqual(str(items[i]), str(item), str(item))
             self.assertEqual(items[i], item)
-        self.assertEqual(len(items) - 1, i)
+        self.assertEqual(len(items) - 1, i, repr(item))
 
 if __name__ == '__main__':
     main()

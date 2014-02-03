@@ -20,7 +20,7 @@ class TempDatabaseMixin(object):
     _db = None
 
     def setUp(self):
-        logging.basicConfig(level=logging.WARNING)
+        #logging.basicConfig(level=logging.WARNING)
         self.server = broker.Server(full_commit=True)
 
     def tearDown(self):

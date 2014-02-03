@@ -5,7 +5,7 @@
 Introduction
 ============
 
-**libfnl** is an API and CLI to facilitate the mining of biological texts by
+**libfnl** is an API and CLI to facilitate the mining of [biological] texts by
 providing data management tools for this task. The library is exclusively
 designed to work with Python 3k (3.2+). It is targeted to cooperate with the
 txtfnnl_ text mininig library developed in parallel. In a nutshell, ``libfnl``
@@ -20,10 +20,12 @@ The library contains the following packages:
     project has its own)
 ``libfnl.gnamed``
     providing management and storage facilities for gene/protein symbols,
-    names, keywords and their references into literature based on SQLAlchemy_
+    names, keywords and their references into literature based on SQLAlchemy_;
+    outsourced as its own package
 ``libfnl.medline``
     providing a management and storage facility for MEDLINE and PubMed records
-    based on SQLAlchemy_
+    based on SQLAlchemy_;
+    outsorced as its own package
 ``libfnl.nlp``
     currently, just a Python wrapper for the GENIA_ Tagger_
 ``libfnl.stat``
@@ -33,20 +35,27 @@ The library contains the following packages:
 ``libfnl.utils``
     useful utilities and tools (currently, just for handling JSON_ and for
     dispalying a clean progress bar on the command line)
+``scripts``
+    various useful scripts to manage data/text
 
 The library provides the following command-line tools:
  
-- fnlgnamed_ A CLI to bootstrap a consolidated gene/protein repository.
-- fnlmedline_ A CLI to maintain a local MEDLINE data warehouse.
+- fnlgnamed_ A CLI to bootstrap a consolidated gene/protein repository. *Outsourced to its own PyPI package ``gnamed``.*
+- fnlmedline_ A CLI to maintain a local MEDLINE data warehouse. *Outsourced to its own PyPI packagee ``medic``.*
 - ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
 - ``fnlgpcounter`` A CLI to count gene/protein symbols in MEDLINE.
 - ``fnlcorpus`` A CLIT to store corpora in JSON format in a CouchDB.
+- ``fnlpst*`` Three tools to segment text into sentences using NLTK_ (3.0alpha).
+- ``fnlclass[i]`` Two CLI to quickly develop a classifier for text using Scikit-Learn_.
+- ``fnldictag`` A CLI to tag tokens from a dictionary in text.
 
-.. warning:: The API (not the CLI) is under development (very alpha-ish).
+.. warning:: This project is under "continuous" development (very alpha-ish).
 
 .. _CouchDB: http://couchdb.apache.org/
 .. _JSON: http://www.json.org
 .. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
+.. _NLTK: http://nltk.org/
+.. _Scikit-Learn: http://scikit-learn.org/stable/
 .. _SQLAlchemy: http://www.sqlalchemy.org/
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
 .. _txtfnnl: http://github.com/fnl/txtfnnl
@@ -66,6 +75,8 @@ Optional tools:
 * GENIA Tagger (optional, latest version)
 * CouchDB 1.0+ (1.3 or newer recommended)
 * RE2 (Google's DFA-based regular expression library)
+* Numpy, SciPy, and Scikit-Learn 0.14+ (for the document classifiers ``fnlclass[i]``)
+* NLTK 3.0+ (for the sentence segmenting tools ``fnlpst*``)
 
 Installation
 ============
@@ -87,6 +98,8 @@ Into a **Python 3** virtual environment::
     pip install psycopg2
     pip install nose
     pip install mock
+    pip install sklearn
+    # pip install nltk # v3.0 has to be installed manually
 
     # special steps to install DAWG
     git clone git@github.com:fnl/DAWG.git
@@ -101,7 +114,9 @@ All parts of this library are licensed under the `GNU Affero GPL v3`_
 
 .. _GNU Affero GPL v3: http://www.gnu.org/licenses/agpl.html
 
+See the attached LICENSE.txt file.
+
 Copyright
 =========
 
-© 2006-2013 Florian Leitner. All rights reserved.
+© 2006-2014 Florian Leitner. All rights reserved.

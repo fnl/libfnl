@@ -507,7 +507,7 @@ class Chemical(_Base, SelectMixin):
     uid = Column(Unicode(length=256))
     name = Column(Unicode(length=256), CheckConstraint("name <> ''"), nullable=False)
 
-    def __init__(self, pmid:int, num:int, uid:str, name:str):
+    def __init__(self, pmid:int, num:int, uid, name:str):
         assert pmid > 0
         assert num > 0
         assert name
