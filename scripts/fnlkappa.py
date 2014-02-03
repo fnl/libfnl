@@ -48,7 +48,7 @@ def TsvReader(file:str, subject_col:int, rating_col:int):
 
             try:
                 logging.debug("vote for %s: %s", items[sc], items[rc])
-                yield items[sc].strip(), items[rc].strip()
+                yield items[sc].strip(), items[rc].strip() 
             except IndexError:
                 raise ValueError(
                     "line {} in {} malformed".format(lno + 1, file)
