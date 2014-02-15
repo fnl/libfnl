@@ -13,8 +13,8 @@ import logging
 import os
 import sys
 
-from libfnl.medline.orm import InitDb as InitMedline
-from libfnl.gnamed.orm import InitDb as InitGnamed
+from fnl.medline.orm import InitDb as InitMedline
+from fnl.gnamed.orm import InitDb as InitGnamed
 
 __author__ = 'Florian Leitner'
 __version__ = '1'
@@ -24,7 +24,7 @@ def main(proteins:bool):
     """
     :param proteins: report for proteins instead of genes
     """
-    from libfnl.stat.gpcount import CountGenes, CountProteins
+    from fnl.stat.gpcount import CountGenes, CountProteins
 
     if proteins:
         CountProteins()

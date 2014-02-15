@@ -43,7 +43,7 @@ def Main(command, files_or_pmids, session, uniq=False):
     :param session: the DB session
     :param uniq: flag to skip versioned records if VersionID != "1"
     """
-    from libfnl.medline.crud import insert, select, update, delete
+    from fnl.medline.crud import insert, select, update, delete
 
     if command == 'insert':
         return insert(session, files_or_pmids, uniq)
@@ -262,7 +262,7 @@ def WriteSection(file, rec, sec):
 
 if __name__ == '__main__':
     from argparse import ArgumentParser
-    from libfnl.medline.orm import InitDb, Session
+    from fnl.medline.orm import InitDb, Session
 
     epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
 
@@ -332,7 +332,7 @@ if __name__ == '__main__':
         args.files = [int(line) for f in args.files for line in open(f)]
 
     if (args.command == 'parse'):
-        from libfnl.medline.crud import dump
+        from fnl.medline.crud import dump
         result = dump(args.files, args.output, args.uniq)
     else:
         try:

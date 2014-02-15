@@ -3,7 +3,7 @@
 """Parse and store a corpus to a Couch DB."""
 
 from functools import partial
-from libfnl.couch.broker import Server, COUCHDB_URL
+from fnl.couch.broker import Server, COUCHDB_URL
 import logging
 from multiprocessing import Pool
 import os
@@ -53,8 +53,8 @@ def main(corpus_files, update:bool=False, corpus:str=DEFAULT_CORPUS,
     :param encoding: The encoding used by the corpus files.
     """
     try:
-        libfnl = __import__("libfnl.nlp.{}.corpus".format(corpus), globals())
-        C = getattr(libfnl.nlp, corpus).corpus
+        fnl = __import__("fnl.nlp.{}.corpus".format(corpus), globals())
+        C = getattr(fnl.nlp, corpus).corpus
     except ImportError:
         raise ValueError("no corpus reader for {}".format(corpus))
 

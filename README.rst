@@ -7,47 +7,38 @@ Introduction
 
 **libfnl** is an API and CLI to facilitate the mining of [biological] texts by
 providing data management tools for this task. The library is exclusively
-designed to work with Python 3k (3.2+). It is targeted to cooperate with the
-txtfnnl_ text mininig library developed in parallel. In a nutshell, ``libfnl``
-provides the "meta-data" for text mining tasks, while txtfnnl_ is the actual
-pipeline for this job.
+designed to work with Python 3.2+. It is targeted to cooperate with the
+txtfnnl_ text mininig library, the gnamed_ gene name repository daemon, and
+the medic_ PubMed mirroring tool.
 
 The library contains the following packages:
 
-``libfnl.couch``
+``fnl.couch``
     provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this
     project was started, there was no Py3k CouchDB_ client around, so this
-    project has its own)
-``libfnl.gnamed``
-    providing management and storage facilities for gene/protein symbols,
-    names, keywords and their references into literature based on SQLAlchemy_;
-    outsourced as its own package
-``libfnl.medline``
-    providing a management and storage facility for MEDLINE and PubMed records
-    based on SQLAlchemy_;
-    outsorced as its own package
-``libfnl.nlp``
-    currently, just a Python wrapper for the GENIA_ Tagger_
-``libfnl.stat``
-    currently, only a module to evaluate inter-rate Kappa scores
-``libfnl.text``
-    modules to extract, annotate and tokenize text (strings)
-``libfnl.utils``
-    useful utilities and tools (currently, just for handling JSON_ and for
-    dispalying a clean progress bar on the command line)
+    project has its own);
+``fnl.nlp``
+    currently, only contains a Python wrapper for the GENIA_ Tagger_
+    and the collection of Penn tags
+``fnl.stat``
+    currently, only a module to evaluate inter-rator Kappa scores
+``fnl.text``
+    modules to extract, tokenize, segment, and annotate text (strings)
+``fnl.utils``
+    useful utilities and tools (currently, just for handling JSON_)
 ``scripts``
-    various useful scripts to manage data/text
+    various useful scripts to manage data/text and probably the main value
+    provided by this collection
 
-The library provides the following command-line tools:
+The library provides the following command-line tools/interfaces:
  
-- fnlgnamed_ A CLI to bootstrap a consolidated gene/protein repository. *Outsourced to its own PyPI package ``gnamed``.*
-- fnlmedline_ A CLI to maintain a local MEDLINE data warehouse. *Outsourced to its own PyPI packagee ``medic``.*
-- ``fnlkappa`` A CLI to calculate inter-rater agreement scores.
-- ``fnlgpcounter`` A CLI to count gene/protein symbols in MEDLINE.
-- ``fnlcorpus`` A CLIT to store corpora in JSON format in a CouchDB.
-- ``fnlpst*`` Three tools to segment text into sentences using NLTK_ (3.0alpha).
-- ``fnlclass[i]`` Two CLI to quickly develop a classifier for text using Scikit-Learn_.
-- ``fnldictag`` A CLI to tag tokens from a dictionary in text.
+- ``fnlclass[i]`` quickly develop a classifier for text using Scikit-Learn_.
+- ``fnlcorpus`` store corpora in JSON format in a CouchDB.
+- ``fnldictag`` tag tokens from a dictionary in text.
+- ``fnlgpcounter`` count gene/protein symbols in MEDLINE.
+- ``fnlkappa`` calculate inter-rater agreement scores.
+- ``fnlsegment`` segment text into sentences using NLTK_ (3.0alpha).
+- ``fnlsegtrain`` train a NLTK_ PunktSentenceTokenizer.
 
 .. warning:: This project is under "continuous" development (very alpha-ish).
 
@@ -58,25 +49,28 @@ The library provides the following command-line tools:
 .. _Scikit-Learn: http://scikit-learn.org/stable/
 .. _SQLAlchemy: http://www.sqlalchemy.org/
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
+.. _gnamed: http://github.com/fnl/gnamed
+.. _medic: http://github.com/fnl/medic
 .. _txtfnnl: http://github.com/fnl/txtfnnl
-.. _fnlgnamed: http://github.com/fnl/libfnl/wiki/fnlgnamed.py
-.. _fnlmedline: http://github.com/fnl/libfnl/wiki/fnlmedline.py
 
 Requirements
 ============
 
 * Python 3.0+ (3.2 or newer recommended)
-* SQLAlchemy 0.8+ (A Python ORM)
+* Numpy, SciPy, and Scikit-Learn 0.14+ (for the document classifiers ``fnlclass[i]``)
+* NLTK 3.0+ (for the sentence segmenting tools ``fnlseg*``)
+* CouchDB 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
+* DAWG (for ``fnlgpcounter``; see Installation below)
 
 Optional tools:
 
 * Postgres 8.4+ (9.2 or newer recommended)
+* SQLAlchemy 0.8+ (A Python ORM)
 * psycopg2 (A Python Postgres DB client)
 * GENIA Tagger (optional, latest version)
-* CouchDB 1.0+ (1.3 or newer recommended)
-* RE2 (Google's DFA-based regular expression library)
-* Numpy, SciPy, and Scikit-Learn 0.14+ (for the document classifiers ``fnlclass[i]``)
-* NLTK 3.0+ (for the sentence segmenting tools ``fnlpst*``)
+* gnamed_
+* medic_
+* txtfnnl_
 
 Installation
 ============

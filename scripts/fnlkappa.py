@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from types import FunctionType
-from libfnl.stat.kappa import Fleiss, CreateRatingMatrix
+from fnl.stat.kappa import Fleiss, CreateRatingMatrix
 
 __author__ = "Florian Leitner"
 __version__ = "1.0"
@@ -15,7 +15,7 @@ __version__ = "1.0"
 def main(*file_names:tuple([str]), subject_col:int=1, rating_col:int=2, Kappa:FunctionType=Fleiss):
     """
     :param rating_col: Ratings (votes) are expected to be in the given column.
-    :param Kappa: The :py:module:`libfnl.stat.kappa` function to use.
+    :param Kappa: The :py:module:`fnl.stat.kappa` function to use.
     """
     ratings = []
 

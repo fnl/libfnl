@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """bootstrap a gene/protein name/reference repository"""
-import libfnl.gnamed
+import fnl.gnamed
 import logging
 import sys
 import os
@@ -9,10 +9,10 @@ from argparse import ArgumentParser
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import OperationalError
 
-from libfnl.gnamed.constants import REPOSITORIES
-from libfnl.gnamed.fetcher import Retrieve
-from libfnl.gnamed.orm import InitDb
-from libfnl.gnamed.parsers import taxa
+from fnl.gnamed.constants import REPOSITORIES
+from fnl.gnamed.fetcher import Retrieve
+from fnl.gnamed.orm import InitDb
+from fnl.gnamed.parsers import taxa
 
 _cmd = None
 
@@ -153,7 +153,7 @@ if args.loglevel <= logging.DEBUG:
     logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
 
 if args.version:
-    print(libfnl.gnamed.__version__)
+    print(fnl.gnamed.__version__)
 elif args.list:
     for key in REPOSITORIES:
         print("{}\t({})".format(key, REPOSITORIES[key]['description']))
@@ -190,7 +190,7 @@ elif args.command == 'load' and args.repository:
 
     if args.repository in ('entrezpg', 'uniprotpg'):
         repo_parser_module = __import__(
-            'libfnl.gnamed.parsers.' + args.repository[:-2], globals(),
+            'fnl.gnamed.parsers.' + args.repository[:-2], globals(),
             fromlist=['SpeedLoader']
         )
         repo_parser = repo_parser_module.SpeedLoader(
@@ -204,7 +204,7 @@ elif args.command == 'load' and args.repository:
         ))
     else:
         repo_parser_module = __import__(
-            'libfnl.gnamed.parsers.' + args.repository, globals(),
+            'fnl.gnamed.parsers.' + args.repository, globals(),
             fromlist=['Parser']
         )
         repo_parser = repo_parser_module.Parser(*args.files,
