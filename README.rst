@@ -5,9 +5,9 @@
 Introduction
 ============
 
-**libfnl** is an API and colleciton of CLIs to facilitate data mining text by providing data management tools for this task.
+**libfnl** is an API and CLI facilitating data mining of text by providing a collection of easy-to-use tools.
 The library is designed to play ball with Python 3.2+ and *only* targets Python 3k.
-It is another piece in the txtfnnl_ text mininig library, the gnamed_ gene name repository daemon, and the medic_ PubMed mirroring tool collection, all by the same author.
+It is another piece in the txtfnnl_ text mining library, the gnamed_ gene name repository daemon, and the medic_ PubMed mirroring tool collection, all by the same author.
 
 The library contains the following packages:
 
@@ -16,7 +16,7 @@ The library contains the following packages:
 ``fnl.nlp``
     currently, only contains a Python wrapper for the GENIA_ Tagger_, a handler for the GENIA_ corpus, and a module collecting all Penn tags
 ``fnl.stat``
-    a module to evaluate inter-rator Kappa scores and a module to develop text classifiers based on Scikit-Learn_
+    a module to evaluate inter-rater Kappa scores and a module to develop text classifiers based on Scikit-Learn_
 ``fnl.text``
     modules to extract, tokenize, segment sentences (based on NLTK_), and annotate text (strings)
 ``fnl.utils``
