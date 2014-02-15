@@ -5,11 +5,11 @@
 Introduction
 ============
 
-**libfnl** is an API and CLI to facilitate the mining of [biological] texts by
-providing data management tools for this task. The library is exclusively
-designed to work with Python 3.2+. It is targeted to cooperate with the
-txtfnnl_ text mininig library, the gnamed_ gene name repository daemon, and
-the medic_ PubMed mirroring tool.
+**libfnl** is an API and colleciton of CLIs to facilitate the mining of texts
+by providing data management tools for this task. The library is designed to
+play nice with Python 3.2+ and only targets Python 3k. It is another piece in
+the txtfnnl_ text mininig library, the gnamed_ gene name repository daemon,
+and the medic_ PubMed mirroring tool collection, all by the same author.
 
 The library contains the following packages:
 
@@ -19,7 +19,7 @@ The library contains the following packages:
     project has its own);
 ``fnl.nlp``
     currently, only contains a Python wrapper for the GENIA_ Tagger_, a
-    handler for the GENIA_ corpus and the collection of Penn tags
+    handler for the GENIA_ corpus, and a module collecting all Penn tags
 ``fnl.stat``
     a module to evaluate inter-rator Kappa scores and a module to develop
     text classifiers based on Scikit-Learn_
@@ -27,12 +27,12 @@ The library contains the following packages:
     modules to extract, tokenize, segment sentences (based on NLTK_), and
     annotate text (strings)
 ``fnl.utils``
-    useful utilities and tools (currently, just for handling JSON_)
+    additional utilities and tools (currently, just for handling JSON_)
 ``scripts``
-    various useful scripts to manage data/text and probably the main value
+    the CLI scripts to manage data/text, representing the main value
     provided by this collection
 
-The library provides the following command-line tools/interfaces:
+The script directory provides the following command-line interfaces:
  
 - ``fnlclass[i]`` quickly develop a classifier for text using Scikit-Learn_.
 - ``fnlcorpus`` store corpora in JSON format in a CouchDB.
@@ -59,20 +59,17 @@ Requirements
 ============
 
 * Python 3.0+ (3.2 or newer recommended)
-* Numpy, SciPy, and Scikit-Learn 0.14+ (for the document classifiers ``fnlclass[i]``)
+* Numpy, SciPy, and Scikit-Learn 0.14+ (for ``fnlclass[i]``)
 * NLTK 3.0+ (for the sentence segmenting tools ``fnlseg*``)
 * CouchDB 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
 * DAWG (for ``fnlgpcounter``; see Installation below)
-
-Optional tools:
-
-* Postgres 8.4+ (9.2 or newer recommended)
-* SQLAlchemy 0.8+ (A Python ORM)
-* psycopg2 (A Python Postgres DB client)
 * GENIA Tagger (optional, latest version)
-* gnamed_
-* medic_
-* txtfnnl_
+
+Optional projects that work together with this project:
+
+* gnamed_ for creating gene/protein name repositories
+* medic_ for mirroring and handling PubMed citations
+* txtfnnl_ natural language processing tools based on Apache OpenNLP and UIMA
 
 Installation
 ============
