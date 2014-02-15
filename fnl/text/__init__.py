@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.text
+.. py:module:: fnl.text
    :synopsis: Modules for working with text.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

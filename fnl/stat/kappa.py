@@ -1,6 +1,6 @@
 # coding=utf-8
 """
-.. py:module:: libfnl.stat.kappa
+.. py:module:: fnl.stat.kappa
    :synopsis: Functions to calculate inter-rater agreements.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

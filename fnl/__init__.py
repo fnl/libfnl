@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl
+.. py:module:: fnl
    :synopsis: A Python text mining library.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

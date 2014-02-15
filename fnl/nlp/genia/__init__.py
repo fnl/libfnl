@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.nlp.genia
+.. py:module:: fnl.nlp.genia
    :synopsis: NLP modules related to the GENIA project.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

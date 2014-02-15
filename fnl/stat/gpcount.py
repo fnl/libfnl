@@ -8,9 +8,9 @@
 import logging
 from dawg import DAWG
 from collections import defaultdict
-from libfnl.gnamed.orm import Session as GnamedSession, GeneString, Gene, ProteinString, Gene2PubMed, Protein2PubMed, Protein
-from libfnl.medline.orm import Session as MedlineSession, Section
-from libfnl.text.strtok import TokenOffsets
+from fnl.gnamed.orm import Session as GnamedSession, GeneString, Gene, ProteinString, Gene2PubMed, Protein2PubMed, Protein
+from fnl.medline.orm import Session as MedlineSession, Section
+from fnl.text.strtok import TokenOffsets
 from sqlalchemy.exc import DatabaseError
 
 

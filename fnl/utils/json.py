@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.utils.json
+.. py:module:: fnl.utils.json
    :synopsis: JSON data (de-) serializer.
 
 A thin configuration layer over the json package in the

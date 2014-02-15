@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.utils
+.. py:module:: fnl.utils
    :synopsis: Utilities and tools that do not fit elsewhere.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

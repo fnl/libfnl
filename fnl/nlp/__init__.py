@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.nlp
+.. py:module:: fnl.nlp
    :synopsis: Modules for natural language processing.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

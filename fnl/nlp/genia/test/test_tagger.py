@@ -3,7 +3,7 @@ import os
 
 from unittest import main, TestCase
 
-from libfnl.nlp.genia.tagger import GeniaTagger, Token, GENIATAGGER_DIR
+from fnl.nlp.genia.tagger import GeniaTagger, Token, GENIATAGGER_DIR
 
 assert os.path.exists(GENIATAGGER_DIR) and \
        os.access(GENIATAGGER_DIR, os.R_OK), \

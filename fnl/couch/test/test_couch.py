@@ -4,8 +4,8 @@ Virtually equal to the original code by Christopher Lenz for CouchDB-Python.
 
 import unittest
 
-from libfnl.couch.network import ResourceConflict, ResourceNotFound
-from libfnl.couch import testutil
+from fnl.couch.network import ResourceConflict, ResourceNotFound
+from fnl.couch import testutil
 
 __author__ = 'Christopher Lenz'
 

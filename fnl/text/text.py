@@ -10,7 +10,7 @@ import hashlib
 from collections import defaultdict, namedtuple
 from itertools import chain
 
-from libfnl import PyUTF16
+from fnl import PyUTF16
 
 class Text:
     """
@@ -528,7 +528,7 @@ class Text:
 
         An example:
 
-        >>> from libfnl.text.text import Text
+        >>> from fnl.text.text import Text
         >>> text = Text('example')
         >>> text[2] = 'ns1', 'id1', {'a': 'v'}
         >>> text[(1,3,4,6)] = 'ns1', 'id1'
@@ -646,7 +646,7 @@ class Text:
 
         .. doctest::
 
-            >>> from libfnl.text.text import Text
+            >>> from fnl.text.text import Text
             >>> text = Text('abc\U0010ABCDabc')
             >>> text.string[3] # SP \udbea\udfcd of length 2 on narrow builds
             '\\U0010abcd'

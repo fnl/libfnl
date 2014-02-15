@@ -8,8 +8,8 @@ from tempfile import TemporaryFile
 import time
 import unittest
 
-from libfnl.couch import network
-from libfnl.couch import testutil
+from fnl.couch import network
+from fnl.couch import testutil
 
 
 class SessionTestCase(testutil.TempDatabaseMixin, unittest.TestCase):

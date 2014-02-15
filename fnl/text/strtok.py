@@ -6,7 +6,7 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 from io import StringIO
-from libfnl.text.text import Text
+from fnl.text.text import Text
 from types import FunctionType
 from unicodedata import category
 

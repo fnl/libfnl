@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from hashlib import md5
-from libfnl.couch.serializer import b64encode
-from libfnl.nlp.text import Text
+from fnl.couch.serializer import b64encode
+from fnl.nlp.text import Text
 from mock import patch
 from unittest import main, TestCase
 

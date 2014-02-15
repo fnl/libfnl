@@ -11,8 +11,8 @@ import tempfile
 import threading
 import unittest
 
-from libfnl.couch import broker, network
-from libfnl.couch import testutil
+from fnl.couch import broker, network
+from fnl.couch import testutil
 network.CACHE_SIZE = 2, 3
 
 class ServerTestCase(testutil.TempDatabaseMixin, unittest.TestCase):

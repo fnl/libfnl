@@ -1,4 +1,4 @@
-from libfnl.stat.kappa import Fleiss
+from fnl.stat.kappa import Fleiss
 from unittest import main, TestCase
 
 __author__ = 'Florian Leitner'

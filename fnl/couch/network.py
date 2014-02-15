@@ -27,7 +27,7 @@ from threading import Lock
 import time
 from urllib.parse import urlsplit, urlunsplit, urlencode, unquote, quote
 
-from libfnl.couch.serializer import Decode as DecodeJson, \
+from fnl.couch.serializer import Decode as DecodeJson, \
                                     Encode as EncodeJson
 
 __all__ = ['HTTPError', 'PreconditionFailed', 'ResourceNotFound',

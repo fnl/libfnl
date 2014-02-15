@@ -17,7 +17,7 @@ from textwrap import dedent
 from types import FunctionType
 from urllib.parse import quote, urlencode
 
-from libfnl.couch import network, serializer
+from fnl.couch import network, serializer
 
 __all__ = ['Server', 'Database', 'Document', 'ViewResults', 'Row']
 __docformat__ = 'restructuredtext en'
@@ -730,7 +730,7 @@ class Database(object):
 
         :param document: The document; either a plain dictionary (even without
             ``_id`` or ``_rev`` values), or a :class:`.Document`.
-        :raise libfnl.couch.network.ResourceConflict: If the document's
+        :raise fnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
         """
         old_stamps = SetTimestamps(document)
@@ -871,7 +871,7 @@ class Database(object):
             ``batch`` is not a safe approach and should never be used for
             critical data. 
         :return: A `tuple` of the updated ``(id, rev)`` values of the document.
-        :raise libfnl.couch.network.ResourceConflict: If the document's
+        :raise fnl.couch.network.ResourceConflict: If the document's
             revision value does not match the value in the DB.
         """
         if '_id' in document:
@@ -943,7 +943,7 @@ class Database(object):
         >>> db.delete(doc)
         Traceback (most recent call last):
           ...
-        libfnl.couch.network.ResourceConflict: conflict: Document update conflict.
+        fnl.couch.network.ResourceConflict: conflict: Document update conflict.
 
         >>> del db['johndoe']
         >>> del server['python-tests']
@@ -951,7 +951,7 @@ class Database(object):
         :param doc: A dictionary or :class:`.Document` object holding the
             document data.
         :return: A `bool` indicating success.
-        :raise libfnl.couch.network.ResourceConflict: If the document was
+        :raise fnl.couch.network.ResourceConflict: If the document was
             updated in the database (ie., the ``_rev`` values mismatch).
         :raise ValueError: If either ID or revision of the document are not
             set.
@@ -1242,7 +1242,7 @@ class Database(object):
         ``_rev`` field too, this method acts in bulk. Finally, any documents
         that have a ``_deleted`` field set to ``True`` are purged.
 
-        >>> from libfnl.couch import Document
+        >>> from fnl.couch import Document
         >>> server = Server()
         >>> db = server.create('python-tests')
         >>> for doc in db.bulk([
@@ -1671,7 +1671,7 @@ class Server:
         """
         Remove the database with the specified *name*.
 
-        :raise libfnl.couch.network.ResourceNotFound: If no database with that
+        :raise fnl.couch.network.ResourceNotFound: If no database with that
             *name* exists.
         :raise TypeError: If the DB *name* is not a string.
         :raise ValueError: If the DB *name* evaluates to ``False`` or is not
@@ -1791,7 +1791,7 @@ class Server:
         """
         Create and return a new :class:`.Database` with the given name.
 
-        :raise libfnl.couch.network.PreconditionFailed: If a database with
+        :raise fnl.couch.network.PreconditionFailed: If a database with
             that *name* already exists.
         :raise TypeError: If the DB *name* is not a string.
         :raise ValueError: If the DB *name* evaluates to ``False`` or is not
@@ -1806,7 +1806,7 @@ class Server:
 
         Same as ``del server[name]``.
 
-        :raise libfnl.couch.network.ResourceNotFound: If no database with that
+        :raise fnl.couch.network.ResourceNotFound: If no database with that
             *name* exists.
         """
         del self[name]

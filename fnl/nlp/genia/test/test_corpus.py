@@ -1,6 +1,6 @@
 from tempfile import TemporaryFile
 from unittest import main, TestCase
-from libfnl.nlp.genia.corpus import Reader
+from fnl.nlp.genia.corpus import Reader
 
 __author__ = 'Florian Leitner'
 

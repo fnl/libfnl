@@ -11,7 +11,7 @@ import logging
 
 import random
 import sys
-from libfnl.couch import broker
+from fnl.couch import broker
 
 
 class TempDatabaseMixin(object):

@@ -1,5 +1,5 @@
 """
-.. py:module:: libfnl.nlp.genia.tagger
+.. py:module:: fnl.nlp.genia.tagger
    :synopsis: A subprocess wrapper for the GENIA Tagger.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>

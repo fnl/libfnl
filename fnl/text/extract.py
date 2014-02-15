@@ -3,7 +3,7 @@
 .. py:module:: extract
    :synopsis: Extract text from files.
 
-Conversion of content from files to the internal :mod:`libfnl.nlp.text`
+Conversion of content from files to the internal :mod:`fnl.nlp.text`
 format, attempting to preserve annotations where possible.
 
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
@@ -19,7 +19,7 @@ from mimetypes import guess_type
 from socket import gethostname
 from unicodedata import normalize
 
-from libfnl.text.text import Text
+from fnl.text.text import Text
 
 GREEK_LOWER = {
     "alpha": "α",

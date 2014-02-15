@@ -1,10 +1,10 @@
-import libfnl.nlp.strtok as S
+import fnl.nlp.strtok as S
 
 from random import randint
 from time import time
 from unicodedata import category
 from unittest import main, TestCase
-from libfnl.nlp.text import Text
+from fnl.nlp.text import Text
 
 class TokenizerTests(TestCase):
 
