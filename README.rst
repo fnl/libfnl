@@ -21,9 +21,11 @@ The library contains the following packages:
     currently, only contains a Python wrapper for the GENIA_ Tagger_, a
     handler for the GENIA_ corpus and the collection of Penn tags
 ``fnl.stat``
-    currently, only a module to evaluate inter-rator Kappa scores
+    a module to evaluate inter-rator Kappa scores and a module to develop
+    text classifiers based on Scikit-Learn_
 ``fnl.text``
-    modules to extract, tokenize, segment, and annotate text (strings)
+    modules to extract, tokenize, segment sentences (based on NLTK_), and
+    annotate text (strings)
 ``fnl.utils``
     useful utilities and tools (currently, just for handling JSON_)
 ``scripts``

@@ -18,7 +18,7 @@ __verison__ = "1.0"
 
 from sklearn.externals.joblib import load
 
-from classi import Data
+from fnl.stat.textclass import Data
 
 
 def Predict(sentences, data, model_i, model_e):

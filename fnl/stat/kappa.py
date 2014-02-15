@@ -1,4 +1,3 @@
-# coding=utf-8
 """
 .. py:module:: fnl.stat.kappa
    :synopsis: Functions to calculate inter-rater agreements.
@@ -9,13 +8,14 @@
 
 import logging
 
+
 def Fleiss(frequency_matrix):
     """
     Compute Fleiss' Kappa (a `float` value) for two or more raters.
 
     .. seealso::
 
-        `WikiPedia on Fleiss' Kappa <http://en.wikipedia.org/wiki/Fleiss_kappa>`_
+      `WikiPedia on Fleiss' Kappa <http://en.wikipedia.org/wiki/Fleiss_kappa>`_
 
     Each row ``s`` in the *frequency matrix* ``M`` represents a subject the
     raters voted on. Each subject row then has a list exactly as long as
@@ -51,7 +51,7 @@ def Fleiss(frequency_matrix):
     for c in range(C):
         for s in range(S):
             p[c] += M[s][c]
-        
+
         p[c] /= SR
 
     # Compute rater agreement per subject: P_s
@@ -74,7 +74,8 @@ def Fleiss(frequency_matrix):
     # Return Fleiss' Kappa
     return (mean_agreement - var_votes) / (1 - var_votes)
 
-def CreateRatingMatrix(ratings:[{str: str}]) -> [[int]]:
+
+def CreateRatingMatrix(ratings: [{str: str}]) -> [[int]]:
     """
     :param ratings: A list of {subject: vote} dictionaries; one per rater.
     :return list: A rating frequency matrix as required for the Kappa
@@ -95,7 +96,8 @@ def CreateRatingMatrix(ratings:[{str: str}]) -> [[int]]:
 
     # Determine categories
     categories = set()
-    for r in ratings: categories.update(r.values())
+    for r in ratings:
+        categories.update(r.values())
     categories = sorted(categories)
     logging.info("Categories: %s", categories)
 
@@ -110,7 +112,8 @@ def CreateRatingMatrix(ratings:[{str: str}]) -> [[int]]:
 
     return M
 
-def FindAndCheckRaters(M:[[int]]) -> int:
+
+def FindAndCheckRaters(M: [[int]]) -> int:
     """
     Find the number of raters ``R`` and assert that the sum of each row has
     that same number.
@@ -122,4 +125,3 @@ def FindAndCheckRaters(M:[[int]]) -> int:
     assert all(sum(s) == R and len(s) == C for s in M), \
         "non-equal number of raters or categories in matrix"
     return R
-
