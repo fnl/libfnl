@@ -5,32 +5,24 @@
 Introduction
 ============
 
-**libfnl** is an API and colleciton of CLIs to facilitate the mining of texts
-by providing data management tools for this task. The library is designed to
-play nice with Python 3.2+ and only targets Python 3k. It is another piece in
-the txtfnnl_ text mininig library, the gnamed_ gene name repository daemon,
-and the medic_ PubMed mirroring tool collection, all by the same author.
+**libfnl** is an API and colleciton of CLIs to facilitate data mining text by providing data management tools for this task.
+The library is designed to play ball with Python 3.2+ and *only* targets Python 3k.
+It is another piece in the txtfnnl_ text mininig library, the gnamed_ gene name repository daemon, and the medic_ PubMed mirroring tool collection, all by the same author.
 
 The library contains the following packages:
 
 ``fnl.couch``
-    provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this
-    project was started, there was no Py3k CouchDB_ client around, so this
-    project has its own);
+    provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this project was started, there was no Py3k CouchDB_ client around, so this project has its own);
 ``fnl.nlp``
-    currently, only contains a Python wrapper for the GENIA_ Tagger_, a
-    handler for the GENIA_ corpus, and a module collecting all Penn tags
+    currently, only contains a Python wrapper for the GENIA_ Tagger_, a handler for the GENIA_ corpus, and a module collecting all Penn tags
 ``fnl.stat``
-    a module to evaluate inter-rator Kappa scores and a module to develop
-    text classifiers based on Scikit-Learn_
+    a module to evaluate inter-rator Kappa scores and a module to develop text classifiers based on Scikit-Learn_
 ``fnl.text``
-    modules to extract, tokenize, segment sentences (based on NLTK_), and
-    annotate text (strings)
+    modules to extract, tokenize, segment sentences (based on NLTK_), and annotate text (strings)
 ``fnl.utils``
     additional utilities and tools (currently, just for handling JSON_)
 ``scripts``
-    the CLI scripts to manage data/text, representing the main value
-    provided by this collection
+    the CLI scripts to manage data/text, representing the main value provided by this collection
 
 The script directory provides the following command-line interfaces:
  
