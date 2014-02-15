@@ -18,8 +18,8 @@ The library contains the following packages:
     project was started, there was no Py3k CouchDB_ client around, so this
     project has its own);
 ``fnl.nlp``
-    currently, only contains a Python wrapper for the GENIA_ Tagger_
-    and the collection of Penn tags
+    currently, only contains a Python wrapper for the GENIA_ Tagger_, a
+    handler for the GENIA_ corpus and the collection of Penn tags
 ``fnl.stat``
     currently, only a module to evaluate inter-rator Kappa scores
 ``fnl.text``
