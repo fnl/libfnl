@@ -1,17 +1,12 @@
+#!/usr/bin/env python3
 from distutils.core import setup
-from distutils.command.install import INSTALL_SCHEMES
 # from Cython.Distutils import build_ext
 # from distutils.extension import Extension
-
-for scheme in INSTALL_SCHEMES.values():
-    scheme['data'] = scheme['purelib']
-
-# TODO: MANIFEST.in with the .rst files in doc
 
 setup(
     name='libfnl',
     version='1',
-    license='GNU AGPL v3',
+    license='GNU Affero GPL v3',
     author='Florian Leitner',
     author_email='florian.leitner@gmail.com',
     url='https://github.com/fnl/libfnl',
@@ -22,8 +17,6 @@ setup(
         'psycopg2 >= 2.4',
         'nltk >= 3.0',
         'scikit-learn >= 0.12',
-        'nose',
-        'mock',
     ],
     # cmdclass = {'build_ext': build_ext},
     # ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
@@ -38,7 +31,10 @@ setup(
         'fnl.text',
         'fnl.utils',
     ],
-    # package_dir={ '': '.' },
+    data_files=[
+        ('var/fnl/models', ['medline_abstract_pst.bin']),
+    ],
+    package_dir={'': 'src'},
     scripts=[
         'scripts/fnlclass.py',
         'scripts/fnlclassi.py',
