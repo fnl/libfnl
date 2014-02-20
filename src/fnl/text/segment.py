@@ -8,8 +8,6 @@
 import logging
 import re
 
-from math import log10
-
 __author__ = "Florian Leitner"
 
 AUTHOR_PATTERN_TAIL = re.compile(r',(?: [A-Z]\.)+$')
@@ -76,7 +74,5 @@ def SplitTextInColumn(stream, pst, column, sep='\t'):
             logging.critical('input has no column %s:\n%s', column, items)
             break
 
-        sid = "{:0%d}" % (log10(len(sentences)) + 1.0)
-
         for idx, sent in enumerate(sentences):
-            print(sep.join((prefix, sid.format(idx+1), sent, suffix)))
+            print(sep.join((prefix, str(idx+1), sent, suffix)))
