@@ -5,7 +5,7 @@ from distutils.core import setup
 
 setup(
     name='libfnl',
-    version='1',
+    version='0.0.1',
     license='GNU Affero GPL v3',
     author='Florian Leitner',
     author_email='florian.leitner@gmail.com',
