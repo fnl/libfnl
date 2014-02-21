@@ -8,11 +8,17 @@
 
 __version__ = '1'
 
+
 def _UTF16() -> bool:
     from sys import maxunicode
-    if maxunicode == 0xFFFF: return True
-    elif maxunicode == 0x10FFFF: return False
-    else: raise RuntimeError('Python\'s Unicode encoding unknown')
+
+    if maxunicode == 0xFFFF:
+        return True
+    elif maxunicode == 0x10FFFF:
+        return False
+    else:
+        raise RuntimeError('Python\'s Unicode encoding unknown')
+
 
 PyUTF16 = _UTF16()
 """
