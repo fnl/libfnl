@@ -1,4 +1,6 @@
 """
+n:$
+
 .. py: module:: strtok
    : synopsis: A string tokenizer for any Unicode text.
 
@@ -6,7 +8,6 @@
 .. License: GNU Affero GPL v3 (http: //www.gnu.org/licenses/agpl.html)
 """
 from io import StringIO
-from fnl.text.text import Text
 from types import FunctionType
 from unicodedata import category
 
@@ -86,10 +87,15 @@ class Category:
     """
     Integer values for the Unicode categories that correspond to single ASCII
     characters. In other words, a category value always will be in the
-    [1..127] range.
+    [1..127] range. This is useful to create a "morphology representation" that
+    encodes the characters found in the string being tokenized.
 
     Three additional categories are added that are not found in UniCode:
     : attr:`.Lg`, :attr:`.LG`, and :attr:`.Ts`.
+
+    Next, logical groupings of the categories are provided, too.
+
+    Finally, a few class methods help identifying character assignments.
     """
 
     # 65 - 90 (A-Z)
@@ -325,7 +331,7 @@ CATEGORY_MAP = {
     "Co": Category.Co
 }
 """
-Mapping of Unicode category names to Category attributes.
+Mapping of Unicode category names to :class:`Category` attributes.
 """
 
 REMAPPED_CHARACTERS = {
@@ -424,74 +430,34 @@ REMAPPED_CHARACTERS = {
         "\u301F": Category.Pf,  # LOW DOUBLE PRIME QUOTATION MARK
     }
 }
-"Remapped Unicode character categories: ``{ from_cat: { char: to_cat } }``."
+"""
+Remapped Unicode character categories: ``{ from_cat: { char: to_cat } }``.
+
+This mapping is mostly to correct special cases that, from a linguistic
+perspective, are better represented by another Category.
+"""
 
 
 ##################
 # IMPLEMENTATION #
 ##################
-
-def TokenOffsets(string):
-    """
-    **Yield** the offsets of all Unicode category border in the *string*.
-    """
-    if string is not None and len(string) > 0:
-        yield 0
-        last = category(string[0])
-
-        for i in range(1, len(string)):
-            current = category(string[i])
-
-            if last != current:
-                # ignore capitalized tokens:
-                if last == 'Lu' and \
-                   current == 'Ll' and \
-                   (i == 1 or (i > 1 and category(string[i - 2]) != 'Lu')):
-                    pass
-                else:
-                    yield i
-
-            last = current
-
-        yield len(string)
-
-
 class Tokenizer:
     """
     Abstract tokenizer implementing the actual procedure.
     """
 
-    def __init__(self, namespace: str=NAMESPACE):
+    def tag(self, text: str):
         """
-        The *namespace* is the namespace string used for the tags created on
-        the text.
-        """
-        self.namespace = namespace
+        Tokenize the given *text* by yielding ``Tokens``.
 
-    def tag(self, text: Text, morphology: str="morphology") -> dict:
-        """
-        Tokenize the given *text* by adding tags the defined
-        : attr:`.namespace` with *morphology* attributes for each tag.
+        A Token is a tuple of the offset, the token string itself,
+        and the morphology representation of that token.
 
-        : param text: The :class:`.Text` to tag.
-        : param morphology: The key used in the attribute dictionaries for the
-            morphology strings.
-        """
-        text.add(self.tags(text, morphology), self.namespace)
-
-    def tags(self, text: Text, morphology: str):
-        """
-        Yield tokens for the given *text* in the defined
-        : attr:`.namespace` with *morphology* attributes for each tag.
-
-        : param text: The :class:`.Text` to tag.
-        : param morphology: The key used in the attribute dictionaries for the
-            morphology strings.
-        : return: An iterator of (tag, attributes) tuples, where tag is a tuple
-            of namespace, ID, offsets and attributes is a dictionary.
+        :param text: The string to tokenize.
+        :return: An iterator of (offset, token, tag, morphology) tuples.
         """
         cats = None
-        last_cat = None
+        morph = None
         start = 0
         State = lambda c: False
 
@@ -499,24 +465,22 @@ class Tokenizer:
             if State(cat):
                 if not cats:
                     cats = StringIO()
-                    cats.write(last_cat)
+                    cats.write(morph)
 
                 cats.write(chr(cat))
             else:
                 if end:
-                    tag = (NAMESPACE, State.__name__, (start, end))
-                    last_cat = cats.getvalue() if cats else last_cat
-                    yield tag, {morphology: last_cat}
+                    morph = cats.getvalue() if cats else morph
+                    yield start, text[start:end], State.__name__, morph
 
                 cats = None
-                last_cat = chr(cat)
+                morph = chr(cat)
                 start = end
                 State = self._findState(cat)
 
-        if cats or last_cat:
-            tag = (NAMESPACE, State.__name__, (start, len(text.string)))
-            last_cat = cats.getvalue() if cats else last_cat
-            yield tag, {morphology: last_cat}
+        if cats or morph:
+            morph = cats.getvalue() if cats else morph
+            yield start, text[start:end], State.__name__, morph
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
@@ -531,7 +495,7 @@ class Tokenizer:
         raise NotImplementedError("abstract")
 
 
-class Separator(Tokenizer):
+class SpaceTokenizer(Tokenizer):
     """
     A tokenizer that only separates `Z?` category characters (line- and
     paragraph-breaks, as well as spaces) from all others.
@@ -611,12 +575,41 @@ class AlnumTokenizer(Tokenizer):
             raise RuntimeError("no tests for cat='%s'" % chr(cat))
 
 
-def CategoryIter(text: Text) -> iter:
+def TokenOffsets(string: str):
     """
-    Yields category integers for a *text*, one per (real - wrt. Surrogate
+    Yield the offsets of all Unicode category borders in the *string*,
+    including the initial 0 and the final offset value of ``len(string)``.
+
+    Caplitalized words special case: A single upper case letter ('Lu')
+    followed by lower case letters ('Ll') are treated as a single token.
+    """
+    if string is not None and len(string) > 0:
+        yield 0
+        last = category(string[0])
+
+        for i in range(1, len(string)):
+            current = category(string[i])
+
+            if last != current:
+                # "join" capitalized tokens:
+                if last == 'Lu' and \
+                   current == 'Ll' and \
+                   (i == 1 or (i > 1 and category(string[i - 2]) != 'Lu')):
+                    pass
+                else:
+                    yield i
+
+            last = current
+
+        yield len(string)
+
+
+def CategoryIter(string: str) -> iter:
+    """
+    Yield category integers for a *text*, one per (real - wrt. Surrogate
     Pairs) character in the *text*.
     """
-    for char in text.string:
+    for char in string:
         yield GetCharCategoryValue(char)
 
 
@@ -624,8 +617,8 @@ def GetCharCategoryValue(character: chr) -> int:
     """
     Return the (remapped) Unicode category value of a *character*.
 
-    : raises: TypeError If the *character* can not be mapped by
-                       : func:`unicodedata.category`
+    :raises: TypeError If the *character* can not be mapped by
+                       :func:`unicodedata.category`
     """
     cat = CATEGORY_MAP[category(character)]
 
