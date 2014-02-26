@@ -1,10 +1,10 @@
-import fnl.nlp.strtok as S
+import fnl.text.strtok as S
 
 from random import randint
 from time import time
 from unicodedata import category
 from unittest import main, TestCase
-from fnl.nlp.text import Text
+
 
 class TokenizerTests(TestCase):
 
@@ -16,23 +16,22 @@ class TokenizerTests(TestCase):
         "\n\u2029\u0007\u00AD\u0092"
     )
     TAGS = (
-        "AAABBBMBEE" # 10 (10)
-        "EGJDDDHHHI" # 10 (20)
-        "NIIabcde"   #  8 (28)
-        "fghijklmno" # 10 (38)
-        "KL^`["     #   5 (43)
+        "AAABBBMBEE"  # 10 (10)
+        "EGJDDDHHHI"  # 10 (20)
+        "NIIabcde"    # _8 (28)
+        "fghijklmno"  # 10 (38)
+        "KL^`["       # _5 (43)
     )
 
     def setUp(self):
-        self.text = Text(self.EXAMPLE)
+        self.text = self.EXAMPLE
 
     def assertResult(self, tokenizer, offsets):
-        tokenizer.tag(self.text)
-
-        for idx, (tag, attrs) in enumerate(self.text.get()):
-            self.assertSequenceEqual(offsets[idx], tag[2])
-            self.assertSequenceEqual(self.TAGS[tag[2][0]:tag[2][1]],
-                                     attrs['morphology'])
+        for idx, (start, end, tag, morph) in enumerate(
+            tokenizer.tag(self.text)
+        ):
+            self.assertSequenceEqual(offsets[idx], (start, end))
+            self.assertSequenceEqual(self.TAGS[start:end], morph)
 
     def testSeparator(self):
         offsets = [
@@ -42,26 +41,26 @@ class TokenizerTests(TestCase):
             (38, 40),
             (40, 43),
         ]
-        tokenizer = S.Separator()
+        tokenizer = S.SpaceTokenizer()
         self.assertResult(tokenizer, offsets)
 
     def testWord(self):
         offsets = [
-                (0, 6), (6, 7), (7, 12), (12, 13), (13, 19), (19, 20),
-                (20, 21), (21, 23), (23, 24), (24, 25), (25, 26), (26, 27),
-                (27, 28), (28, 29), (29, 30), (30, 31), (31, 32), (32, 33),
-                (33, 34), (34, 35), (35, 36), (36, 37), (37, 38), (38, 40),
-                (40, 41), (41, 42), (42, 43),
+            (0, 6), (6, 7), (7, 12), (12, 13), (13, 19), (19, 20),
+            (20, 21), (21, 23), (23, 24), (24, 25), (25, 26), (26, 27),
+            (27, 28), (28, 29), (29, 30), (30, 31), (31, 32), (32, 33),
+            (33, 34), (34, 35), (35, 36), (36, 37), (37, 38), (38, 40),
+            (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.WordTokenizer()
         self.assertResult(tokenizer, offsets)
 
     def testAlnum(self):
         offsets = [
-                (0, 6), (6, 7), (7, 20), (20, 21), (21, 23), (23, 24),
-                (24, 25), (25, 26), (26, 27), (27, 28), (28, 29), (29, 30),
-                (30, 31), (31, 32), (32, 33), (33, 34), (34, 35), (35, 36),
-                (36, 37), (37, 38), (38, 40), (40, 41), (41, 42), (42, 43),
+            (0, 6), (6, 7), (7, 20), (20, 21), (21, 23), (23, 24),
+            (24, 25), (25, 26), (26, 27), (27, 28), (28, 29), (29, 30),
+            (30, 31), (31, 32), (32, 33), (33, 34), (34, 35), (35, 36),
+            (36, 37), (37, 38), (38, 40), (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.AlnumTokenizer()
         self.assertResult(tokenizer, offsets)
@@ -71,9 +70,8 @@ class TokenizerTests(TestCase):
         # faster on entire BMP, slower on random ASCII or sentences
         # string = "".join(chr(randint(1, 0xD7FE)) for i in range(100000))
         # string = "".join(chr(randint(1, 127)) for i in range(100000))
-        string = "The fox jumped over - uhm, what? Hell, whatever. " * 2000
+        text = "The fox jumped over - uhm, what? Hell, whatever. " * 2000
         # ^^ 50*2k = 100k chars, 22*2k = 44k tokens (one long article) ^^
-        text = Text(string)
         # This tokenizer is slightly faster than the others:
         # tokenizer = S.Separator()
         # these two tokenizers take about the same as long, word a tad slower
@@ -81,9 +79,8 @@ class TokenizerTests(TestCase):
         # tokenizer = S.AlnumTokenizer()
         start = time()
         # Tagging without morphology (None) is about 30% faster, obviously.
-        tokenizer.tag(text)
+        tags = list(tokenizer.tag(text))
         end = time()
-        tags = dict(text.get())
         # on an average MBP (2.66 GHz) this should take less than half a sec
         # using the slowest configuration
         self.assertTrue(end - start < 1.0, "creating %i tokens took %.3f s" %
@@ -92,18 +89,17 @@ class TokenizerTests(TestCase):
         # make sure they are all good start/end-positioned
         last = 0
 
-        for idx, tag in enumerate(sorted(tags, key=lambda t: t[2])):
-            self.assertEqual(last, tag[2][0])
-            attrs = tags[tag]
-            self.assertTrue(len(attrs['morphology']) == tag[2][1] - tag[2][0])
-            last = tag[2][1]
+        for idx, (start, end, tag, morph) in enumerate(sorted(tags)):
+            self.assertEqual(last, start)
+            self.assertTrue(len(morph) == end - start)
+            last = end
 
 
 class CharIterTests(TestCase):
 
     def testSurrogateCharacter(self):
-        result = list(S.CategoryIter(Text('ab\uD800\uDC00cd')))
-        expected = [ ord('D'), ord('D'), ord('H'), ord('D'), ord('D') ]
+        result = list(S.CategoryIter('ab\uD800\uDC00cd'))
+        expected = [ord('D'), ord('D'), ord('H'), ord('D'), ord('D')]
         self.assertListEqual(expected, result)
 
 
@@ -137,8 +133,7 @@ if __name__ == '__main__':
     import sys
 
     if len(sys.argv) > 1 and sys.argv[1] == "profile":
-        string = "".join(chr(randint(1, 0xD7FE)) for dummy in range(100000))
-        text = Text(string)
+        text = "".join(chr(randint(1, 0xD7FE)) for dummy in range(100000))
         tokenizer = S.WordTokenizer()
         tokenizer.tag(text)
         print("tagged", len(text.string), "chars with", len(text), "tokens")

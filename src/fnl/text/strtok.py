@@ -1,8 +1,6 @@
 """
-n:$
-
 .. py: module:: strtok
-   : synopsis: A string tokenizer for any Unicode text.
+   : synopsis: An offset-based string tokenizer for any Unicode text.
 
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http: //www.gnu.org/licenses/agpl.html)
@@ -448,18 +446,18 @@ class Tokenizer:
 
     def tag(self, text: str):
         """
-        Tokenize the given *text* by yielding ``Tokens``.
+        Tokenize the given *text* by yielding offset tags.
 
-        A Token is a tuple of the offset, the token string itself,
-        and the morphology representation of that token.
+        A Token is a tuple of the start/end offsets, the token tag,
+        and a morphological representation of the token.
 
         :param text: The string to tokenize.
-        :return: An iterator of (offset, token, tag, morphology) tuples.
+        :return: An iterator over (start, end, tag, morphology) tag tuples.
         """
         cats = None
         morph = None
         start = 0
-        State = lambda c: False
+        State = lambda c: False  # the tag (aka lexer "state")
 
         for end, cat in enumerate(CategoryIter(text)):
             if State(cat):
@@ -471,7 +469,7 @@ class Tokenizer:
             else:
                 if end:
                     morph = cats.getvalue() if cats else morph
-                    yield start, text[start:end], State.__name__, morph
+                    yield start, end, State.__name__, morph
 
                 cats = None
                 morph = chr(cat)
@@ -480,7 +478,7 @@ class Tokenizer:
 
         if cats or morph:
             morph = cats.getvalue() if cats else morph
-            yield start, text[start:end], State.__name__, morph
+            yield start, len(text), State.__name__, morph
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
@@ -500,10 +498,10 @@ class SpaceTokenizer(Tokenizer):
     A tokenizer that only separates `Z?` category characters (line- and
     paragraph-breaks, as well as spaces) from all others.
 
-    Produces the following tag IDs:
+    Produces the following tags:
 
-        * not_separator (all others)+
         * separator (Z?)+
+        * not_separator (all others)+
     """
 
     @staticmethod
@@ -520,14 +518,14 @@ class WordTokenizer(Tokenizer):
     -digit, -numeral, and -separator character, while it joins the others
     as long as the next character is of that same category, too.
 
-    Produces the following tag IDs:
+    Produces the following tags:
 
         * breaker (Zl, Zp)+
         * digit (Nd)+
-        * glyph (all others){1}
         * letter (L?)+
         * numeral (Nl)+
         * space (Zs)+
+        * glyph (all others){1}
     """
 
     @staticmethod
@@ -557,8 +555,8 @@ class AlnumTokenizer(Tokenizer):
 
         * alnum (L?, Nl, Nd)+
         * breaker (Zl, Zp)+
-        * glyph (all others){1}
         * space (Zs)+
+        * glyph (all others){1}
     """
 
     @staticmethod
@@ -609,8 +607,22 @@ def CategoryIter(string: str) -> iter:
     Yield category integers for a *text*, one per (real - wrt. Surrogate
     Pairs) character in the *text*.
     """
-    for char in string:
-        yield GetCharCategoryValue(char)
+    char_iter = iter(string)
+
+    while True:
+        c = next(char_iter)
+
+        if '\ud800' <= c < '\udc00':
+            # convert the surrogate pair to one single wide character
+            l = next(char_iter)
+
+            if not '\udc00' <= l < '\ue000':
+                raise UnicodeError('low surrogate character missing')
+
+            o = 0x10000 + (ord(c) - 0xD800) * 0x400 + (ord(l) - 0xDC00)
+            c = chr(o)
+
+        yield GetCharCategoryValue(c)
 
 
 def GetCharCategoryValue(character: chr) -> int:
