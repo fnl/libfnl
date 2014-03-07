@@ -54,7 +54,7 @@ parser.add_argument("groups", metavar='GROUP', nargs='+', type=open,
 parser.add_argument("--column", metavar='COL', type=int, default=None,
                     help="input files are NER tagged in BIO-format "
                     "with the (BIO-) tag in the last column and "
-                    "the real token in column COL; "
+                    "the real token in column COL (zero-based count); "
                     "tagged tokens will be masked using its (BIO-) tag")
 parser.add_argument("--decapitalize", action='store_true',
                     help="lowercase first letter of each instance")
@@ -127,9 +127,6 @@ if 1 > args.cutoff:
 
 if 1 > args.n_grams:
     parser.error("the n-gram value must be positive")
-
-if args.column is not None and 0 > args.column:
-    parser.error("column index must be non-negative")
 
 if not (0.0 < args.max_fpr <= 1.0):
     parser.error("max. FPR must be in (0,1] range")
