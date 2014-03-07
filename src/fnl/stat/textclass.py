@@ -189,7 +189,7 @@ Report = namedtuple('Report',
                     'parameters top worst fn fp classification folds')
 
 
-class Data(object):
+class Data:
     """
     The data object is a container for all data relevant to the classifiers.
     """
@@ -213,7 +213,7 @@ class Data(object):
                 self.instances = [f.readlines() for f in files]
                 self.raw = self.instances
             else:
-                read = ReadNERInput(column)
+                read = TokenReader(word_col=column)
                 self.raw, self.instances = zip(*[read(f) for f in files])
         except UnicodeDecodeError as e:
             import sys
@@ -274,7 +274,10 @@ class Data(object):
         return [counter[l] for l in sorted(counter.keys())]
 
 
-class Line(object):
+class Line:
+    """
+    A line being "constructed" by the `TokenReader`.
+    """
 
     def __init__(self):
         self.buffer = []
@@ -328,66 +331,89 @@ class Line(object):
             self.raw.append(token)
 
 
-def ReadNERInput(word_col=2):
+class TokenReader:
     """
-    Generate a function to read NER/IOB token files
-    (with the token word in column `word_col`, 3rd by default).
+    A functor to read IOB entity token files,
+    masking tagged tokens with their tags.
+
+    **Special Case**: For word tokens of the value "Fig"
+    that have been tagged with an I tag,
+    the entire (IB+) tag is ignored.
     """
-    def read(stream, tag_col=-1):
-        """Read NER/IOB token files (with the NER tag in last column)."""
+
+    def __init__(self, word_col=2, tag_col=-1):
+        """
+        Set the actual token to column `word_col`, 3rd by default.
+        Set the IOB-tag to column `tag_col`, last by default.
+        """
+        self.word_col = word_col
+        self.tag_col = tag_col
+        self._lines = None
+        self._raw = None
+
+    def __call__(self, stream):
+        """
+        Parse in input stream of tagged tokens.
+
+        Return two lists:
+        one with the raw (content) lines using only the "word" tokens and
+        one where all tagged tokens have been replaced with their (I/B-) tags.
+        """
         data = Line()
-        lines = []
-        raw = []
+        self._lines = []
+        self._raw = []
 
         for line in stream:
             content = line.strip()
 
             if not content:
                 if data.hasContent():
-                    data.closeEntity()
-                    entity_counts = ' '.join(
-                        '{}-{}'.format(e_type, len(data.entities[e_type]))
-                        for e_type in data.entities
-                    )
-                    lines.append('{} {}'.format(' '.join(data.buffer),
-                                                entity_counts))
-                    raw.append(' '.join(data.raw))
-                    data = Line()
+                    data = self._composeLine(data)
             else:
                 items = content.split('\t')
-                tag = items[tag_col]
-                token = items[word_col]
+                TokenReader._parseTokenTag(data, items[self.word_col],
+                                           items[self.tag_col])
 
-                if tag == 'O':
-                    data.closeEntity()
-                    data.append(token)
-                elif tag.startswith('B-') or \
-                        tag.startswith('I-'):
-                    if token in UNMASK:
-                        data.closeEntity()
+        return self._raw, self._lines
 
-                        if token == 'Fig':
-                            data.startFilteringFigure()
-                        else:
-                            data.stopFilteringFigure()
+    @staticmethod
+    def _parseTokenTag(data, token, tag):
+        if tag == 'O':
+            data.closeEntity()
+            data.append(token)
+        elif tag.startswith('B-') or \
+                tag.startswith('I-'):
+            if token in UNMASK:
+                data.closeEntity()
 
-                        data.append(token)
-                    elif data.filteringFigure():
-                        data.append(token)
-                    elif items[word_col] in ('.', '-'):
-                        if not data.parsingEntity():
-                            data.buffer.append(token)
-
-                        data.raw.append(token)
-                    else:
-                        data.openEntity(tag[2:], token)
-                        data.append(tag, raw=token)
+                if token == 'Fig':
+                    data.startFilteringFigure()
                 else:
-                    raise ValueError('unknown IOB tag "%s" for "%s"' %
-                                     (tag, token))
+                    data.stopFilteringFigure()
 
-        return raw, lines
-    return read
+                data.append(token)
+            elif data.filteringFigure():
+                data.append(token)
+            elif token in ('.', '-'):
+                if not data.parsingEntity():
+                    data.buffer.append(token)
+
+                data.append(token)
+            else:
+                data.openEntity(tag[2:], token)
+                data.append(tag, raw=token)
+        else:
+            raise ValueError('unknown IOB tag "%s" for "%s"' % (tag, token))
+
+    def _composeLine(self, data):
+        data.closeEntity()
+        entity_counts = ' '.join(
+            '{}-{}'.format(e_type, len(data.entities[e_type]))
+            for e_type in data.entities
+        )
+        self._lines.append('{} {}'.format(' '.join(data.buffer), entity_counts))
+        self._raw.append(' '.join(data.raw))
+        return Line()
 
 
 def GridSearch(data, pipeline, parameters, report):
@@ -401,12 +427,31 @@ def GridSearch(data, pipeline, parameters, report):
         print('{}:\t{}'.format(name, repr(value)))
 
 
-def Predict(data, pipeline):
-    """Predict lables for `data` using a sklearn `pipeline`."""
+def Predict(data, pipeline, sep='\t'):
+    """
+    Predict and print the lables for `data` using a sklearn `pipeline`.
+    In addition, a confidence value for each label is printed.
+    The lines, the label, and the confidenve value are separated by `sep`.
+    """
     labels = pipeline.predict(data.instances)
 
-    for i, l in enumerate(labels):
-        print(data.raw[i].strip(), l, sep='\t')
+    # find an appropriate confidence score method given the predictor
+    if hasattr(pipeline, "decision_function"):
+        scorer = pipeline.decision_function
+    elif hasattr(pipeline, "predict_log_proba"):
+        scorer = pipeline.predict_log_proba
+    elif hasattr(pipeline, "predict_proba"):
+        scorer = pipeline.predict_proba
+    else:
+        # no known method; default to a "100%" confidence
+        scorer = lambda X: [1.0] * len(X)
+
+    scores = scorer(data.instances)
+
+    for i, (l, s) in enumerate(zip(labels, scores)):
+        # for multi-label problems, get the score of the final label
+        s = s[l] if isinstance(s, np.ndarray) else s
+        print(data.raw[i].strip(), l, s, sep=sep)
 
 
 def Classify(data, classifier, report):
