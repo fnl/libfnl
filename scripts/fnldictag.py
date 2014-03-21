@@ -13,9 +13,20 @@ NUM = re.compile(r'(\d+)')
 SEP = re.compile(r'[ \-_]')
 STOPWORDS = frozenset({
     'An',
+    'I',
+    'In',
+    'The',
+    'To',
     'an',
-    'of',
+    'and',
+    'be',
+    'have',
+    'in',
     'not',
+    'of',
+    'that',
+    'the',
+    'to',
 })
 
 
