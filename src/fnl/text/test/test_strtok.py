@@ -1,4 +1,5 @@
 import fnl.text.strtok as S
+from libfnl.text.strtok import Category
 
 from random import randint
 from time import time
@@ -30,7 +31,7 @@ class TokenizerTests(TestCase):
         for idx, (start, end, tag, morph) in enumerate(
             tokenizer.tag(self.text)
         ):
-            self.assertSequenceEqual(offsets[idx], (start, end))
+            self.assertSequenceEqual(offsets[idx], (start, end), "%s, %d:%d, %s, %s" % (offsets[idx], start, end, tag, morph))
             self.assertSequenceEqual(self.TAGS[start:end], morph)
 
     def testSeparator(self):
@@ -44,6 +45,15 @@ class TokenizerTests(TestCase):
         tokenizer = S.SpaceTokenizer()
         self.assertResult(tokenizer, offsets)
 
+    def testSeparatorSkipTags(self):
+        offsets = [
+            (0, 6),
+            (7, 38),
+            (40, 43),
+        ]
+        tokenizer = S.SpaceTokenizer(skipTags={'separator'})
+        self.assertResult(tokenizer, offsets)
+
     def testWord(self):
         offsets = [
             (0, 6), (6, 7), (7, 12), (12, 13), (13, 19), (19, 20),
@@ -55,6 +65,18 @@ class TokenizerTests(TestCase):
         tokenizer = S.WordTokenizer()
         self.assertResult(tokenizer, offsets)
 
+    def testWordSkipTagsAndMorphs(self):
+        offsets = [
+            (0, 6), (7, 12), (12, 13), (13, 19), (19, 20),
+            (20, 21), (21, 23), (23, 24), (24, 25), (25, 26), (26, 27),
+            (28, 29), (29, 30), (30, 31), (31, 32), (32, 33),
+            (33, 34), (34, 35), (35, 36), (36, 37), (37, 38), (38, 40),
+            (40, 41), (41, 42), (42, 43),
+        ]
+        tokenizer = S.WordTokenizer(skipTags={'space'},
+                                    skipMorphs={chr(Category.Pd)})
+        self.assertResult(tokenizer, offsets)
+
     def testAlnum(self):
         offsets = [
             (0, 6), (6, 7), (7, 20), (20, 21), (21, 23), (23, 24),
@@ -63,6 +85,17 @@ class TokenizerTests(TestCase):
             (36, 37), (37, 38), (38, 40), (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.AlnumTokenizer()
+        self.assertResult(tokenizer, offsets)
+
+    def testAlnumSkipTagsAndMorphs(self):
+        offsets = [
+            (0, 6), (7, 20), (20, 21), (21, 23), (23, 24),
+            (24, 25), (25, 26), (26, 27), (27, 28), (29, 30),
+            (30, 31), (31, 32), (32, 33), (33, 34), (35, 36),
+            (36, 37), (37, 38), (40, 41), (41, 42), (42, 43),
+        ]
+        tokenizer = S.AlnumTokenizer(skipTags={'space', 'breaker'},
+                                     skipMorphs={chr(Category.Sk), chr(Category.Pe)})
         self.assertResult(tokenizer, offsets)
 
     def testTokenizingLargeArticleTakesLessThanOneSec(self):
@@ -136,6 +169,6 @@ if __name__ == '__main__':
         text = "".join(chr(randint(1, 0xD7FE)) for dummy in range(100000))
         tokenizer = S.WordTokenizer()
         tokenizer.tag(text)
-        print("tagged", len(text.string), "chars with", len(text), "tokens")
+        print("tagged", len(text), "chars with", len(text), "tokens")
     else:
         main()
