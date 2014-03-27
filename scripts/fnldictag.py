@@ -56,16 +56,16 @@ def splitNerTokens(ner_words, pos_tokens, tokens, tokenizer):
     for i, ner_t in enumerate(ner_words):
         word = next(t_iter)
 
-        if word == ner_t.word:
+        if word == ner_t.word or word == '"':
             new_tokens.append(ner_t)
         else:
             words = [word]
             ner_words = list(tokenizer.split(pos_tokens[i].word))
 
-            print(ner_words, pos_tokens[i].word, repr(ner_t))
+            print(ner_words, pos_tokens[i].word, repr(ner_t), file=sys.stderr)
 
             while words != ner_words:
-                print(words)
+                print(words, file=sys.stderr)
                 words.append(next(t_iter))
 
             tmp = list(ner_t)
