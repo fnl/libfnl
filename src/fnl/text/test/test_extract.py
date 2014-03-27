@@ -1,8 +1,6 @@
 from html.parser import HTMLParseError
 from unittest import main, TestCase
-from fnl.nlp.extract import HtmlExtractor, GREEK_LOWER, GREEK_UPPER
-
-__author__ = 'Florian Leitner'
+from fnl.text.extract import HtmlExtractor, GREEK_LOWER, GREEK_UPPER
 
 class ExtractHtmlTests(TestCase):
 

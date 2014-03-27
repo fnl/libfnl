@@ -9,8 +9,6 @@ from io import StringIO
 from types import FunctionType
 from unicodedata import category
 
-__author__ = "Florian Leitner"
-
 #################
 # CONFIGURATION #
 #################
@@ -215,6 +213,30 @@ class Category:
         return cat < 73
 
     @classmethod
+    def tokenOpen(cls, first: int) -> FunctionType:
+        isFirst = True
+        upper = (first in cls.UPPERCASE_LETTERS)
+
+        def token(cat: int) -> bool:
+            nonlocal isFirst
+            nonlocal first
+            nonlocal upper
+
+            if isFirst:
+                isFirst = False
+
+                if upper and cat in cls.LOWERCASE_LETTERS:
+                    first = cat
+                    return True
+
+            return cat == first
+
+        if cls.letter(first):
+            return token
+        else:
+            return None
+
+    @classmethod
     def uppercase(cls, cat: int) -> bool:
         """``True`` if *cat* is any upper-case letter category."""
         # (LG, Lt, Lu).
@@ -280,6 +302,11 @@ class Category:
     def space(cls, cat: int) -> bool:
         """``True`` if *cat* is a space (Zs)."""
         return cat == Category.Zs
+
+    @classmethod
+    def dash(cls, cat: int) -> bool:
+        """``True`` if *cat* is a dash/hyphen (Pd)."""
+        return cat == Category.Pd
 
     @classmethod
     def not_separator(cls, cat: int) -> bool:
@@ -444,11 +471,30 @@ class Tokenizer:
     Abstract tokenizer implementing the actual procedure.
     """
 
-    def tag(self, text: str):
+    def __init__(self, skipTags=None, skipMorphs=None):
         """
-        Tokenize the given *text* by yielding offset tags.
+        :param skipTags: a set of tags to skip (not emit)
+        :param skipMorphs: a set of morphologies to ignore (not emit)
+        :return:
+        """
+        self.skipTags = skipTags
+        self.skipMorph = skipMorphs
 
-        A Token is a tuple of the start/end offsets, the token tag,
+    def split(self, text: str) -> iter:
+        """
+        Process the given `text`, yielding string tokens.
+
+        :param text: The string to tokenize.
+        :return: An iterator over the tokens.
+        """
+        for start, end, tag, morph in self.tag(text):
+            yield text[start:end]
+
+    def tag(self, text: str) -> iter:
+        """
+        Process the given `text`, yielding offset/tag/morphology tuples.
+
+        A tuple contains the start/end offsets, the token tag,
         and a morphological representation of the token.
 
         :param text: The string to tokenize.
@@ -467,9 +513,12 @@ class Tokenizer:
 
                 cats.write(chr(cat))
             else:
-                if end:
-                    morph = cats.getvalue() if cats else morph
-                    yield start, end, State.__name__, morph
+                if end:  # more than one character detected
+                    if not self.skipTags or State.__name__ not in self.skipTags:
+                        morph = cats.getvalue() if cats else morph
+
+                        if not self.skipMorph or morph not in self.skipMorph:
+                            yield start, end, State.__name__, morph
 
                 cats = None
                 morph = chr(cat)
@@ -477,8 +526,11 @@ class Tokenizer:
                 State = self._findState(cat)
 
         if cats or morph:
-            morph = cats.getvalue() if cats else morph
-            yield start, len(text), State.__name__, morph
+            if not self.skipTags or State.__name__ not in self.skipTags:
+                morph = cats.getvalue() if cats else morph
+
+                if not self.skipMorph or morph not in self.skipMorph:
+                    yield start, len(text), State.__name__, morph
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
@@ -497,6 +549,8 @@ class SpaceTokenizer(Tokenizer):
     """
     A tokenizer that only separates `Z?` category characters (line- and
     paragraph-breaks, as well as spaces) from all others.
+
+    Cannot skip Zs/Zp tokens (not detected).
 
     Produces the following tags:
 
@@ -522,9 +576,9 @@ class WordTokenizer(Tokenizer):
 
         * breaker (Zl, Zp)+
         * digit (Nd)+
-        * letter (L?)+
-        * numeral (Nl)+
+        * token (Lu, Ll, ...)+, Lu->Ll+
         * space (Zs)+
+        * numeral (Nl)+
         * glyph (all others){1}
     """
 
@@ -534,15 +588,17 @@ class WordTokenizer(Tokenizer):
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
-        if not Category.word(cat):
-            return WordTokenizer.glyph
-
-        for State in (Category.letter, Category.space, Category.digit,
+        for State in (Category.space, Category.digit,
                       Category.breaker, Category.numeral):
             if State(cat):
                 return State
 
-        raise RuntimeError("no State for cat='%s'" % chr(cat))
+        token = Category.tokenOpen(cat)
+
+        if token is None:
+            return WordTokenizer.glyph
+        else:
+            return token
 
 
 class AlnumTokenizer(Tokenizer):
@@ -561,16 +617,11 @@ class AlnumTokenizer(Tokenizer):
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
-        if not Category.word(cat):
-            return WordTokenizer.glyph
-        elif Category.alnum(cat):
-            return Category.alnum
-        elif Category.space(cat):
-            return Category.space
-        elif Category.breaker(cat):
-            return Category.breaker
-        else:
-            raise RuntimeError("no tests for cat='%s'" % chr(cat))
+        for State in (Category.alnum, Category.space, Category.breaker):
+            if State(cat):
+                return State
+
+        return WordTokenizer.glyph
 
 
 def TokenOffsets(string: str):
