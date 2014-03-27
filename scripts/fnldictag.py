@@ -68,18 +68,16 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
                 print(ner_words, file=sys.stderr)
                 ner_words.append(pos_tokens[i].word)
 
-
             new_tokens.append(Token(word, word, *ner_t[2:]))
         else:
             words = [word]
             ner_tokens = ''.join(tokenizer.split(pos_tokens[i].word))
+            tmp = list(ner_t)
             print('token', repr(ner_tokens), 'exceeds', word, "-", repr(ner_t.word), file=sys.stderr)
 
             while ''.join(words) != ner_tokens:
                 print(words, file=sys.stderr)
                 words.append(next(t_iter))
-
-            tmp = list(ner_t)
 
             for i, w in enumerate(words):
                 tmp[0] = w
@@ -92,7 +90,7 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 
         i += 1
 
-    assert len(tokens) == len(new_tokens)
+    assert len(tokens) == len(new_tokens), "%s != %s" % (repr(tokens), repr([t.word for t in new_tokens]))
     return new_tokens
 
 
