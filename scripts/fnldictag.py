@@ -57,27 +57,28 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
         word = next(t_iter)
         ner_t = ner_tokens[i]
 
-        if word == ner_t.word or word == '"':
+        if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
             new_tokens.append(ner_t)
         elif len(word) > len(ner_t.word):
             ner_words = [pos_tokens[i].word]
-            print('word', repr(word), 'exceeds', pos_tokens[i].word, "-", repr(ner_t.word), file=sys.stderr)
+            print('word', repr(word), 'exceeds', ner_words[0], "/", repr(ner_t.word), file=sys.stderr)
 
             while word != ''.join(ner_words):
                 i += 1
-                print(ner_words, file=sys.stderr)
                 ner_words.append(pos_tokens[i].word)
 
+            print('aligned', repr(word), '<=>', repr(''.join(ner_words)))
             new_tokens.append(Token(word, word, *ner_t[2:]))
         else:
             words = [word]
             ner_tokens = ''.join(tokenizer.split(pos_tokens[i].word))
             tmp = list(ner_t)
-            print('token', repr(ner_tokens), 'exceeds', word, "-", repr(ner_t.word), file=sys.stderr)
+            print('token', ner_tokens, "/", repr(ner_t.word), 'exceeds', repr(word), file=sys.stderr)
 
             while ''.join(words) != ner_tokens:
-                print(words, file=sys.stderr)
                 words.append(next(t_iter))
+
+            print('aligned', repr(ner_tokens), '<=>', repr(''.join(words)))
 
             for i, w in enumerate(words):
                 tmp[0] = w
