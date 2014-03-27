@@ -80,12 +80,14 @@ d        """
     def send(self, tokens:[Token]):
         """
         Send a single sentence as a list of tokens to the tagger.
+
+        **Important**: The NER Suite only is able to work with ASCII text!
         """
-        self.L.debug('sending tokens for: "%s"', '" "'.join([t[0] for t in tokens]))
+        self.L.debug('sending tokens for: "%s"', '" "'.join([t.word for t in tokens]))
 
         for t in tokens:
-            self._proc.stdin.write("1\t2\t".encode('ASCII'))
-            self._proc.stdin.write('\t'.join(t[0:-1]).encode('ASCII'))
+            self._proc.stdin.write("0\t{}\t".format(len(t.word)).encode('ASCII'))
+            self._proc.stdin.write('\t'.join(t[:-1]).encode('ASCII'))
             self._proc.stdin.write("\n".encode('ASCII'))
 
         self._proc.stdin.write("\n".encode('ASCII'))
