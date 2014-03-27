@@ -98,7 +98,7 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
         for text in input:
             text = text.strip()
             tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens)
+            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
             lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
 
             for src in (tokens, tags):
@@ -112,19 +112,19 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
         for line in input:
             uid, text = line.strip().split(sep)
             tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens)
+            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
 
             for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
                 print("{}{}{}".format(uid, sep, tag))
 
 
-def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens):
+def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
     dict_tags = list(dictionary.walk(tokens))
     pos_tagger.send(text)
     ner_tagger.send(list(pos_tagger))
     ner_tokens = list(ner_tagger)
     if len(ner_tokens) != len(tokens):
-        ner_tokens = splitNerTokens(ner_tokens, tokens)
+        ner_tokens = splitNerTokens(ner_tokens, tokens, tokenizer)
     gene_tags = list(matchNerAndDictionary(dict_tags, ner_tokens))
     return gene_tags
 
