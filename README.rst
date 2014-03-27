@@ -26,7 +26,7 @@ The library contains the following packages:
 
 The script directory provides the following command-line interfaces:
  
-- ``fnlclass[i]`` quickly develop a classifier for text using Scikit-Learn_.
+- ``fnlclassi`` generate a classifier for [NER-tagged] text using Scikit-Learn_.
 - ``fnlcorpus`` store corpora in JSON format in a CouchDB.
 - ``fnldictag`` tag tokens from a dictionary in text.
 - ``fnlgpcounter`` count gene/protein symbols in MEDLINE.
@@ -51,7 +51,7 @@ Requirements
 ============
 
 * Python 3.0+ (3.2 or newer recommended)
-* Numpy, SciPy, and Scikit-Learn 0.14+ (for ``fnlclass[i]``)
+* Numpy, SciPy, and Scikit-Learn 0.14+ (for ``fnlclassi``)
 * NLTK 3.0+ (for the sentence segmenting tools ``fnlseg*``)
 * CouchDB 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
 * DAWG (for ``fnlgpcounter``; see Installation below)

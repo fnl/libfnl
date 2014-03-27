@@ -1,13 +1,29 @@
 #!/usr/bin/env python3
 
 """
-Count the referenced and global occurrences of a gene or protein in MEDLINE.
+gpcounter counts the occurrences of genes and proteins in MEDLINE
+
 Running this script over a fully loaded gnamed DB requires ~12 GB of memory.
-Do not forget to pipe the output (STDOUT) somewhere
+Do not forget to pipe the output (STDOUT) somewhere.
+
+The reason for the memory hug when using this tool is that all symbol-id
+and all id-pmid references are loaded first to make the scanning as quick
+as possible and then all id-symbol-counter and symbol-counter tables are
+initialized.
 """
-# The reason for the memory hug is that all symbol-id and all id-pmid
-# references are loaded first to make the scanning as quick as possible
-# and then all id-symbol-counter and symbol-counter tables are initialized.
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
 import os
@@ -17,7 +33,7 @@ from fnl.medline.orm import InitDb as InitMedline
 from fnl.gnamed.orm import InitDb as InitGnamed
 
 __author__ = 'Florian Leitner'
-__version__ = '1'
+__version__ = '1.0'
 
 
 def main(proteins:bool):

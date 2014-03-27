@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""
-Create a probablistic model of sentence boundaries from the input text.
-"""
 
-# Author: Florian Leitner <florian.leitner@gmail.com>
-# (C) 2013. All rights reserved.
-# License: Apache License v2 <https://www.apache.org/licenses/LICENSE-2.0.html>
+"""segtrain infers a probablistic model for sentence boundaries"""
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # The algorithm for the sentence segmenter is described in:
 # Kiss, Tibor and Strunk, Jan (2006): Unsupervised Multilingual Sentence
@@ -19,6 +27,7 @@ from os.path import basename
 from nltk.tokenize.punkt import PunktTrainer
 
 __author__ = 'Florian Leitner'
+__version__ = '1.0'
 
 if len(sys.argv) == 2 and sys.argv[1] in ('-h', '--help'):
     print('usage: {} < TEXT > MODEL'.format(basename(sys.argv[0])))
