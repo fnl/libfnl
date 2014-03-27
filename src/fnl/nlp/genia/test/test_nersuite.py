@@ -3,18 +3,21 @@ import os
 
 from unittest import main, TestCase
 
-from fnl.nlp.genia.tagger import GeniaTagger, Token, GENIATAGGER_DIR
+from fnl.nlp.token import Token
+from fnl.nlp.genia.nersuite import NerSuite
 
-assert os.path.exists(GENIATAGGER_DIR) and \
-       os.access(GENIATAGGER_DIR, os.R_OK), \
-    "GENIATAGGER_DIR %s invalid - skipping GENIA Tagger tests" % (
-        GENIATAGGER_DIR
+NERSUITE_MODEL = '../../../../../var/nersuite/models/bc2gm.iob2.no_dic.m'
+
+assert os.path.exists(NERSUITE_MODEL) and \
+       os.access(NERSUITE_MODEL, os.R_OK), \
+    "no NER Suite model at %s - skipping NER Suite tagger tests" % (
+        NERSUITE_MODEL
     )
 
-class GeniaTaggerTests(TestCase):
+class NerSuiteTests(TestCase):
 
     def setUp(self):
-        self.tagger = GeniaTagger()
+        self.tagger = NerSuite(NERSUITE_MODEL, '/usr/local/bin/nersuite')
         self.sentence = "Inhibition of NF-kappa beta activation reversed " \
             "the anti-apoptotic effect of isochamaejasmin."
         self.tokens = [
@@ -37,13 +40,14 @@ class GeniaTaggerTests(TestCase):
 
     def testTagger(self):
         for dummy in range(2):
-            self.tagger.send(self.sentence)
+            self.tagger.send(self.tokens)
 
             for idx, token in enumerate(iter(self.tagger)):
                 self.assertTupleEqual(token, self.tokens[idx])
 
     def testBadPath(self):
-        self.assertRaises(AssertionError, GeniaTagger, "/fail", "whatever")
-        self.assertRaises(AssertionError, GeniaTagger, "whatever", "/fail")
+        self.assertRaises(AssertionError, NerSuite, "asldkfjalkclkase")
+        self.assertRaises(FileNotFoundError, NerSuite, NERSUITE_MODEL, "asldkfjalkclkase")
+        self.assertRaises(AssertionError, NerSuite, NERSUITE_MODEL, "/asldkfjalkclkase")
 
 if __name__ == '__main__': main()
