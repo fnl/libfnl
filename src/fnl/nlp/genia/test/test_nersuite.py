@@ -7,6 +7,7 @@ from fnl.nlp.token import Token
 from fnl.nlp.genia.nersuite import NerSuite
 
 NERSUITE_MODEL = '../../../../../var/nersuite/models/bc2gm.iob2.no_dic.m'
+NERSUITE_MODEL = 'var/nersuite/models/bc2gm.iob2.no_dic.m'
 
 assert os.path.exists(NERSUITE_MODEL) and \
        os.access(NERSUITE_MODEL, os.R_OK), \
@@ -23,8 +24,8 @@ class NerSuiteTests(TestCase):
         self.tokens = [
             Token('Inhibition', 'Inhibition', 'NN', 'B-NP', 'O'),
             Token('of', 'of', 'IN', 'B-PP', 'O'),
-            Token('NF-kappa', 'NF-kappa', 'NN', 'B-NP', 'B-protein'),
-            Token('beta', 'beta', 'NN', 'I-NP', 'I-protein'),
+            Token('NF-kappa', 'NF-kappa', 'NN', 'B-NP', 'B-gene'),
+            Token('beta', 'beta', 'NN', 'I-NP', 'I-gene'),
             Token('activation', 'activation', 'NN', 'I-NP', 'O'),
             Token('reversed', 'reverse', 'VBD', 'B-VP', 'O'),
             Token('the', 'the', 'DT', 'B-NP', 'O'),

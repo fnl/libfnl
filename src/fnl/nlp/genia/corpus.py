@@ -6,7 +6,7 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 from io import TextIOBase
-from fnl.nlp.text import Text
+from fnl.text.text import Text
 from fnl.nlp.penn import AMBIGUITY_SEP, AMBIGUOUS, TAGSET, REMAPPED
 import logging
 from xml.etree.ElementTree import iterparse, Element
