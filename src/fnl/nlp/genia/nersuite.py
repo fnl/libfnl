@@ -10,6 +10,7 @@ import logging
 import os
 from subprocess import Popen, PIPE
 from threading import Thread
+from unidecode import unidecode
 
 from fnl.nlp.token import Token
 
@@ -87,7 +88,7 @@ d        """
 
         for t in tokens:
             self._proc.stdin.write("0\t{}\t".format(len(t.word)).encode('ASCII'))
-            self._proc.stdin.write('\t'.join(t[:-1]).encode('ASCII'))
+            self._proc.stdin.write(unidecode('\t'.join(t[:-1])).encode('ASCII'))
             self._proc.stdin.write("\n".encode('ASCII'))
 
         self._proc.stdin.write("\n".encode('ASCII'))
