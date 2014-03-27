@@ -48,23 +48,33 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def splitNerTokens(ner_words, pos_tokens, tokens, tokenizer):
-    assert len(tokens) > len(ner_words)
+def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
     new_tokens = []
     t_iter = iter(tokens)
+    i = 0
 
-    for i, ner_t in enumerate(ner_words):
+    while i < len(ner_tokens):
         word = next(t_iter)
+        ner_t = ner_tokens[i]
 
         if word == ner_t.word or word == '"':
             new_tokens.append(ner_t)
+        elif len(word) > len(ner_t.word):
+            ner_words = [pos_tokens[i].word]
+
+            while word != ''.join(ner_words):
+                i += 1
+                ner_words.append(pos_tokens[i].word)
+
+
+            new_tokens.append(Token(word, word, *ner_t[2:]))
         else:
             words = [word]
-            ner_words = list(tokenizer.split(pos_tokens[i].word))
+            ner_tokens = ''.join(tokenizer.split(pos_tokens[i].word))
 
-            print(ner_words, pos_tokens[i].word, repr(ner_t), file=sys.stderr)
+            print(ner_tokens, pos_tokens[i].word, repr(ner_t), file=sys.stderr)
 
-            while words != ner_words:
+            while ''.join(words) != ner_tokens:
                 print(words, file=sys.stderr)
                 words.append(next(t_iter))
 
@@ -78,6 +88,8 @@ def splitNerTokens(ner_words, pos_tokens, tokens, tokenizer):
                 for p in (3, 4):
                     if tmp[p].startswith('B-'):
                         tmp[p] = 'I' + tmp[p][1:]
+
+        i += 1
 
     assert len(tokens) == len(new_tokens)
     return new_tokens
