@@ -48,19 +48,19 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def splitNerTokens(ner_words, tokens, tokenizer):
+def splitNerTokens(ner_words, pos_tokens, tokens, tokenizer):
     assert len(tokens) > len(ner_words)
     new_tokens = []
     t_iter = iter(tokens)
 
-    for ner_t in ner_words:
+    for i, ner_t in enumerate(ner_words):
         word = next(t_iter)
 
         if word == ner_t.word:
             new_tokens.append(ner_t)
         else:
             words = [word]
-            ner_words = list(tokenizer.split(ner_t.word))
+            ner_words = list(tokenizer.split(pos_tokens[i].word))
 
             while words != ner_words:
                 words.append(next(t_iter))
@@ -121,10 +121,11 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
 def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
     dict_tags = list(dictionary.walk(tokens))
     pos_tagger.send(text)
-    ner_tagger.send(list(pos_tagger))
+    pos_tokens = list(pos_tagger)
+    ner_tagger.send(pos_tokens)
     ner_tokens = list(ner_tagger)
     if len(ner_tokens) != len(tokens):
-        ner_tokens = splitNerTokens(ner_tokens, tokens, tokenizer)
+        ner_tokens = splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer)
     gene_tags = list(matchNerAndDictionary(dict_tags, ner_tokens))
     return gene_tags
 
