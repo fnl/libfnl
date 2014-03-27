@@ -63,6 +63,7 @@ def splitNerTokens(ner_words, pos_tokens, tokens, tokenizer):
             ner_words = list(tokenizer.split(pos_tokens[i].word))
 
             while words != ner_words:
+                print(words, ner_words, pos_tokens[i].word, repr(ner_t))
                 words.append(next(t_iter))
 
             tmp = list(ner_t)
