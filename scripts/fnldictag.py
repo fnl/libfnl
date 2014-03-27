@@ -188,11 +188,11 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '-q', '--quiet', action='store_const', const=logging.CRITICAL,
-        dest='loglevel', help='critical log level only [warn]'
+        dest='loglevel', help='critical log level only (default: warn)'
     )
     parser.add_argument(
         '-v', '--verbose', action='store_const', const=logging.DEBUG,
-        dest='loglevel', help='debug log level [warn]'
+        dest='loglevel', help='debug log level (default: warn)'
     )
 
     args = parser.parse_args()
@@ -202,10 +202,10 @@ if __name__ == '__main__':
     )
 
     method = normalize if args.normalize else align
-    pos_tagger = GeniaTagger()
-    ner_tagger = NerSuite(args.model)
 
     try:
+        pos_tagger = GeniaTagger()
+        ner_tagger = NerSuite(args.model)
         qualifier_list = [l.strip() for l in args.qranks]
         raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
         tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
@@ -215,6 +215,9 @@ if __name__ == '__main__':
             method(dictionary, tokenizer, pos_tagger, ner_tagger, args.files, sep=args.separator)
         else:
             method(dictionary, tokenizer, pos_tagger, ner_tagger, [sys.stdin], sep=args.separator)
+
+        del pos_tagger
+        del ner_tagger
     except:
         logging.exception("unexpected program error")
         sys.exit(1)

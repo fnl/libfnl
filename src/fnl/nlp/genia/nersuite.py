@@ -32,10 +32,12 @@ class NerSuite(object):
         :param model: The path to the model to use by the tagger.
         :param binary: The path or name (if in ``$PATH``) of the nersuite binary.
 d        """
-        if os.path.isabs(binary): NerSuite._checkPath(binary, os.X_OK)
+        if os.path.isabs(binary):
+            NerSuite._checkPath(binary, os.X_OK)
+
         NerSuite._checkPath(model, os.R_OK)
         args = [binary, 'tag', '-m', model]
-        self.L.debug("starting '%s'" % ' '.join(args))
+        self.L.debug("executing %s", ' '.join(args))
         self._proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
         debug_msgs = Thread(target=NerSuite._logStderr,
                             args=(self.L, self._proc.stderr))
@@ -50,8 +52,11 @@ d        """
     def _logStderr(logger, stderr):
         while True:
             line = stderr.readline().decode()
-            if line: logger.debug("STDERR: %s", line.strip())
-            else: break
+
+            if line:
+                logger.warning(line.strip())
+            else:
+                break
 
     def __del__(self):
         self.L.debug("terminating")
@@ -70,7 +75,10 @@ d        """
         # noinspection PyUnresolvedReferences
         line = self._proc.stdout.readline().decode('ASCII').strip()
         self.L.debug('fetched line "%s"', line)
-        if not line: raise StopIteration
+
+        if not line:
+            raise StopIteration
+
         items = line.split('\t')
         self.L.debug('raw result: %s', items)
         return Token(*items[2:])

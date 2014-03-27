@@ -47,8 +47,7 @@ class GeniaTagger(object):
         if os.path.isabs(binary): GeniaTagger._checkPath(binary, os.X_OK)
         GeniaTagger._checkPath("{}/morphdic".format(morphdic_dir), os.R_OK)
         args = [binary] if tokenize else [binary, '-nt']
-        self.L.debug("starting '%s'" % ' '.join(args))
-        self.L.debug("in directory '%s'", morphdic_dir)
+        self.L.debug("executing %s in directory '%s'", ' '.join(args), morphdic_dir)
         self._proc = Popen(args, cwd=morphdic_dir,
                           stdin=PIPE, stdout=PIPE, stderr=PIPE)
         debug_msgs = Thread(target=GeniaTagger._logStderr,
@@ -64,12 +63,17 @@ class GeniaTagger(object):
     def _logStderr(logger, stderr):
         while True:
             line = stderr.readline().decode()
-            if line: logger.debug("STDERR: %s", line.strip())
-            else: break
+
+            if line:
+                logger.debug(line.strip())
+            else:
+                break
 
     def __del__(self):
         self.L.debug("terminating")
-        if hasattr(self, "_proc"): self._proc.terminate()
+
+        if hasattr(self, "_proc"):
+            self._proc.terminate()
 
     def __iter__(self):
         return self
@@ -85,7 +89,10 @@ class GeniaTagger(object):
         self.L.debug('fetched token')
         # noinspection PyUnresolvedReferences
         line = line.decode().strip()
-        if not line: raise StopIteration
+
+        if not line:
+            raise StopIteration
+
         items = line.split('\t')
         self.L.debug('raw result: %s', items)
         return Token(*items)
