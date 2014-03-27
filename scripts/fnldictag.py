@@ -51,34 +51,34 @@ def load(instream, qualifier_list, sep='\t') -> iter:
 def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
     new_tokens = []
     t_iter = iter(tokens)
-    i = 0
+    index = 0
 
-    while i < len(ner_tokens):
+    while index < len(ner_tokens):
         word = next(t_iter)
-        ner_t = ner_tokens[i]
+        ner_t = ner_tokens[index]
 
         if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
             new_tokens.append(ner_t)
         elif len(word) > len(ner_t.word):
-            ner_words = [pos_tokens[i].word]
+            ner_words = [pos_tokens[index].word]
             print('word', repr(word), 'exceeds', ner_words[0], "/", repr(ner_t.word), file=sys.stderr)
 
             while word != ''.join(ner_words):
-                i += 1
-                ner_words.append(pos_tokens[i].word)
+                index += 1
+                ner_words.append(pos_tokens[index].word)
 
-            print('aligned', repr(word), 'to', len(ner_words), 'tokens:', repr(''.join(ner_words)), file=sys.stderr)
+            print('aligned', repr(word), 'to', len(ner_words), 'tokens:', repr(''.join(ner_words)), ner_t[-1], file=sys.stderr)
             new_tokens.append(Token(word, word, *ner_t[2:]))
         else:
             words = [word]
-            ner_tokens = ''.join(tokenizer.split(pos_tokens[i].word))
+            ner_words = ''.join(tokenizer.split(pos_tokens[index].word))
             tmp = list(ner_t)
-            print('token', ner_tokens, "/", repr(ner_t.word), 'exceeds', repr(word), file=sys.stderr)
+            print('token', ner_words, "/", repr(ner_t.word), 'exceeds', repr(word), file=sys.stderr)
 
-            while ''.join(words) != ner_tokens:
+            while ''.join(words) != ner_words:
                 words.append(next(t_iter))
 
-            print('aligned', repr(ner_tokens), 'to', len(words), 'words:', repr(''.join(words)), file=sys.stderr)
+            print('aligned', repr(ner_words), ner_t[-1], 'to', len(words), 'words:', repr(''.join(words)), file=sys.stderr)
 
             for w in words:
                 tmp[0] = w
@@ -89,7 +89,7 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
                     if tmp[p].startswith('B-'):
                         tmp[p] = 'I' + tmp[p][1:]
 
-        i += 1
+        index += 1
 
     assert len(tokens) == len(new_tokens), "%s != %s" % (repr(tokens), repr([t.word for t in new_tokens]))
     return new_tokens
