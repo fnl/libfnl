@@ -61,9 +61,11 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
             new_tokens.append(ner_t)
         elif len(word) > len(ner_t.word):
             ner_words = [pos_tokens[i].word]
+            print('word', repr(word), 'exceeds', pos_tokens[i].word, "-", repr(ner_t.word), file=sys.stderr)
 
             while word != ''.join(ner_words):
                 i += 1
+                print(ner_words, file=sys.stderr)
                 ner_words.append(pos_tokens[i].word)
 
 
@@ -71,8 +73,7 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
         else:
             words = [word]
             ner_tokens = ''.join(tokenizer.split(pos_tokens[i].word))
-
-            print(ner_tokens, pos_tokens[i].word, repr(ner_t), file=sys.stderr)
+            print('token', repr(ner_tokens), 'exceeds', word, "-", repr(ner_t.word), file=sys.stderr)
 
             while ''.join(words) != ner_tokens:
                 print(words, file=sys.stderr)
