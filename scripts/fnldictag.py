@@ -48,28 +48,33 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def splitNerTokens(ner_tokens, tokens):
-    assert len(tokens) > len(ner_tokens)
+def splitNerTokens(ner_words, tokens, tokenizer):
+    assert len(tokens) > len(ner_words)
     new_tokens = []
     t_iter = iter(tokens)
 
-    for token in ner_tokens:
-        t = next(t_iter)
+    for ner_t in ner_words:
+        word = next(t_iter)
 
-        if t == token.word:
-            new_tokens.append(token)
+        if word == ner_t.word:
+            new_tokens.append(ner_t)
         else:
-            word = [t]
+            words = [word]
+            ner_words = list(tokenizer.split(ner_t.word))
 
-            while ''.join(word) != token.word:
-                word.append(next(t_iter))
+            while words != ner_words:
+                words.append(next(t_iter))
 
-            tmp = list(token)
+            tmp = list(ner_t)
 
-            for t in word:
-                tmp[0] = t
-                tmp[1] = t
+            for i, w in enumerate(words):
+                tmp[0] = w
+                tmp[1] = w
                 new_tokens.append(Token(*tmp))
+
+                for p in (3, 4):
+                    if tmp[p].startswith('B-'):
+                        tmp[p] = 'I' + tmp[p][1:]
 
     assert len(tokens) == len(new_tokens)
     return new_tokens
