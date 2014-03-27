@@ -48,7 +48,46 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
+def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
+    for input in input_streams:
+        for text in input:
+            text = text.strip()
+            logging.debug('aligning "%s"', text)
+            tokens = list(tokenizer.split(text))
+            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
+
+            for src in (tokens, tags):
+                print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
+
+            print("--")
+
+
+def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t"):
+    for input in input_streams:
+        for line in input:
+            uid, text = line.strip().split(sep)
+            logging.debug('normalizing %s: "%s"', uid, text)
+            tokens = list(tokenizer.split(text))
+            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+
+            for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
+                print("{}{}{}".format(uid, sep, tag))
+
+
+def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
+    dict_tags = list(dictionary.walk(tokens))
+    pos_tagger.send(text)
+    pos_tokens = list(pos_tagger)
+    ner_tagger.send(pos_tokens)
+    ner_tokens = list(ner_tagger)
+    if len(ner_tokens) != len(tokens):
+        ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
+    gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens))
+    return gene_tags
+
+
+def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
     new_tokens = []
     t_iter = iter(tokens)
     index = 0
@@ -61,24 +100,24 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
             new_tokens.append(ner_t)
         elif len(word) > len(ner_t.word):
             ner_words = [pos_tokens[index].word]
-            print('word', repr(word), 'exceeds', ner_words[0], "/", repr(ner_t.word), file=sys.stderr)
+            logging.debug('word %s exceeds %s/%s', repr(word), ner_words[0], repr(ner_t.word))
 
             while word != ''.join(ner_words):
                 index += 1
                 ner_words.append(pos_tokens[index].word)
 
-            print('aligned', repr(word), 'to', len(ner_words), 'tokens:', repr(''.join(ner_words)), ner_t[-1], file=sys.stderr)
+            logging.debug('aligned %s to %s [%s]', repr(word), repr(ner_words), ner_t[-1])
             new_tokens.append(Token(word, word, *ner_t[2:]))
         else:
             words = [word]
             ner_words = ''.join(tokenizer.split(pos_tokens[index].word))
             tmp = list(ner_t)
-            print('token', ner_words, "/", repr(ner_t.word), 'exceeds', repr(word), file=sys.stderr)
+            logging.debug('token %s/%s exceeds %s', ner_words, repr(ner_t.word), repr(word))
 
             while ''.join(words) != ner_words:
                 words.append(next(t_iter))
 
-            print('aligned', repr(ner_words), ner_t[-1], 'to', len(words), 'words:', repr(''.join(words)), file=sys.stderr)
+            logging.debug('aligned %s [%s] to %s', repr(ner_words), ner_t[-1], repr(words))
 
             for w in words:
                 tmp[0] = w
@@ -95,7 +134,7 @@ def splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer):
     return new_tokens
 
 
-def matchNerAndDictionary(dict_tags, ner_tokens):
+def _matchNerAndDictionary(dict_tags, ner_tokens):
     for i, token in enumerate(ner_tokens):
         if token.entity != Dictionary.O and dict_tags[i] != Dictionary.O:
             dic = dict_tags[i]
@@ -106,43 +145,6 @@ def matchNerAndDictionary(dict_tags, ner_tokens):
                 yield Dictionary.B % dic[2:]
         else:
             yield Dictionary.O
-
-
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
-    for input in input_streams:
-        for text in input:
-            text = text.strip()
-            tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
-            lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
-
-            for src in (tokens, tags):
-                print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
-
-            print("--")
-
-
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t"):
-    for input in input_streams:
-        for line in input:
-            uid, text = line.strip().split(sep)
-            tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
-
-            for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
-                print("{}{}{}".format(uid, sep, tag))
-
-
-def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
-    dict_tags = list(dictionary.walk(tokens))
-    pos_tagger.send(text)
-    pos_tokens = list(pos_tagger)
-    ner_tagger.send(pos_tokens)
-    ner_tokens = list(ner_tagger)
-    if len(ner_tokens) != len(tokens):
-        ner_tokens = splitNerTokens(ner_tokens, pos_tokens, tokens, tokenizer)
-    gene_tags = list(matchNerAndDictionary(dict_tags, ner_tokens))
-    return gene_tags
 
 
 if __name__ == '__main__':
