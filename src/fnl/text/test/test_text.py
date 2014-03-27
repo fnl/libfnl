@@ -1,11 +1,9 @@
 from collections import OrderedDict
 from hashlib import md5
 from fnl.couch.serializer import b64encode
-from fnl.nlp.text import Text
+from fnl.text.text import Text
 from mock import patch
 from unittest import main, TestCase
-
-__author__ = 'Florian Leitner'
 
 class TextTests(TestCase):
 

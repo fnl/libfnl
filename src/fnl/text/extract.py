@@ -1,6 +1,5 @@
-# coding=utf-8
 """
-.. py:module:: extract
+.. py:module:: fnl.text.extract
    :synopsis: Extract text from files.
 
 Conversion of content from files to the internal :mod:`fnl.nlp.text`

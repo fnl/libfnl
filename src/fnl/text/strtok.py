@@ -9,8 +9,6 @@ from io import StringIO
 from types import FunctionType
 from unicodedata import category
 
-__author__ = "Florian Leitner"
-
 #################
 # CONFIGURATION #
 #################
@@ -213,6 +211,30 @@ class Category:
         """``True`` if *cat* is any letter category (L?)."""
         #return cat in cls.LETTERS
         return cat < 73
+
+    @classmethod
+    def tokenOpen(cls, first: int) -> FunctionType:
+        isFirst = True
+        upper = (first in cls.UPPERCASE_LETTERS)
+
+        def token(cat: int) -> bool:
+            nonlocal isFirst
+            nonlocal first
+            nonlocal upper
+
+            if isFirst:
+                isFirst = False
+
+                if upper and cat in cls.LOWERCASE_LETTERS:
+                    first = cat
+                    return True
+
+            return cat == first
+
+        if cls.letter(first):
+            return token
+        else:
+            return None
 
     @classmethod
     def uppercase(cls, cat: int) -> bool:
@@ -458,11 +480,21 @@ class Tokenizer:
         self.skipTags = skipTags
         self.skipMorph = skipMorphs
 
-    def tag(self, text: str):
+    def split(self, text: str) -> iter:
         """
-        Tokenize the given *text* by yielding offset tags.
+        Process the given `text`, yielding string tokens.
 
-        A Token is a tuple of the start/end offsets, the token tag,
+        :param text: The string to tokenize.
+        :return: An iterator over the tokens.
+        """
+        for start, end, tag, morph in self.tag(text):
+            yield text[start:end]
+
+    def tag(self, text: str) -> iter:
+        """
+        Process the given `text`, yielding offset/tag/morphology tuples.
+
+        A tuple contains the start/end offsets, the token tag,
         and a morphological representation of the token.
 
         :param text: The string to tokenize.
@@ -544,9 +576,9 @@ class WordTokenizer(Tokenizer):
 
         * breaker (Zl, Zp)+
         * digit (Nd)+
-        * letter (L?)+
-        * numeral (Nl)+
+        * token (Lu, Ll, ...)+, Lu->Ll+
         * space (Zs)+
+        * numeral (Nl)+
         * glyph (all others){1}
     """
 
@@ -556,15 +588,17 @@ class WordTokenizer(Tokenizer):
 
     @staticmethod
     def _findState(cat: int) -> FunctionType:
-        for State in (Category.letter, Category.space, Category.digit,
+        for State in (Category.space, Category.digit,
                       Category.breaker, Category.numeral):
             if State(cat):
                 return State
 
-        if not Category.word(cat):
-            return WordTokenizer.glyph
+        token = Category.tokenOpen(cat)
 
-        raise RuntimeError("no State for cat='%s'" % chr(cat))
+        if token is None:
+            return WordTokenizer.glyph
+        else:
+            return token
 
 
 class AlnumTokenizer(Tokenizer):
@@ -587,10 +621,7 @@ class AlnumTokenizer(Tokenizer):
             if State(cat):
                 return State
 
-        if not Category.word(cat):
-            return WordTokenizer.glyph
-        else:
-            raise RuntimeError("no tests for cat='%s'" % chr(cat))
+        return WordTokenizer.glyph
 
 
 def TokenOffsets(string: str):

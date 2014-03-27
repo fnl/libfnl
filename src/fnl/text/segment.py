@@ -1,5 +1,5 @@
 """
-.. py:module:: segment
+.. py:module:: fnl.text.segment
    :synopsis: functions to segment text using the NLTK PunktSentenceTokenizer.
 
 .. moduleauthor: Florian Leitner <florian.leitner@gmail.com>
