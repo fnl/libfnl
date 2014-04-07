@@ -54,7 +54,7 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
             text = text.strip()
             logging.debug('aligning "%s"', text)
             tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
             lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
 
             for src in (tokens, tags):
@@ -69,10 +69,24 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
             uid, text = line.strip().split(sep)
             logging.debug('normalizing %s: "%s"', uid, text)
             tokens = list(tokenizer.split(text))
-            tags = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
 
             for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
                 print("{}{}{}".format(uid, sep, tag))
+
+
+def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t"):
+    for input in input_streams:
+        for line in input:
+            uid, text = line.strip().split(sep)
+            logging.debug('tagging %s: "%s"', uid, text)
+            tokens = list(tokenizer.split(text))
+            tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+
+            for tag, tok in zip(tags, ner_tokens):
+                print("{}\t{}".format("\t".join(tok), tag))
+
+            print("")
 
 
 def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
@@ -81,10 +95,12 @@ def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
     pos_tokens = list(pos_tagger)
     ner_tagger.send(pos_tokens)
     ner_tokens = list(ner_tagger)
+
     if len(ner_tokens) != len(tokens):
         ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
+
     gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens))
-    return gene_tags
+    return gene_tags, ner_tokens
 
 
 def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
@@ -150,6 +166,9 @@ def _matchNerAndDictionary(dict_tags, ner_tokens):
 if __name__ == '__main__':
     import os
     import sys
+    DEFAULT = 1
+    NORMALIZED = 2
+    TABULAR = 3
 
     from argparse import ArgumentParser
 
@@ -160,6 +179,7 @@ if __name__ == '__main__':
     )
 
     parser.set_defaults(loglevel=logging.WARNING)
+    parser.set_defaults(output=DEFAULT)
     parser.add_argument(
         'dictionary', metavar='DICT', type=open,
         help='dictionary table with one key (1st col.), weight/count (2nd col.), '
@@ -183,8 +203,12 @@ if __name__ == '__main__':
         help='dictionary (and token input file) separator (default: tab)'
     )
     parser.add_argument(
-        '-n', '--normalize', action="store_true",
-        help='entity link input text of the form "uid\\ttext\\n"'
+        '-n', '--normalize', action="store_const", const=NORMALIZED,
+        dest="output", help='entity link input text of the form "uid\\ttext\\n"'
+    )
+    parser.add_argument(
+        '-t', '--tabular', action="store_const",  const=TABULAR,
+        dest="output", help='print tabular, per-token IOB tagging results'
     )
     parser.add_argument(
         '-q', '--quiet', action='store_const', const=logging.CRITICAL,
@@ -201,7 +225,12 @@ if __name__ == '__main__':
         level=args.loglevel, format='%(asctime)s %(levelname)s: %(message)s'
     )
 
-    method = normalize if args.normalize else align
+    if args.output == NORMALIZED:
+        method = normalize
+    elif args.output == TABULAR:
+        method = tagging
+    else:
+        method = align
 
     try:
         pos_tagger = GeniaTagger()
