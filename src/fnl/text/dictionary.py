@@ -186,7 +186,12 @@ class Dictionary(object):
             q = queue[-1] = list(q)
 
         n = self.root.edges[alt]
-        q.append(Node(**n.edges))
+
+        if len(q):
+            q[-1] = Dictionary.merge(q[-1], n)
+        else:
+            q.append(Node(**n.edges))
+
         q.append(n)
 
     def _match(self, queue, token:str, last:str) -> list:
@@ -244,7 +249,7 @@ class Dictionary(object):
             else:
                 # "open" a new path 2/3
                 queue.append([self.root.edges[token]])
-            self.logger.debug("match open token '%s'", token)
+                self.logger.debug("match open token '%s'", token)
         elif upper and upper in self.root.edges:
             # "open" a new path 3/3
             queue.append([self.root.edges[upper]])
