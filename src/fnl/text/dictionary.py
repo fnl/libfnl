@@ -5,6 +5,8 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+import logging
+
 from fnl.text.strtok import Tokenizer
 
 
@@ -72,6 +74,7 @@ class Dictionary(object):
     B = 'B-%s'
     I = 'I-%s'
     O = 'O'
+    logger = logging.getLogger('fnl.text.dictionary.Dictionary')
 
     @staticmethod
     def merge(node1, node2) -> Node:
@@ -189,57 +192,68 @@ class Dictionary(object):
             if token in edges:
                 if alt in altNode.edges:
                     path.append(Dictionary.merge(edges[token], altNode.edges[alt]))
+                    self.logger.debug("match cont'd token '%s' and alt '%s'", token, alt)
                 else:
                     path.append(edges[token])
+                    self.logger.debug("match cont'd token '%s'", token)
             elif len(token) == 1 and token.isupper() and token.lower() in edges:
                 # special matching condition: single letter match
                 # with swapped case inside an already opened path
                 path.append(edges[token.lower()])
+                self.logger.debug("match cont'd token lower '%s'", token.lower())
             elif alt in altNode.edges:
                 # allow joint token matches if the second token is a single, upper-case letter
                 # and the first token was a letter token beginning with upper-case, too
                 path.append(altNode.edges[alt])
+                self.logger.debug("match cont'd alt '%s'", alt)
             elif upper and upper in edges:
                 # allow full-token lower-case to upper-case transitions
                 # to detect mentions of genes written in all lower-case
                 path.append(edges[upper])
+                self.logger.debug("match cont'd upper '%s'", upper)
             else:
                 # "close" this path
                 queue[idx] = tuple(path)
+                self.logger.debug("match closed")
 
         if token in self.root.edges:
             if upper and upper in self.root.edges:
                 # "open" a new path 1/3
                 queue.append([Dictionary.merge(self.root.edges[token], self.root.edges[upper])])
+                self.logger.debug("match open token '%s' and upper '%s'", token, upper)
             else:
                 # "open" a new path 2/3
                 queue.append([self.root.edges[token]])
+            self.logger.debug("match open token '%s'", token)
         elif upper and upper in self.root.edges:
             # "open" a new path 3/3
             queue.append([self.root.edges[upper]])
-        elif alt in self.root.edges:
-            # No check of len(queue) required:
-            # if this fails, something is wrong with _iterpop,
-            # because it should guarantee that at least the last item is left
-            q = queue[-1]
-
-            if q is None:
-                q = queue[-1] = []
-            elif type(q) == tuple:
-                q = queue[-1] = list(q)
-
-            n = self.root.edges[alt]
-            q.append(Node(**n.edges))
-            q.append(n)
-            queue.append(None) # nothing (no start) found at the current token
+            self.logger.debug("match open upper token '%s'", upper)
         else:
-            queue.append(None)
+            if alt in self.root.edges:
+                # No check of len(queue) required:
+                # if this fails, something is wrong with _iterpop,
+                # because it should guarantee that at least the last item is left
+                q = queue[-1]
+
+                if q is None:
+                    q = queue[-1] = []
+                elif type(q) == tuple:
+                    q = queue[-1] = list(q)
+
+                n = self.root.edges[alt]
+                q.append(Node(**n.edges))
+                q.append(n)
+                self.logger.debug("match open alt token '%s'", alt)
+
+            queue.append(None)  # nothing (no start) found at the current token
 
         return queue
 
     def _resolve(self, path, queue) -> iter:
         for node in reversed(path):
             if node.key:
+                self.logger.debug("found %s", node.key)
                 idx = 0
                 ikey = Dictionary.I % node.key
                 yield Dictionary.B % node.key
