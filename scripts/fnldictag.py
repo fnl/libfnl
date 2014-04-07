@@ -48,13 +48,13 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
+def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, nouns=False, **_):
     for input in input_streams:
         for text in input:
             text = text.strip()
             logging.debug('aligning "%s"', text)
             tokens = list(tokenizer.split(text))
-            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
             lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
 
             for src in (tokens, tags):
@@ -63,25 +63,25 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, **_):
             print("--")
 
 
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t"):
+def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
     for input in input_streams:
         for line in input:
             uid, text = line.strip().split(sep)
             logging.debug('normalizing %s: "%s"', uid, text)
             tokens = list(tokenizer.split(text))
-            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
 
             for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
                 print("{}{}{}".format(uid, sep, tag))
 
 
-def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t"):
+def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
     for input in input_streams:
         for line in input:
             uid, text = line.strip().split(sep)
             logging.debug('tagging %s: "%s"', uid, text)
             tokens = list(tokenizer.split(text))
-            tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer)
+            tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
 
             for tag, tok in zip(tags, ner_tokens):
                 print("{}\t{}".format("\t".join(tok), tag))
@@ -89,7 +89,7 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\
             print("")
 
 
-def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
+def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns):
     dict_tags = list(dictionary.walk(tokens))
     pos_tagger.send(text)
     pos_tokens = list(pos_tagger)
@@ -99,7 +99,7 @@ def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer):
     if len(ner_tokens) != len(tokens):
         ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
 
-    gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens))
+    gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
     return gene_tags, ner_tokens
 
 
@@ -150,17 +150,29 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
     return new_tokens
 
 
-def _matchNerAndDictionary(dict_tags, ner_tokens):
+def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
+    opened = False
+
     for i, token in enumerate(ner_tokens):
         if token.entity != Dictionary.O and dict_tags[i] != Dictionary.O:
             dic = dict_tags[i]
 
             if dic[:2] == token.entity[:2]:
                 yield dic
+                opened = (dic[:2] == Dictionary.O)
             else:
                 yield Dictionary.B % dic[2:]
+                opened = True
+        elif nouns and token.pos.startswith('NN'):
+            if opened:
+                yield Dictionary.I % dict_tags[i][2:]
+                opened = False
+            else:
+                yield Dictionary.B % dict_tags[i][2:]
+                opened = True
         else:
             yield Dictionary.O
+            opened = False
 
 
 if __name__ == '__main__':
@@ -198,6 +210,10 @@ if __name__ == '__main__':
         help='input file(s); if absent, read from <STDIN>'
     )
     parser.add_argument('--version', action='version', version=__version__)
+    parser.add_argument(
+        '--nouns', default="\t",
+        help='allow "only" nouns to be tagged (default: only gene-NER tagged tokens)'
+    )
     parser.add_argument(
         '-s', '--separator', default="\t",
         help='dictionary (and token input file) separator (default: tab)'
