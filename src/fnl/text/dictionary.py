@@ -165,7 +165,10 @@ class Dictionary(object):
 
     @staticmethod
     def _isCapitalizeD(last, token):
-        return last and len(token) == 1 and last[0].isupper() and token.isupper()
+        # last="Capitalize" and token="D"
+        #return last and len(token) == 1 and last[0].isupper() and token.isupper()
+        # alt approach: only require last="whatever" and token="U"
+        return last and len(token) == 1 and last.isalpha() and token.isupper()
 
     def _match(self, queue, token:str, last:str) -> list:
         # the alternative path: join the current token with the last if the current token is
