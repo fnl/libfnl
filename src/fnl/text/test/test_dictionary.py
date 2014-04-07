@@ -64,6 +64,20 @@ class DictionaryTests(unittest.TestCase):
         expected = [O, O, B, I, I, A, O, O, O, O]
         self.assertEqual(result, expected)
 
+    def testCapitalizationAlts(self):
+        d = Dictionary(
+            [('key', 'NEUROD2', 100)],
+            DictionaryTests.tokenizer
+        )
+        s = "This is neuroD2 as sentence."
+        tokens = [s[start:end] for start, end, tag, morph in DictionaryTests.tokenizer.tag(s)]
+        result = list(d.walk(tokens))
+        O = Dictionary.O
+        B = Dictionary.B % 'key'
+        I = Dictionary.I % 'key'
+        expected = [O, O, B, I, I, O, O, O]
+        self.assertEqual(result, expected)
+
 
 if __name__ == '__main__':
     unittest.main()

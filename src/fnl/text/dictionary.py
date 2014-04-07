@@ -144,16 +144,17 @@ class Dictionary(object):
             if path is not None:
                 queue[idx] = tuple(path)
 
-        yield from self._iterpop(queue)
+        yield from self._iterpop(queue, True)
 
-    def _iterpop(self, queue) -> iter:
+    def _iterpop(self, queue, all=False) -> iter:
         """
         Yield tags on the queue that contain values.
 
         :param queue: to process
         :return: a tag generator
         """
-        while queue:
+        count = 0 if all else 1
+        while len(queue) > count:
             if queue[0] is None:
                 queue.pop(0)
                 yield Dictionary.O
@@ -216,6 +217,20 @@ class Dictionary(object):
         elif upper and upper in self.root.edges:
             # "open" a new path 3/3
             queue.append([self.root.edges[upper]])
+        elif alt in self.root.edges:
+            # No check of len(queue) required:
+            # if this fails, something is wrong with _iterpop,
+            # because it should guarantee that at least the last item is left
+            q = queue[-1]
+
+            if q is None:
+                q = queue[-1] = []
+            elif type(q) == tuple:
+                q = queue[-1] = list(q)
+
+            q.append(self.root.edges[alt])
+            q.append(self.root.edges[alt])
+            queue.append(None)
         else:
             queue.append(None)
 
