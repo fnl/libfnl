@@ -66,16 +66,17 @@ class DictionaryTests(unittest.TestCase):
 
     def testCapitalizationAlts(self):
         d = Dictionary(
-            [('key', 'NEUROD2', 100)],
+            [('NEUROD1', 'NEUROD', 100),
+             ('NEUROD2', 'NEUROD2', 100)],
             DictionaryTests.tokenizer
         )
-        s = "This is neuroD2 as sentence."
+        s = "Transfection of vectors expressing neuroD and neuroD2 into P19 cells."
         tokens = [s[start:end] for start, end, tag, morph in DictionaryTests.tokenizer.tag(s)]
         result = list(d.walk(tokens))
         O = Dictionary.O
-        B = Dictionary.B % 'key'
-        I = Dictionary.I % 'key'
-        expected = [O, O, B, I, I, O, O, O]
+        B = Dictionary.B % 'NEUROD'
+        I = Dictionary.I % 'NEUROD'
+        expected = [O, O, O, O, B + "1", I + "1", O, B + "2", I + "2", I + "2", O, O, O, O, O]
         self.assertEqual(result, expected)
 
 

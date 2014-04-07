@@ -228,9 +228,10 @@ class Dictionary(object):
             elif type(q) == tuple:
                 q = queue[-1] = list(q)
 
-            q.append(self.root.edges[alt])
-            q.append(self.root.edges[alt])
-            queue.append(None)
+            n = self.root.edges[alt]
+            q.append(Node(**n.edges))
+            q.append(n)
+            queue.append(None) # nothing (no start) found at the current token
         else:
             queue.append(None)
 
