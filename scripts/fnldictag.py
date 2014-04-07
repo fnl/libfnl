@@ -211,7 +211,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument(
-        '--nouns', default="\t",
+        '--nouns', action="store_true",
         help='allow "only" nouns to be tagged (default: only gene-NER tagged tokens)'
     )
     parser.add_argument(
@@ -257,9 +257,9 @@ if __name__ == '__main__':
         dictionary = Dictionary(raw_dict_data, tokenizer)
 
         if args.files:
-            method(dictionary, tokenizer, pos_tagger, ner_tagger, args.files, sep=args.separator)
+            method(dictionary, tokenizer, pos_tagger, ner_tagger, args.files, sep=args.separator, nouns=args.nouns)
         else:
-            method(dictionary, tokenizer, pos_tagger, ner_tagger, [sys.stdin], sep=args.separator)
+            method(dictionary, tokenizer, pos_tagger, ner_tagger, [sys.stdin], sep=args.separator, nouns=args.nouns)
 
         del pos_tagger
         del ner_tagger
