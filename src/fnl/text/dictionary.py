@@ -174,6 +174,21 @@ class Dictionary(object):
         # alt approach: only require last="whatever" and token="U"
         return last and len(token) == 1 and last.isalpha() and token.isupper()
 
+    def _matchAlt(self, alt, queue):
+        # No check of len(queue) required:
+        # if this fails, something is wrong with _iterpop,
+        # because it should guarantee that at least the last item is left
+        q = queue[-1]
+
+        if q is None:
+            q = queue[-1] = []
+        elif type(q) == tuple:
+            q = queue[-1] = list(q)
+
+        n = self.root.edges[alt]
+        q.append(Node(**n.edges))
+        q.append(n)
+
     def _match(self, queue, token:str, last:str) -> list:
         # the alternative path: join the current token with the last if the current token is
         # a single upper-case letter and the last token is capitalized, to create a token of
@@ -221,6 +236,11 @@ class Dictionary(object):
                 # "open" a new path 1/3
                 queue.append([Dictionary.merge(self.root.edges[token], self.root.edges[upper])])
                 self.logger.debug("match open token '%s' and upper '%s'", token, upper)
+            elif alt in self.root.edges:
+                self._matchAlt(alt, queue)
+                self.logger.debug("match open alt token '%s'", alt)
+                queue.append([self.root.edges[token]])
+                self.logger.debug("match open token '%s'", token)
             else:
                 # "open" a new path 2/3
                 queue.append([self.root.edges[token]])
@@ -231,19 +251,7 @@ class Dictionary(object):
             self.logger.debug("match open upper token '%s'", upper)
         else:
             if alt in self.root.edges:
-                # No check of len(queue) required:
-                # if this fails, something is wrong with _iterpop,
-                # because it should guarantee that at least the last item is left
-                q = queue[-1]
-
-                if q is None:
-                    q = queue[-1] = []
-                elif type(q) == tuple:
-                    q = queue[-1] = list(q)
-
-                n = self.root.edges[alt]
-                q.append(Node(**n.edges))
-                q.append(n)
+                self._matchAlt(alt, queue)
                 self.logger.debug("match open alt token '%s'", alt)
 
             queue.append(None)  # nothing (no start) found at the current token
