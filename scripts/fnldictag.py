@@ -154,22 +154,23 @@ def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
     opened = False
 
     for i, token in enumerate(ner_tokens):
-        if token.entity != Dictionary.O and dict_tags[i] != Dictionary.O:
-            dic = dict_tags[i]
+        if dict_tags[i] != Dictionary.O:
+            if token.entity != Dictionary.O:
+                dic = dict_tags[i]
 
-            if dic[:2] == token.entity[:2]:
-                yield dic
-                opened = (dic[:2] == Dictionary.O)
-            else:
-                yield Dictionary.B % dic[2:]
-                opened = True
-        elif nouns and token.pos.startswith('NN'):
-            if opened:
-                yield Dictionary.I % dict_tags[i][2:]
-                opened = False
-            else:
-                yield Dictionary.B % dict_tags[i][2:]
-                opened = True
+                if dic[:2] == token.entity[:2]:
+                    yield dic
+                    opened = (dic[:2] == Dictionary.O)
+                else:
+                    yield Dictionary.B % dic[2:]
+                    opened = True
+            elif nouns and token.pos.startswith('NN'):
+                if opened:
+                    yield Dictionary.I % dict_tags[i][2:]
+                    opened = False
+                else:
+                    yield Dictionary.B % dict_tags[i][2:]
+                    opened = True
         else:
             yield Dictionary.O
             opened = False
