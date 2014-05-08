@@ -151,8 +151,9 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 					index += 1
 					pos_words.append(pos_tokens[index].word)
 				except IndexError:
-					logging.error('alignment of %i tokens "%s" - "%s" to word "%s" at index=%i failed in "%s"',
-					              len(pos_words), pos_words[0], pos_words[-1], word, index, repr(tokens))
+					logging.error('alignment of %i tokens "%s" - "%s" to word "%s" at %i failed in "%s" vs "%s"',
+					              len(pos_words), pos_words[0], pos_words[-1], word, index, repr(tokens),
+					              repr([t.word for t in pos_tokens]))
 					raise RuntimeError("alignment failed")
 
 			logging.debug('aligned %s to %s [%s]', repr(word), repr(pos_words), ner_t[-1])
@@ -168,9 +169,10 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 					words.append(next(t_iter))
 				except StopIteration:
 					pos_word = pos_tokens[index].word
-					logging.error('alignment of %i words "%s" - "%s" to %s/%s as "%s" at index=%i failed in "%s"',
+					logging.error('alignment of %i words "%s"-"%s" to %s/%s as "%s" at %i failed in "%s" vs "%s"',
 					              len(words), word, words[-1], pos_word, ner_t.word,
-					              ' '.join(tokenizer.split(pos_word)), index, repr(tokens))
+					              ' '.join(tokenizer.split(pos_word)), index, repr(tokens),
+					              repr([t.word for t in pos_tokens]))
 					raise RuntimeError("alignment failed")
 
 			logging.debug('aligned %s [%s] to %s', repr(pos_words), ner_t[-1], repr(words))
