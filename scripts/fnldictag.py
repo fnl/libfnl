@@ -143,7 +143,12 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
             logging.debug('token %s/%s exceeds %s', ner_words, repr(ner_t.word), repr(word))
 
             while ''.join(words) != ner_words:
-                words.append(next(t_iter))
+                try:
+                    words.append(next(t_iter))
+                except StopIteration:
+                    logging.error('alignment of "%s" to "%s" failed in %s', ' '.join(words),
+                                  ' '.join(tokenizer.split(pos_tokens[index].word)), repr(tokens))
+                    break
 
             logging.debug('aligned %s [%s] to %s', repr(ner_words), ner_t[-1], repr(words))
 
