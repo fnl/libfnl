@@ -26,6 +26,71 @@ __author__ = 'Florian Leitner'
 __version__ = '1.0'
 
 
+def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", nouns=False):
+    """Align the output of the tags below the tokens."""
+    uid = []
+
+    for input in input_streams:
+        for text in input:
+            if sep:
+                *uid, text = text.strip().split(sep)
+
+            logging.debug('aligning %s "%s"', sep.join(uid), text)
+            tokens = list(tokenizer.split(text))
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+            lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
+
+            if sep and uid:
+                print(sep.join(uid))
+
+            for src in (tokens, tags):
+                print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
+
+            print("--")
+
+
+def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
+    """Print columnar output of [text UID,] token data and tags; one token per line."""
+    for input in input_streams:
+        for line in input:
+            *uid, text = line.strip().split(sep)
+            logging.debug('tagging %s: "%s"', '-'.join(uid), text)
+            tokens = list(tokenizer.split(text))
+            tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+
+            for tag, tok in zip(tags, ner_tokens):
+                print("{}{}{}{}{}".format(sep.join(uid), sep if uid else "", sep.join(tok), sep, tag))
+
+            print("")
+
+
+def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
+    """Print only [text UIDs and] tags."""
+    for input in input_streams:
+        for line in input:
+            *uid, text = line.strip().split(sep)
+            logging.debug('normalizing %s: "%s"', '-'.join(uid), text)
+            tokens = list(tokenizer.split(text))
+            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+
+            for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
+                print("{}{}{}".format(sep.join(uid), sep if uid else "", tag))
+
+
+def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns):
+    dict_tags = list(dictionary.walk(tokens))
+    pos_tagger.send(text)
+    pos_tokens = list(pos_tagger)
+    ner_tagger.send(pos_tokens)
+    ner_tokens = list(ner_tagger)
+
+    if len(ner_tokens) != len(tokens):
+        ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
+
+    gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
+    return gene_tags, ner_tokens
+
+
 def load(instream, qualifier_list, sep='\t') -> iter:
     """
     Create an iterator over a dictionary input file.
@@ -48,62 +113,9 @@ def load(instream, qualifier_list, sep='\t') -> iter:
             yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, nouns=False, **_):
-    for input in input_streams:
-        for text in input:
-            text = text.strip()
-            logging.debug('aligning "%s"', text)
-            tokens = list(tokenizer.split(text))
-            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
-            lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
-
-            for src in (tokens, tags):
-                print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
-
-            print("--")
-
-
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
-    for input in input_streams:
-        for line in input:
-            uid, text = line.strip().split(sep)
-            logging.debug('normalizing %s: "%s"', uid, text)
-            tokens = list(tokenizer.split(text))
-            tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
-
-            for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
-                print("{}{}{}".format(uid, sep, tag))
-
-
-def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", nouns=False):
-    for input in input_streams:
-        for line in input:
-            uid, text = line.strip().split(sep)
-            logging.debug('tagging %s: "%s"', uid, text)
-            tokens = list(tokenizer.split(text))
-            tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
-
-            for tag, tok in zip(tags, ner_tokens):
-                print("{}\t{}".format("\t".join(tok), tag))
-
-            print("")
-
-
-def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns):
-    dict_tags = list(dictionary.walk(tokens))
-    pos_tagger.send(text)
-    pos_tokens = list(pos_tagger)
-    ner_tagger.send(pos_tokens)
-    ner_tokens = list(ner_tagger)
-
-    if len(ner_tokens) != len(tokens):
-        ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
-
-    gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
-    return gene_tags, ner_tokens
-
-
 def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
+    "Return the aligned NER tokens (to the PoS tags and text tokens)."
+    # TODO: make this method's code actually understandable...
     new_tokens = []
     t_iter = iter(tokens)
     index = 0
@@ -179,7 +191,7 @@ def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
 if __name__ == '__main__':
     import os
     import sys
-    DEFAULT = 1
+    ALIGNED = 1
     NORMALIZED = 2
     TABULAR = 3
 
@@ -192,7 +204,7 @@ if __name__ == '__main__':
     )
 
     parser.set_defaults(loglevel=logging.WARNING)
-    parser.set_defaults(output=DEFAULT)
+    parser.set_defaults(output=ALIGNED)
     parser.add_argument(
         'dictionary', metavar='DICT', type=open,
         help='dictionary table with one key (1st col.), weight/count (2nd col.), '
@@ -213,7 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument(
         '--nouns', action="store_true",
-        help='allow "only" nouns to be tagged (default: only gene-NER tagged tokens)'
+        help='allow any noun to be tagged (default: only gene-NER tagged tokens)'
     )
     parser.add_argument(
         '-s', '--separator', default="\t",
@@ -221,11 +233,15 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '-n', '--normalize', action="store_const", const=NORMALIZED,
-        dest="output", help='entity link input text of the form "uid\\ttext\\n"'
+        dest="output", help='output entity linked input text using text UIDs'
     )
     parser.add_argument(
-        '-t', '--tabular', action="store_const",  const=TABULAR,
-        dest="output", help='print tabular, per-token IOB tagging results'
+        '-t', '--tabular', action="store_const", const=TABULAR,
+        dest="output", help='output tabular, per-token IOB tagging results'
+    )
+    parser.add_argument(
+        '-a', '--align', action="store_const", const=ALIGNED,
+        dest="output", help='output tokens and tags aligned to each other (default)'
     )
     parser.add_argument(
         '-q', '--quiet', action='store_const', const=logging.CRITICAL,
@@ -246,8 +262,11 @@ if __name__ == '__main__':
         method = normalize
     elif args.output == TABULAR:
         method = tagging
-    else:
+    elif args.output == ALIGNED:
         method = align
+    else:
+        parser.error("unknown output option " + args.output)
+        method = lambda *args: None
 
     try:
         pos_tagger = GeniaTagger()
