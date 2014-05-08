@@ -16,6 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
+from unicodedata import category
 from fnl.nlp.token import Token
 from fnl.text.strtok import WordTokenizer
 from fnl.text.dictionary import Dictionary
@@ -139,6 +140,10 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 	while index < len(ner_tokens):
 		word = next(t_iter)
 		ner_t = ner_tokens[index]
+
+		while all(category(c) == "Pd" for c in ner_t) and index < len(ner_tokens):
+			index =+ 1
+			ner_t = ner_tokens[index]
 
 		if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
 			new_tokens.append(ner_t)
