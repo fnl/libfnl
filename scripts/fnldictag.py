@@ -146,8 +146,10 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
                 try:
                     words.append(next(t_iter))
                 except StopIteration:
-                    logging.error('alignment of "%s" to "%s" at %i failed in %s', ' '.join(words),
-                                  ' '.join(tokenizer.split(pos_tokens[index].word)), index, repr(tokens))
+                    ner_word = pos_tokens[index].word
+                    logging.error('alignment of "%s" to "%s" as "%s" at index=%i failed in "%s"',
+                                  ' '.join(words), ner_word, ' '.join(tokenizer.split(ner_word)),
+                                  index, " ".join(tokens))
                     index = len(ner_tokens)
                     break
 
