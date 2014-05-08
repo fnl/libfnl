@@ -37,7 +37,13 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 
 			logging.debug('aligning %s "%s"', sep.join(uid), text)
 			tokens = list(tokenizer.split(text))
-			tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+
+			try:
+				tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+			except RuntimeError as e:
+				logging.exception('at UID %s', sep.join(uid))
+				continue
+
 			lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
 
 			if sep and uid:
@@ -56,7 +62,12 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\
 			*uid, text = line.strip().split(sep)
 			logging.debug('tagging %s: "%s"', '-'.join(uid), text)
 			tokens = list(tokenizer.split(text))
-			tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+
+			try:
+				tags, ner_tokens = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+			except RuntimeError as e:
+				logging.exception('at UID %s', sep.join(uid))
+				continue
 
 			for tag, tok in zip(tags, ner_tokens):
 				print("{}{}{}{}{}".format(sep.join(uid), sep if uid else "", sep.join(tok), sep, tag))
@@ -71,7 +82,12 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
 			*uid, text = line.strip().split(sep)
 			logging.debug('normalizing %s: "%s"', '-'.join(uid), text)
 			tokens = list(tokenizer.split(text))
-			tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+
+			try:
+				tags, _ = _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
+			except RuntimeError as e:
+				logging.exception('at UID %s', sep.join(uid))
+				continue
 
 			for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
 				print("{}{}{}".format(sep.join(uid), sep if uid else "", tag))
@@ -137,8 +153,7 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 				except IndexError:
 					logging.error('alignment of %i tokens "%s" - "%s" to word "%s" at index=%i failed in "%s"',
 					              len(pos_words), pos_words[0], pos_words[-1], word, index, repr(tokens))
-					index = len(ner_tokens) - 1
-					break
+					raise RuntimeError("alignment failed")
 
 			logging.debug('aligned %s to %s [%s]', repr(word), repr(pos_words), ner_t[-1])
 			new_tokens.append(Token(word, word, *ner_t[2:]))
@@ -156,8 +171,7 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 					logging.error('alignment of %i words "%s" - "%s" to %s/%s as "%s" at index=%i failed in "%s"',
 					              len(words), word, words[-1], pos_word, ner_t.word,
 					              ' '.join(tokenizer.split(pos_word)), index, repr(tokens))
-					index = len(ner_tokens) - 1
-					break
+					raise RuntimeError("alignment failed")
 
 			logging.debug('aligned %s [%s] to %s', repr(pos_words), ner_t[-1], repr(words))
 
@@ -288,7 +302,7 @@ if __name__ == '__main__':
 		ner_tagger = NerSuite(args.model)
 		qualifier_list = [l.strip() for l in args.qranks]
 		raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
-		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
+		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'}) # skips Unicode Categories Zs and Pd
 		dictionary = Dictionary(raw_dict_data, tokenizer)
 
 		if args.files:
