@@ -50,6 +50,8 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 			if sep and uid:
 				print(sep.join(uid))
 
+			assert len(tokens) == len(tags), "alignemnt failed %i != %i; details: %s" % (len(tokens), len(tags), repr(list(zip(tokens, tags))))
+
 			for src in (tokens, tags):
 				print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
 
@@ -104,7 +106,9 @@ def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
 	if len(ner_tokens) != len(tokens):
 		ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
 
+	assert len(dict_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags))))
 	gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
+	assert len(gene_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (len(gene_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], gene_tags))))
 	return gene_tags, ner_tokens
 
 
@@ -141,8 +145,9 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 		word = next(t_iter)
 		ner_t = ner_tokens[index]
 
-		while all(category(c) == "Pd" for c in ner_t) and index < len(ner_tokens):
-			index =+ 1
+		while all(category(c) == "Pd" for c in ner_t.word) and index < len(ner_tokens):
+			logging.debug("skipping punctuation dash '%s'", ner_t.word)
+			index += 1
 			ner_t = ner_tokens[index]
 
 		if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
@@ -193,18 +198,17 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 
 		index += 1
 
-	assert len(tokens) == len(new_tokens), "%s != %s" % (repr(tokens), repr([t.word for t in new_tokens]))
+	assert len(tokens) == len(new_tokens), "%i != %i; details: %s" % (len(tokens), len(new_tokens), repr(list(zip(tokens, [t.word for t in new_tokens]))))
 	return new_tokens
 
 
 def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
 	opened = False
+	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags))))
 
-	for i, token in enumerate(ner_tokens):
-		if dict_tags[i] != Dictionary.O:
+	for token, dic in zip(ner_tokens, dict_tags):
+		if dic != Dictionary.O:
 			if token.entity != Dictionary.O:
-				dic = dict_tags[i]
-
 				if dic[:2] == token.entity[:2]:
 					yield dic
 					opened = (dic[:2] == Dictionary.O)
@@ -213,11 +217,13 @@ def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
 					opened = True
 			elif nouns and token.pos.startswith('NN'):
 				if opened:
-					yield Dictionary.I % dict_tags[i][2:]
+					yield Dictionary.I % dic[2:]
 					opened = False
 				else:
-					yield Dictionary.B % dict_tags[i][2:]
+					yield Dictionary.B % dic[2:]
 					opened = True
+			else:
+				raise RuntimeError("at token %s with tag %s in %s" % (token, dic, repr(list(zip([t.word for t in ner_tokens], dict_tags)))))
 		else:
 			yield Dictionary.O
 			opened = False
