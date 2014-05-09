@@ -97,8 +97,71 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
 				print("{}{}{}".format(sep.join(uid), sep if uid else "", tag))
 
 
+GREEK = {
+    "alpha": "α",
+    "beta": "β",
+    "gamma": "γ",
+    "delta": "δ",
+    "epsilon": "ε",
+    "zeta": "ζ",
+    "eta": "η",
+    "theta": "θ",
+    "iota": "ι",
+    "kappa": "κ",
+    "lambda": "λ",
+    "mu": "μ",
+    "nu": "ν",
+    "xi": "ξ",
+    "omicron": "ο",
+    "pi": "π",
+    "rho": "ρ",
+    "sigma": "σ",
+    "tau": "τ",
+    "upsilon": "υ",
+    "ypsilon": "υ",
+    "phi": "φ",
+    "chi": "χ",
+    "psi": "ψ",
+    "omega": "ω",
+    "Alpha": "Α",
+    "Beta": "Β",
+    "Gamma": "Γ",
+    "Delta": "Δ",
+    "Epsilon": "Ε",
+    "Zeta": "Ζ",
+    "Eta": "Η",
+    "Theta": "Θ",
+    "Iota": "Ι",
+    "Kappa": "Κ",
+    "Lambda": "Λ",
+    "Mu": "Μ",
+    "Nu": "Ν",
+    "Xi": "Ξ",
+    "Omicron": "Ο",
+    "Pi": "Π",
+    "Rho": "Ρ",
+    "Sigma": "Σ",
+    "Tau": "Τ",
+    "Upsilon": "Υ",
+    "Ypsilon": "Υ",
+    "Phi": "Φ",
+    "Chi": "Χ",
+    "Psi": "Ψ",
+    "Omega": "Ω",
+}
+
+LATIN = {v: k for k, v in GREEK.items()}
+
+
+def ungreek(token):
+	if token in LATIN:
+		return LATIN[token]
+	else:
+		return token
+
+
 def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns):
-	normalizations = list(dictionary.walk(tokens))
+	normalizations = list(dictionary.walk([ungreek(t) for t in tokens]))
 	pos_tagger.send(text)
 	tags = list(pos_tagger)
 	ner_tagger.send(tags)
