@@ -17,6 +17,7 @@
 
 import logging
 from unicodedata import category
+from unidecode import unidecode
 from fnl.nlp.token import Token
 from fnl.text.strtok import WordTokenizer
 from fnl.text.dictionary import Dictionary
@@ -147,6 +148,7 @@ def _alignTokens(tags, tokens, tokenizer):
 
 	while index < len(tags):
 		word = next(t_iter)
+		ascii = unidecode(word)
 		tag = tags[index]
 
 		while all(category(c) == "Pd" for c in tag.word) and index < len(tags):
@@ -154,13 +156,18 @@ def _alignTokens(tags, tokens, tokenizer):
 			index += 1
 			tag = tags[index]
 
-		if word == tag.word or (word == '"' and tag.word in ("``", "''")):
+		if ascii == tag.word:
+			if tag.word == word:
+				aligned_tags.append(tag)
+			else:
+				aligned_tags.append(Token(word, *tag[1:]))
+		elif word == '"' and tag.word in ("``", "''"):
 			# " is a special case (gets converted to `` or '' by GENIA)
-			aligned_tags.append(tag)
+			aligned_tags.append(Token('"', *tag[1:]))
 		elif len(word) > len(tag.word):
 			logging.debug('word %s exceeds tag word %s', repr(word), repr(tag.word))
 			tag_words = [tag.word]
-			matches = lambda: word == ''.join(tag_words)
+			matches = lambda: ascii == ''.join(tag_words)
 
 			while not matches() and sum(map(len, tag_words)) < len(word):
 				index += 1
@@ -169,7 +176,7 @@ def _alignTokens(tags, tokens, tokenizer):
 			if matches():
 				logging.debug("dropping tags '%s' and adding %s [%s]",
 							  ' '.join(tag_words), repr(word), tag[-1])
-				aligned_tags.append(Token(word, word, *tag[2:]))
+				aligned_tags.append(Token(word, ascii, *tag[2:]))
 			else:
 				logging.error('alignment of tokens %s to word "%s" at %i failed in "%s" vs "%s"',
 				              repr(tag_words), word, repr(tokens), index, repr([t.word for t in tags]))
@@ -177,19 +184,21 @@ def _alignTokens(tags, tokens, tokenizer):
 		elif len(word) < len(tag.word):
 			logging.debug('tag word %s exceeds word %s', repr(tag.word), repr(word))
 			tmp = list(tag)
-			words =[word]
+			words = [word]
+			asciis = [ascii]
 			tag_word = ''.join(tokenizer.split(tag.word))
-			matches = lambda: ''.join(words) == tag_word
+			matches = lambda: ''.join(asciis) == tag_word
 
 			while not matches() and sum(map(len, words)) < len(tag_word):
 				words.append(next(t_iter))
+				asciis.append(unidecode(words[-1]))
 
 			if matches():
 				logging.debug("dropping tag %s [%s] for words '%s'",
 				  			  repr(tag.word), tag[-1], ' '.join(words))
-				for w in words:
+				for w, a in zip(words, asciis):
 					tmp[0] = w
-					tmp[1] = w
+					tmp[1] = a
 					logging.debug("adding tag %s [%s]", repr(w), tmp[-1])
 					aligned_tags.append(Token(*tmp))
 
@@ -208,7 +217,7 @@ def _alignTokens(tags, tokens, tokenizer):
 
 	assert len(tokens) == len(aligned_tags) and \
 	       tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
-		len(tokens), len(aligned_tags), repr(list(zip(tokens, [t.word for t in aligned_tags])))
+			   len(tokens), len(aligned_tags), repr([(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t])
 	)
 	return aligned_tags
 
