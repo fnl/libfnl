@@ -150,44 +150,47 @@ def _alignTokens(tags, tokens, tokenizer):
 		tag = tags[index]
 
 		while all(category(c) == "Pd" for c in tag.word) and index < len(tags):
-			logging.debug("skipping punctuation dash '%s'", tag.word)
+			logging.debug("dropping punctuation dash tag '%s' [%s]", tag.word, tag[-1])
 			index += 1
 			tag = tags[index]
 
-		if word == tag.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
+		if word == tag.word or (word == '"' and tag.word in ("``", "''")):
+			# " is a special case (gets converted to `` or '' by GENIA)
 			aligned_tags.append(tag)
 		elif len(word) > len(tag.word):
 			logging.debug('word %s exceeds tag word %s', repr(word), repr(tag.word))
 			tag_words = [tag.word]
-			equal = lambda: word == ''.join(tag_words)
+			matches = lambda: word == ''.join(tag_words)
 
-			while not equal() and sum(map(len, tag_words)) < len(word):
+			while not matches() and sum(map(len, tag_words)) < len(word):
 				index += 1
 				tag_words.append(tags[index].word)
 
-			if equal():
-				logging.debug('aligned %s to %s [%s]', repr(word), repr(tag_words), tag[-1])
+			if matches():
+				logging.debug("dropping tags '%s' and adding %s [%s]",
+							  ' '.join(tag_words), repr(word), tag[-1])
 				aligned_tags.append(Token(word, word, *tag[2:]))
 			else:
-				logging.error('alignment of tokens %s to word "%s" at %j failed in "%s" vs "%s"',
+				logging.error('alignment of tokens %s to word "%s" at %i failed in "%s" vs "%s"',
 				              repr(tag_words), word, repr(tokens), index, repr([t.word for t in tags]))
 				raise RuntimeError("alignment failed")
 		elif len(word) < len(tag.word):
 			logging.debug('tag word %s exceeds word %s', repr(tag.word), repr(word))
 			tmp = list(tag)
-			tag_word = ''.join(tokenizer.split(tag.word))
 			words =[word]
-			equal = lambda: ''.join(words) != tag_word
+			tag_word = ''.join(tokenizer.split(tag.word))
+			matches = lambda: ''.join(words) == tag_word
 
-			while not equal() and sum(map(len, words)) < len(tag_word):
+			while not matches() and sum(map(len, words)) < len(tag_word):
 				words.append(next(t_iter))
 
-			if equal():
-				logging.debug('aligned "%s" to %s [%s]', ' '.join(words), tag_word, tag[-1])
-
+			if matches():
+				logging.debug("dropping tag %s [%s] for words '%s'",
+				  			  repr(tag.word), tag[-1], ' '.join(words))
 				for w in words:
 					tmp[0] = w
 					tmp[1] = w
+					logging.debug("adding tag %s [%s]", repr(w), tmp[-1])
 					aligned_tags.append(Token(*tmp))
 
 					for p in (3, 4):
@@ -203,7 +206,7 @@ def _alignTokens(tags, tokens, tokenizer):
 
 		index += 1
 
-	assert len(tokens) == len(aligned_tags), "%i != %i; details: %s" % (
+	assert len(tokens) == len(aligned_tags) and tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
 		len(tokens), len(aligned_tags), repr(list(zip(tokens, [t.word for t in aligned_tags])))
 	)
 	return aligned_tags
