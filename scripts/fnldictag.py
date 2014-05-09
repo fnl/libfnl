@@ -233,7 +233,7 @@ def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
 					yield Dictionary.B % dic[2:]
 					opened = True
 			else:
-				raise RuntimeError("at token %s with tag %s in %s" % (token, dic, repr(list(zip([t.word for t in ner_tokens], dict_tags)))))
+				logging.debug("droping normalization of %s with %s", token, dic)
 		else:
 			yield Dictionary.O
 			opened = False
