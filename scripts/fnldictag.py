@@ -235,6 +235,8 @@ def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
 					opened = True
 			else:
 				logging.debug("droping normalization of %s with %s", token, dic)
+				yield Dictionary.O
+				opened = False
 		else:
 			yield Dictionary.O
 			opened = False
