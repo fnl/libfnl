@@ -97,23 +97,23 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep=
 
 
 def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns):
-	dict_tags = list(dictionary.walk(tokens))
+	normalizations = list(dictionary.walk(tokens))
 	pos_tagger.send(text)
-	pos_tokens = list(pos_tagger)
-	ner_tagger.send(pos_tokens)
-	ner_tokens = list(ner_tagger)
+	tags = list(pos_tagger)
+	ner_tagger.send(tags)
+	tags = list(ner_tagger)
 
-	if len(ner_tokens) != len(tokens):
-		ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
+	if len(tags) != len(tokens):
+		tags = _alignTokens(tags, tokens, tokenizer)
 
-	assert len(dict_tags) == len(ner_tokens), "alignment error: %i != %i; details: %s" % (
-		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
+	assert len(normalizations) == len(tags), "alignment error: %i != %i; details: %s" % (
+		len(normalizations), len(tags), repr(list(zip([t.word for t in tags], normalizations)))
 	)
-	gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
-	assert len(gene_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (
-		len(gene_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], gene_tags)))
+	normalizations = list(_matchNerAndDictionary(normalizations, tags, nouns))
+	assert len(normalizations) == len(tags), "matching error: %i != %i; details: %s" % (
+		len(normalizations), len(tags), repr(list(zip([t.word for t in tags], normalizations)))
 	)
-	return gene_tags, ner_tokens
+	return normalizations, tags
 
 
 def load(instream, qualifier_list, sep='\t') -> iter:
@@ -138,74 +138,75 @@ def load(instream, qualifier_list, sep='\t') -> iter:
 			yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
 
 
-def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
+def _alignTokens(tags, tokens, tokenizer):
 	"Return the aligned NER tokens (to the PoS tags and text tokens)."
 	# TODO: make this method's code actually understandable...
-	aligned_ner_tokens = []
+	aligned_tags = []
 	t_iter = iter(tokens)
 	index = 0
 
-	while index < len(ner_tokens):
+	while index < len(tags):
 		word = next(t_iter)
-		ner_t = ner_tokens[index]
+		tag = tags[index]
 
-		while all(category(c) == "Pd" for c in ner_t.word) and index < len(ner_tokens):
-			logging.debug("skipping punctuation dash '%s'", ner_t.word)
+		while all(category(c) == "Pd" for c in tag.word) and index < len(tags):
+			logging.debug("skipping punctuation dash '%s'", tag.word)
 			index += 1
-			ner_t = ner_tokens[index]
+			tag = tags[index]
 
-		if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
-			aligned_ner_tokens.append(ner_t)
-		elif len(word) > len(ner_t.word):
-			pos_words = [pos_tokens[index].word]
-			logging.debug('word %s exceeds %s/%s', repr(word), pos_words[0], repr(ner_t.word))
+		if word == tag.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
+			aligned_tags.append(tag)
+		elif len(word) > len(tag.word):
+			logging.debug('word %s exceeds tag word %s', repr(word), repr(tag.word))
+			tag_words = [tag.word]
+			equal = lambda: word == ''.join(tag_words)
 
-			while word != ''.join(pos_words):
-				try:
-					index += 1
-					pos_words.append(pos_tokens[index].word)
-				except IndexError:
-					logging.error('alignment of %i tokens "%s" - "%s" to word "%s" at %i failed in "%s" vs "%s"',
-					              len(pos_words), pos_words[0], pos_words[-1], word, index, repr(tokens),
-					              repr([t.word for t in pos_tokens]))
-					raise RuntimeError("alignment failed")
+			while not equal() and sum(map(len, tag_words)) < len(word):
+				index += 1
+				tag_words.append(tags[index].word)
 
-			logging.debug('aligned %s to %s [%s]', repr(word), repr(pos_words), ner_t[-1])
-			aligned_ner_tokens.append(Token(word, word, *ner_t[2:]))
+			if equal():
+				logging.debug('aligned %s to %s [%s]', repr(word), repr(tag_words), tag[-1])
+				aligned_tags.append(Token(word, word, *tag[2:]))
+			else:
+				logging.error('alignment of tokens %s to word "%s" at %j failed in "%s" vs "%s"',
+				              repr(tag_words), word, repr(tokens), index, repr([t.word for t in tags]))
+				raise RuntimeError("alignment failed")
+		elif len(word) < len(tag.word):
+			logging.debug('tag word %s exceeds word %s', repr(tag.word), repr(word))
+			tmp = list(tag)
+			tag_word = ''.join(tokenizer.split(tag.word))
+			words =[word]
+			equal = lambda: ''.join(words) != tag_word
+
+			while not equal() and sum(map(len, words)) < len(tag_word):
+				words.append(next(t_iter))
+
+			if equal():
+				logging.debug('aligned "%s" to %s [%s]', ' '.join(words), tag_word, tag[-1])
+
+				for w in words:
+					tmp[0] = w
+					tmp[1] = w
+					aligned_tags.append(Token(*tmp))
+
+					for p in (3, 4):
+						if tmp[p].startswith('B-'):
+							tmp[p] = 'I' + tmp[p][1:]
+			else:
+				logging.error('alignment of words %s to token "%s" as "%s" at %i failed in "%s" vs "%s"',
+				              repr(words), tag.word, tag_word, index, repr(tokens), repr([t.word for t in tags]))
+				raise RuntimeError("alignment failed")
 		else:
-			words = [word]
-			pos_words = ''.join(tokenizer.split(pos_tokens[index].word))
-			tmp = list(ner_t)
-			logging.debug('token %s/%s exceeds %s', pos_words, repr(ner_t.word), repr(word))
-
-			while ''.join(words) != pos_words:
-				try:
-					words.append(next(t_iter))
-				except StopIteration:
-					pos_word = pos_tokens[index].word
-					logging.error('alignment of %i words "%s"-"%s" to %s/%s as "%s" at %i failed in "%s" vs "%s"',
-					              len(words), word, words[-1], pos_word, ner_t.word,
-					              ' '.join(tokenizer.split(pos_word)), index, repr(tokens),
-					              repr([t.word for t in pos_tokens]))
-					raise RuntimeError("alignment failed")
-
-			logging.debug('aligned %s [%s] to %s', repr(pos_words), ner_t[-1], repr(words))
-
-			for w in words:
-				tmp[0] = w
-				tmp[1] = w
-				aligned_ner_tokens.append(Token(*tmp))
-
-				for p in (3, 4):
-					if tmp[p].startswith('B-'):
-						tmp[p] = 'I' + tmp[p][1:]
+			logging.error('alignment of "%s" and %s failed', word, repr(tag))
+			raise RuntimeError('alignment failed')
 
 		index += 1
 
-	assert len(tokens) == len(aligned_ner_tokens), "%i != %i; details: %s" % (
-		len(tokens), len(aligned_ner_tokens), repr(list(zip(tokens, [t.word for t in aligned_ner_tokens])))
+	assert len(tokens) == len(aligned_tags), "%i != %i; details: %s" % (
+		len(tokens), len(aligned_tags), repr(list(zip(tokens, [t.word for t in aligned_tags])))
 	)
-	return aligned_ner_tokens
+	return aligned_tags
 
 
 def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
