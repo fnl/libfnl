@@ -206,7 +206,8 @@ def _alignTokens(tags, tokens, tokenizer):
 
 		index += 1
 
-	assert len(tokens) == len(aligned_tags) and tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
+	assert len(tokens) == len(aligned_tags) and \
+	       tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
 		len(tokens), len(aligned_tags), repr(list(zip(tokens, [t.word for t in aligned_tags])))
 	)
 	return aligned_tags
