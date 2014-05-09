@@ -106,9 +106,13 @@ def _prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, nouns)
 	if len(ner_tokens) != len(tokens):
 		ner_tokens = _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer)
 
-	assert len(dict_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags))))
+	assert len(dict_tags) == len(ner_tokens), "alignment error: %i != %i; details: %s" % (
+		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
+	)
 	gene_tags = list(_matchNerAndDictionary(dict_tags, ner_tokens, nouns))
-	assert len(gene_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (len(gene_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], gene_tags))))
+	assert len(gene_tags) == len(ner_tokens), "matching error: %i != %i; details: %s" % (
+		len(gene_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], gene_tags)))
+	)
 	return gene_tags, ner_tokens
 
 
@@ -137,7 +141,7 @@ def load(instream, qualifier_list, sep='\t') -> iter:
 def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 	"Return the aligned NER tokens (to the PoS tags and text tokens)."
 	# TODO: make this method's code actually understandable...
-	new_tokens = []
+	aligned_ner_tokens = []
 	t_iter = iter(tokens)
 	index = 0
 
@@ -151,7 +155,7 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 			ner_t = ner_tokens[index]
 
 		if word == ner_t.word or word == '"':  # " is a special case (gets converted to `` or '' by GENIA)
-			new_tokens.append(ner_t)
+			aligned_ner_tokens.append(ner_t)
 		elif len(word) > len(ner_t.word):
 			pos_words = [pos_tokens[index].word]
 			logging.debug('word %s exceeds %s/%s', repr(word), pos_words[0], repr(ner_t.word))
@@ -167,7 +171,7 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 					raise RuntimeError("alignment failed")
 
 			logging.debug('aligned %s to %s [%s]', repr(word), repr(pos_words), ner_t[-1])
-			new_tokens.append(Token(word, word, *ner_t[2:]))
+			aligned_ner_tokens.append(Token(word, word, *ner_t[2:]))
 		else:
 			words = [word]
 			pos_words = ''.join(tokenizer.split(pos_tokens[index].word))
@@ -190,7 +194,7 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 			for w in words:
 				tmp[0] = w
 				tmp[1] = w
-				new_tokens.append(Token(*tmp))
+				aligned_ner_tokens.append(Token(*tmp))
 
 				for p in (3, 4):
 					if tmp[p].startswith('B-'):
@@ -198,8 +202,10 @@ def _alignTokens(ner_tokens, pos_tokens, tokens, tokenizer):
 
 		index += 1
 
-	assert len(tokens) == len(new_tokens), "%i != %i; details: %s" % (len(tokens), len(new_tokens), repr(list(zip(tokens, [t.word for t in new_tokens]))))
-	return new_tokens
+	assert len(tokens) == len(aligned_ner_tokens), "%i != %i; details: %s" % (
+		len(tokens), len(aligned_ner_tokens), repr(list(zip(tokens, [t.word for t in aligned_ner_tokens])))
+	)
+	return aligned_ner_tokens
 
 
 def _matchNerAndDictionary(dict_tags, ner_tokens, nouns=False):
