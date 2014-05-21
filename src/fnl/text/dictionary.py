@@ -202,8 +202,7 @@ class Dictionary(object):
 			last_path.append(n)
 			self.logger.debug("open alt token '%s'", alt)
 
-
-	def _match(self, queue, token:str, last:str) -> list:
+	def _match(self, queue, token, last):
 		# alt: joins the current token with the last if the current token is
 		# a single upper-case letter and the last token is alphabetic,
 		# but then upper-casing all letters
@@ -289,7 +288,7 @@ class Dictionary(object):
 	def _resolve(self, path, queue) -> iter:
 		for node in reversed(path):
 			if node.key:
-				self.logger.debug("found %s (len=%i)", node.key, len(path))
+				self.logger.debug("found %s (%i tokens)", node.key, len(path))
 				idx = 0
 				ikey = Dictionary.I % node.key
 				yield Dictionary.B % node.key

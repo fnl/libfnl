@@ -83,7 +83,8 @@ GREEK = {
 LATIN = {v: k for k, v in GREEK.items()}
 
 
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", tag_all_nouns=False, expand_greek_letters=False):
+def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
+          sep="", tag_all_nouns=False, expand_greek_letters=False):
 	"""Align the output of the dictionary tags below the tokens."""
 	uid = []
 
@@ -100,7 +101,7 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 					dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
 					tag_all_nouns, expand_greek_letters
 				)
-			except RuntimeError as e:
+			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
@@ -120,7 +121,7 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 
 
 def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
-	        sep="\t", tag_all_nouns=False, expand_greek_letters=False):
+            sep="\t", tag_all_nouns=False, expand_greek_letters=False):
 	"""Print columnar output of [text UID,] token data and tags; one token per line."""
 	for input in input_streams:
 		for line in input:
@@ -129,8 +130,9 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
 			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, ner_tokens = prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, tag_all_nouns, expand_greek_letters)
-			except RuntimeError as e:
+				tags, ner_tokens = prepare(dictionary, ner_tagger, pos_tagger, text, tokens,
+				                           tokenizer, tag_all_nouns, expand_greek_letters)
+			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
@@ -141,7 +143,7 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
 
 
 def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
-	          sep="\t", tag_all_nouns=False, expand_greek_letters=False):
+              sep="\t", tag_all_nouns=False, expand_greek_letters=False):
 	"""Print only [text UIDs and] dictionary tags."""
 	for input in input_streams:
 		for line in input:
@@ -150,8 +152,9 @@ def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
 			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, _ = prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, tag_all_nouns, expand_greek_letters)
-			except RuntimeError as e:
+				tags, _ = prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
+				                  tag_all_nouns, expand_greek_letters)
+			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
@@ -167,7 +170,7 @@ def ungreek(token):
 
 
 def prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
-			tag_all_nouns, expand_greek_letters):
+            tag_all_nouns, expand_greek_letters):
 	if expand_greek_letters:
 		normalizations = list(dictionary.walk([ungreek(t) for t in tokens]))
 	else:
@@ -292,14 +295,15 @@ def alignTokens(tags, tokens, tokenizer):
 		index += 1
 
 	assert len(tokens) == len(aligned_tags) and \
-		tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
-			len(tokens), len(aligned_tags), repr([(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t])
+		tokens == [t.word for t in aligned_tags], "%i != %i; details: %s" % (
+			len(tokens), len(aligned_tags), repr([
+				(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t
+			])
 		)
 	return aligned_tags
 
 
 def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
-	opened = False
 	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (
 		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
 	)
@@ -322,7 +326,7 @@ def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 			elif tag_all_nouns and token.pos.startswith('NN') or (
 				token.pos.startswith('JJ') and token.chunk.endswith('-NP')
 				# alternatively, also allow CD in noun phrases, too:
-				#token.chunk.endswith('-NP') and token.pos[:2] in ('JJ', 'CD')
+				# token.chunk.endswith('-NP') and token.pos[:2] in ('JJ', 'CD')
 			):
 				# a noun (phrase) assignment (to a noun or adjective) can be made
 				if tag == last_tag or state == Dictionary.B:
@@ -430,7 +434,8 @@ if __name__ == '__main__':
 		ner_tagger = NerSuite(args.model)
 		qualifier_list = [l.strip() for l in args.qranks]
 		raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
-		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'}) # skips Unicode Categories Zs and Pd
+		# a tokenizer that skips Unicode Categories Zs and Pd:
+		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
 		dictionary = Dictionary(raw_dict_data, tokenizer)
 		lst = [dictionary, tokenizer, pos_tagger, ner_tagger]
 		kwds = dict(sep=args.separator,
