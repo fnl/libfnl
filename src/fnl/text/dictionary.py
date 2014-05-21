@@ -224,29 +224,29 @@ class Dictionary(object):
 			if token in edges:
 				if alt in altNode.edges:
 					path.append(Dictionary.merge(edges[token], altNode.edges[alt]))
-					self.logger.debug("match cont'd token '%s' and alt '%s'", token, alt)
+					self.logger.debug("match cont'd token %i '%s' and alt '%s'", len(path), token, alt)
 				else:
 					path.append(edges[token])
-					self.logger.debug("match cont'd token '%s'", token)
+					self.logger.debug("match cont'd token %i '%s'", len(path), token)
 			elif len(token) == 1 and token.isupper() and token.lower() in edges:
 				# special matching condition: single letter match
 				# with swapped case inside an already opened path
 				path.append(edges[token.lower()])
-				self.logger.debug("match cont'd token lower '%s'", token.lower())
+				self.logger.debug("match cont'd token lower %i '%s'", len(path), token.lower())
 			elif alt in altNode.edges:
 				# allow joint token matches if the second token is a single, upper-case letter
 				# and the first token was a letter token beginning with upper-case, too
 				path.append(altNode.edges[alt])
-				self.logger.debug("match cont'd alt '%s'", alt)
+				self.logger.debug("match cont'd alt %i '%s'", len(path), alt)
 			elif upper and upper in edges:
 				# allow full-token lower-case to upper-case transitions
 				# to detect mentions of genes written in all lower-case
 				path.append(edges[upper])
-				self.logger.debug("match cont'd upper '%s'", upper)
+				self.logger.debug("match cont'd upper %i '%s'", len(path), upper)
 			else:
 				# "close" this path
 				queue[idx] = tuple(path)
-				self.logger.debug("match closed at '%s' for %s", token, list(edges.keys()))
+				self.logger.debug("match closed at token %i '%s'", len(path), token)
 
 		# "open" a new path if the token matches an edge in root
 		if token in self.root.edges:
@@ -283,7 +283,7 @@ class Dictionary(object):
 	def _resolve(self, path, queue) -> iter:
 		for node in reversed(path):
 			if node.key:
-				self.logger.debug("found %s", node.key)
+				self.logger.debug("found %s (len=%i)", node.key, len(path))
 				idx = 0
 				ikey = Dictionary.I % node.key
 				yield Dictionary.B % node.key
