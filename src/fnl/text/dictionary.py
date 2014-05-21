@@ -177,25 +177,31 @@ class Dictionary(object):
 		# last may be whatever kind of alphabetic token
 		return last and len(token) == 1 and last.isalpha() and token.isupper()
 
-	def _matchAlt(self, alt, queue):
+	def _mergeAlt(self, alt, queue):
 		# No check of len(queue) required:
 		# if this fails, something is wrong with _iterpop,
 		# because it should guarantee that at least the last item is left
-		q = queue[-1]
+		last_path = queue[-1]
 
-		if q is None:
-			q = queue[-1] = []
-		elif type(q) == tuple:
-			q = queue[-1] = list(q)
+		if last_path is None:
+			# create a path if none exists
+			last_path = queue[-1] = []
+		elif type(last_path) == tuple:
+			# reopen closed paths
+			last_path = queue[-1] = list(last_path)
 
 		n = self.root.edges[alt]
 
-		if len(q):
-			q[-1] = Dictionary.merge(q[-1], n)
+		if len(last_path):
+			assert len(last_path) != 1, "merging 2-token alt on a path of length 1"
+			last_path[-2] = Dictionary.merge(last_path[-2], n)
+			last_path[-1] = Dictionary.merge(last_path[-1], n)
+			self.logger.debug("merge alt token '%s'", alt)
 		else:
-			q.append(Node(**n.edges))
+			last_path.append(Node(**n.edges))
+			last_path.append(n)
+			self.logger.debug("open alt token '%s'", alt)
 
-		q.append(n)
 
 	def _match(self, queue, token:str, last:str) -> list:
 		# alt: joins the current token with the last if the current token is
@@ -249,12 +255,11 @@ class Dictionary(object):
 				self.logger.debug("match open token '%s' and upper '%s'", token, upper)
 			elif lower and lower in self.root.edges:
 				queue.append([Dictionary.merge(self.root.edges[token], self.root.edges[lower])])
-				self.logger.debug("match open token '%s' and lower '%s'", token, upper)
+				self.logger.debug("match open token '%s' and lower '%s'", token, lower)
 			elif alt in self.root.edges:
-				self._matchAlt(alt, queue)
-				self.logger.debug("match open alt token '%s'", alt)
+				self._mergeAlt(alt, queue)
 				queue.append([self.root.edges[token]])
-				self.logger.debug("match open token '%s'", token)
+				self.logger.debug("match open token '%s' and merge alt token '%s'", token, alt)
 			else:
 				queue.append([self.root.edges[token]])
 				self.logger.debug("match open token '%s'", token)
@@ -268,8 +273,8 @@ class Dictionary(object):
 			self.logger.debug("match open lower token '%s'", lower)
 		else:
 			if alt in self.root.edges:
-				self._matchAlt(alt, queue)
-				self.logger.debug("match open alt token '%s'", alt)
+				self._mergeAlt(alt, queue)
+				self.logger.debug("merge alt token '%s'", alt)
 
 			queue.append(None)  # nothing (no start) found at the current token
 
