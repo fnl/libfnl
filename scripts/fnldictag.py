@@ -303,32 +303,39 @@ def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (
 		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
 	)
+	logging.debug('assigning dictionary tags [%s]', " ".join(dict_tags))
+	last_tag = None
 
 	for token, dic in zip(ner_tokens, dict_tags):
 		if dic != Dictionary.O:
+			tag = dic[2:]
+			state = dic[:2]
+
 			if token.entity != Dictionary.O:
-				if dic[:2] == token.entity[:2]:
+				# an entity assignment can be made
+				if tag == last_tag or state == Dictionary.B:
 					yield dic
-					opened = (dic[:2] == Dictionary.O)
 				else:
-					yield Dictionary.B % dic[2:]
-					opened = True
+					yield Dictionary.B % tag
+
+				last_tag = tag
 			elif tag_all_nouns and token.pos.startswith('NN') or (
 				token.pos.startswith('JJ') and token.chunk.endswith('-NP')
 			):
-				if opened:
-					yield Dictionary.I % dic[2:]
-					opened = False
+				# a noun assignment can be made
+				if tag == last_tag or state == Dictionary.B:
+					yield dic
 				else:
-					yield Dictionary.B % dic[2:]
-					opened = True
+					yield Dictionary.B % tag
+
+				last_tag = tag
 			else:
-				logging.debug("dropping normalization of %s with %s", token, dic)
+				logging.debug('dropping normalization of "%s" with %s', token.word, dic)
 				yield Dictionary.O
-				opened = False
+				last_tag = None
 		else:
 			yield Dictionary.O
-			opened = False
+			last_tag = None
 
 
 if __name__ == '__main__':
