@@ -421,17 +421,17 @@ if __name__ == '__main__':
 		raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'}) # skips Unicode Categories Zs and Pd
 		dictionary = Dictionary(raw_dict_data, tokenizer)
-		args = [dictionary, tokenizer, pos_tagger, ner_tagger]
+		lst = [dictionary, tokenizer, pos_tagger, ner_tagger]
 		kwds = dict(sep=args.separator,
 		            tag_all_nouns=args.nouns,
 		            expand_greek_letters=args.ungreek)
 
 		if args.files:
-			args.append(args.files)
+			lst.append(args.files)
 		else:
-			args.append([sys.stdin])
+			lst.append([sys.stdin])
 
-		method(*args, **kwds)
+		method(*lst, **kwds)
 
 		del pos_tagger
 		del ner_tagger
