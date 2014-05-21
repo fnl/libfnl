@@ -313,7 +313,9 @@ def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 				else:
 					yield Dictionary.B % dic[2:]
 					opened = True
-			elif tag_all_nouns and token.pos.startswith('NN'):
+			elif tag_all_nouns and token.pos.startswith('NN') or (
+				token.pos.startswith('JJ') and token.chunk.endswith('-NP')
+			):
 				if opened:
 					yield Dictionary.I % dic[2:]
 					opened = False
