@@ -321,8 +321,10 @@ def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 				last_tag = tag
 			elif tag_all_nouns and token.pos.startswith('NN') or (
 				token.pos.startswith('JJ') and token.chunk.endswith('-NP')
+				# alternatively, also allow CD in noun phrases, too:
+				#token.chunk.endswith('-NP') and token.pos[:2] in ('JJ', 'CD')
 			):
-				# a noun assignment can be made
+				# a noun (phrase) assignment (to a noun or adjective) can be made
 				if tag == last_tag or state == Dictionary.B:
 					yield dic
 				else:
