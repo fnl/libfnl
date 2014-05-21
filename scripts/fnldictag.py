@@ -51,7 +51,9 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 			if sep and uid:
 				print(sep.join(uid))
 
-			assert len(tokens) == len(tags), "alignemnt failed %i != %i; details: %s" % (len(tokens), len(tags), repr(list(zip(tokens, tags))))
+			assert len(tokens) == len(tags), "alignemnt failed %i != %i; details: %s" % (
+			    len(tokens), len(tags), repr(list(zip(tokens, tags)))
+			)
 
 			for src in (tokens, tags):
 				print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))

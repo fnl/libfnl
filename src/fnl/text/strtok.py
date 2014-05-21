@@ -478,7 +478,7 @@ class Tokenizer:
         :return:
         """
         self.skipTags = skipTags
-        self.skipMorph = skipMorphs
+        self.skipMorphs = skipMorphs
 
     def split(self, text: str) -> iter:
         """
@@ -517,7 +517,7 @@ class Tokenizer:
                     if not self.skipTags or State.__name__ not in self.skipTags:
                         morph = cats.getvalue() if cats else morph
 
-                        if not self.skipMorph or morph not in self.skipMorph:
+                        if not self.skipMorphs or morph not in self.skipMorphs:
                             yield start, end, State.__name__, morph
 
                 cats = None
@@ -529,7 +529,7 @@ class Tokenizer:
             if not self.skipTags or State.__name__ not in self.skipTags:
                 morph = cats.getvalue() if cats else morph
 
-                if not self.skipMorph or morph not in self.skipMorph:
+                if not self.skipMorphs or morph not in self.skipMorphs:
                     yield start, len(text), State.__name__, morph
 
     @staticmethod
