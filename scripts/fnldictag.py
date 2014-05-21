@@ -321,7 +321,7 @@ def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 					yield Dictionary.B % dic[2:]
 					opened = True
 			else:
-				logging.debug("droping normalization of %s with %s", token, dic)
+				logging.debug("dropping normalization of %s with %s", token, dic)
 				yield Dictionary.O
 				opened = False
 		else:
