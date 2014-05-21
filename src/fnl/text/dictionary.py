@@ -224,7 +224,8 @@ class Dictionary(object):
 			if token in edges:
 				if alt in altNode.edges:
 					path.append(Dictionary.merge(edges[token], altNode.edges[alt]))
-					self.logger.debug("match cont'd token %i '%s' and alt '%s'", len(path), token, alt)
+					self.logger.debug("match cont'd token %i '%s' and alt '%s'",
+					                  len(path), token, alt)
 				else:
 					path.append(edges[token])
 					self.logger.debug("match cont'd token %i '%s'", len(path), token)
@@ -232,7 +233,7 @@ class Dictionary(object):
 				# special matching condition: single letter match
 				# with swapped case inside an already opened path
 				path.append(edges[token.lower()])
-				self.logger.debug("match cont'd token lower %i '%s'", len(path), token.lower())
+				self.logger.debug("match cont'd single letter %i '%s'", len(path), token.lower())
 			elif alt in altNode.edges:
 				# allow joint token matches if the second token is a single, upper-case letter
 				# and the first token was a letter token beginning with upper-case, too
@@ -243,6 +244,11 @@ class Dictionary(object):
 				# to detect mentions of genes written in all lower-case
 				path.append(edges[upper])
 				self.logger.debug("match cont'd upper %i '%s'", len(path), upper)
+			elif lower and lower in edges:
+				# allow full-token capitalized to lower-case transitions
+				# to detect mentions of gene tokens written in all lower-case
+				path.append(edges[lower])
+				self.logger.debug("match cont'd lower %i '%s'", len(path), lower)
 			else:
 				# "close" this path
 				queue[idx] = tuple(path)
