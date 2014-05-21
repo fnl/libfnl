@@ -96,7 +96,10 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, _ = prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, tag_all_nouns, expand_greek_letters)
+				tags, _ = prepare(
+					dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
+					tag_all_nouns, expand_greek_letters
+				)
 			except RuntimeError as e:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
@@ -107,7 +110,7 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 				print(sep.join(uid))
 
 			assert len(tokens) == len(tags), "alignemnt failed %i != %i; details: %s" % (
-			    len(tokens), len(tags), repr(list(zip(tokens, tags)))
+				len(tokens), len(tags), repr(list(zip(tokens, tags)))
 			)
 
 			for src in (tokens, tags):
@@ -116,7 +119,8 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 			print("--")
 
 
-def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", tag_all_nouns=False, expand_greek_letters=False):
+def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
+	        sep="\t", tag_all_nouns=False, expand_greek_letters=False):
 	"""Print columnar output of [text UID,] token data and tags; one token per line."""
 	for input in input_streams:
 		for line in input:
@@ -136,7 +140,8 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\
 			print("")
 
 
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", tag_all_nouns=False, expand_greek_letters=False):
+def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
+	          sep="\t", tag_all_nouns=False, expand_greek_letters=False):
 	"""Print only [text UIDs and] dictionary tags."""
 	for input in input_streams:
 		for line in input:
@@ -161,7 +166,8 @@ def ungreek(token):
 		return token
 
 
-def prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer, tag_all_nouns, expand_greek_letters):
+def prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
+			tag_all_nouns, expand_greek_letters):
 	if expand_greek_letters:
 		normalizations = list(dictionary.walk([ungreek(t) for t in tokens]))
 	else:
@@ -243,11 +249,12 @@ def alignTokens(tags, tokens, tokenizer):
 
 			if matches():
 				logging.debug("dropping tags '%s' and adding %s [%s]",
-							  ' '.join(tag_words), repr(word), tag[-1])
+				              ' '.join(tag_words), repr(word), tag[-1])
 				aligned_tags.append(Token(word, ascii, *tag[2:]))
 			else:
 				logging.error('alignment of tokens %s to word "%s" at %i failed in "%s" vs "%s"',
-				              repr(tag_words), word, repr(tokens), index, repr([t.word for t in tags]))
+				              repr(tag_words), word, repr(tokens), index,
+				              repr([t.word for t in tags]))
 				raise RuntimeError("alignment failed")
 		elif len(word) < len(tag.word):
 			logging.debug('tag word %s exceeds word %s', repr(tag.word), repr(word))
@@ -263,7 +270,7 @@ def alignTokens(tags, tokens, tokenizer):
 
 			if matches():
 				logging.debug("dropping tag %s [%s] for words '%s'",
-				  			  repr(tag.word), tag[-1], ' '.join(words))
+				              repr(tag.word), tag[-1], ' '.join(words))
 				for w, a in zip(words, asciis):
 					tmp[0] = w
 					tmp[1] = a
@@ -275,7 +282,8 @@ def alignTokens(tags, tokens, tokenizer):
 							tmp[p] = 'I' + tmp[p][1:]
 			else:
 				logging.error('alignment of words %s to token "%s" as "%s" at %i failed in "%s" vs "%s"',
-				              repr(words), tag.word, tag_word, index, repr(tokens), repr([t.word for t in tags]))
+				              repr(words), tag.word, tag_word, index, repr(tokens),
+				              repr([t.word for t in tags]))
 				raise RuntimeError("alignment failed")
 		else:
 			logging.error('alignment of "%s" and %s failed', word, repr(tag))
@@ -284,15 +292,17 @@ def alignTokens(tags, tokens, tokenizer):
 		index += 1
 
 	assert len(tokens) == len(aligned_tags) and \
-	       tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
-			   len(tokens), len(aligned_tags), repr([(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t])
-	)
+		tokens == [tag.word for tag in aligned_tags], "%i != %i; details: %s" % (
+			len(tokens), len(aligned_tags), repr([(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t])
+		)
 	return aligned_tags
 
 
 def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
 	opened = False
-	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags))))
+	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (
+		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
+	)
 
 	for token, dic in zip(ner_tokens, dict_tags):
 		if dic != Dictionary.O:
@@ -411,11 +421,17 @@ if __name__ == '__main__':
 		raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'}) # skips Unicode Categories Zs and Pd
 		dictionary = Dictionary(raw_dict_data, tokenizer)
+		args = [dictionary, tokenizer, pos_tagger, ner_tagger]
+		kwds = dict(sep=args.separator,
+		            tag_all_nouns=args.nouns,
+		            expand_greek_letters=args.ungreek)
 
 		if args.files:
-			method(dictionary, tokenizer, pos_tagger, ner_tagger, args.files, sep=args.separator, tag_all_nouns=args.nouns, expand_greek_letters=args.ungreek)
+			args.append(args.files)
 		else:
-			method(dictionary, tokenizer, pos_tagger, ner_tagger, [sys.stdin], sep=args.separator, tag_all_nouns=args.nouns, expand_greek_letters=args.ungreek)
+			args.append([sys.stdin])
+
+		method(*args, **kwds)
 
 		del pos_tagger
 		del ner_tagger
