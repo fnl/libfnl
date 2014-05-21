@@ -240,13 +240,16 @@ class Dictionary(object):
 			else:
 				# "close" this path
 				queue[idx] = tuple(path)
-				self.logger.debug("match closed")
+				self.logger.debug("match closed at '%s' for %s", token, list(edges.keys()))
 
 		# "open" a new path if the token matches an edge in root
 		if token in self.root.edges:
 			if upper and upper in self.root.edges:
 				queue.append([Dictionary.merge(self.root.edges[token], self.root.edges[upper])])
 				self.logger.debug("match open token '%s' and upper '%s'", token, upper)
+			elif lower and lower in self.root.edges:
+				queue.append([Dictionary.merge(self.root.edges[token], self.root.edges[lower])])
+				self.logger.debug("match open token '%s' and lower '%s'", token, upper)
 			elif alt in self.root.edges:
 				self._matchAlt(alt, queue)
 				self.logger.debug("match open alt token '%s'", alt)
