@@ -8,7 +8,7 @@
 
 import logging
 import os
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, DEVNULL
 from threading import Thread
 from unidecode import unidecode
 
@@ -20,6 +20,7 @@ The default path of the ``nersuite``. If the NER Suite tagger is on the ``PATH``
 the name of the binary will do.
 """
 
+
 class NerSuite(object):
     """
     A subprocess wrapper for the NER Suite tagger.
@@ -27,7 +28,7 @@ class NerSuite(object):
 
     L = logging.getLogger("NerSuite")
 
-    def __init__(self, model:str, binary:str=NERSUITE_TAGGER):
+    def __init__(self, model, binary=NERSUITE_TAGGER):
         """
         :param model: The path to the model to use by the tagger.
         :param binary: The path or name (if in ``$PATH``) of the nersuite binary.
@@ -38,19 +39,21 @@ d        """
         NerSuite._checkPath(model, os.R_OK)
         args = [binary, 'tag', '-m', model]
         self.L.debug("executing %s", ' '.join(args))
-        self._proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        debug_msgs = Thread(target=NerSuite._logStderr,
-                            args=(self.L, self._proc.stderr))
-        debug_msgs.start()
+        self._proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=DEVNULL)
+        # TODO: fix hang in readline() below when exiting
+        # debug_msgs = Thread(target=NerSuite._logStderr,
+        #                     args=(self.L, self._proc.stderr))
+        # debug_msgs.start()
 
     @staticmethod
     def _checkPath(path, acc_code):
         assert os.path.exists(path) and os.access(path, acc_code), \
-        "invalid path %s" % path
+            "invalid path %s" % path
 
     @staticmethod
     def _logStderr(logger, stderr):
         while True:
+            # TODO: thread hangs here after parent terminates...
             line = stderr.readline().decode()
 
             if line:
@@ -59,8 +62,9 @@ d        """
                 break
 
     def __del__(self):
-        self.L.debug("terminating")
-        if hasattr(self, "_proc"): self._proc.terminate()
+        if hasattr(self, "_proc"):
+            self.L.debug("ner tagger terminating")
+            self._proc.terminate()
 
     def __iter__(self):
         return self
@@ -86,7 +90,7 @@ d        """
     # To make this module compatible with Python 2:
     next = __next__
 
-    def send(self, tokens:[Token]):
+    def send(self, tokens):
         """
         Send a single sentence as a list of tokens to the tagger.
 

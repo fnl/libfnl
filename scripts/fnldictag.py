@@ -449,8 +449,8 @@ if __name__ == '__main__':
 
 		method(*lst, **kwds)
 
-		del pos_tagger
 		del ner_tagger
+		del pos_tagger
 	except:
 		logging.exception("unexpected program error")
 		sys.exit(1)
