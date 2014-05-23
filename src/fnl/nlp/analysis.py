@@ -9,13 +9,12 @@ from fnl.text.symbols import LATIN
 
 class TextAnalytics:
 	"""
-	A tool to analyze linguistically annotated text with multiple entity taggers and dictionaries.
+	A toolset to annotate text with multiple entity taggers and dictionaries using PoS an phrases.
 
-	An instance needs to be configured by setting its "base" text tokenizer
+	An instance needs to be configured by setting a "default" text tokenizer
 	(but all taggers can use their own tokenization technique),
-	one PoS/phrase tagger,
-	and as many NER taggers and dictionaries as desired.
-	I.e., the tokenizer and PoS tagger must be set, the others may be set.
+	a specific PoS/phrase tagger, and as many NER taggers and dictionaries as desired.
+	I.e., the tokenizer and PoS tagger must be set, while NER taggers and dictionaries may be omitted.
 	"""
 
 	logger = logging.getLogger("TextAnalytics")
@@ -61,7 +60,7 @@ class TextAnalytics:
 		Most commonly, a piece of text is a sentence, but this depends on the used taggers.
 
 		:return a triple of (tokens, [ner_tags..], [normalizations...]);
-		        if no NER tagger was set, the PoS tags are returned
+		        if no NER tagger was set, the PoS tagger's tags are returned.
 		"""
 		# TOKENIZATION
 		tokens = self.tokenizer.split(text)
@@ -94,7 +93,9 @@ class TextAnalytics:
 		return tokens, ner_tags, normalizations
 
 	def _alignToTokens(self, tags, tokens):
-		"Return the aligned tags (to the tokens)."
+		"""
+		Align the tags to the tokens.
+		"""
 		# in this code, each token to align to is called a "word"
 		aligned_tags = []
 		t_iter = iter(tokens)
@@ -137,6 +138,7 @@ class TextAnalytics:
 		return aligned_tags
 
 	def _alignByJoiningTokens(self, tag, word, index, tags):
+		# alignment helper
 		self.logger.debug('word %s exceeds tag %s', repr(word), repr(tag.word))
 		tag_words = [tag.word]
 		ascii = unidecode(word)
@@ -162,6 +164,7 @@ class TextAnalytics:
 			))
 
 	def _alignBySplittingToken(self, tag, word, t_iter):
+		# alignment helper
 		self.logger.debug('tag %s exceeds word %s', repr(tag.word), repr(word))
 		tmp = list(tag)
 		words = [word]

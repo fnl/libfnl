@@ -26,12 +26,14 @@ __author__ = 'Florian Leitner'
 __version__ = '1.0'
 
 
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", **flags):
+def align(dictionaries, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", **flags):
 	"""Print the aligned dictionary tags below the tokens."""
 	uid = []
 	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
 	worker.addNerTagger(ner_tagger)
-	worker.addDictionary(dictionary)
+
+	for d in dictionaries:
+		worker.addDictionary(d)
 
 	for input in input_streams:
 		for text in input:
@@ -59,11 +61,13 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", 
 			print("--")
 
 
-def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
+def tagging(dictionaries, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
 	"""Print columnar output of [text UID,] token data and entity tags; one token per line."""
 	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
 	worker.addNerTagger(ner_tagger)
-	worker.addDictionary(dictionary)
+
+	for d in dictionaries:
+		worker.addDictionary(d)
 
 	for input in input_streams:
 		for line in input:
@@ -86,11 +90,13 @@ def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\
 			print("")
 
 
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
+def normalize(dictionaries, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
 	"""Print only [text UIDs and] dictionary tags."""
 	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
 	worker.addNerTagger(ner_tagger)
-	worker.addDictionary(dictionary)
+
+	for d in dictionaries:
+		worker.addDictionary(d)
 
 	for input in input_streams:
 		for line in input:
@@ -149,11 +155,6 @@ if __name__ == '__main__':
 	parser.set_defaults(loglevel=logging.WARNING)
 	parser.set_defaults(output=ALIGNED)
 	parser.add_argument(
-		'dictionary', metavar='DICT', type=open,
-		help='dictionary table with one key (1st col.), weight/count (2nd col.), '
-		     'qualifier name (3nd col.) and name/symbol string (4th col.) per row'
-	)
-	parser.add_argument(
 		'qranks', metavar='QRANKS', type=open,
 		help='ranking of dictionary qualifiers (3rd col.) to'
 		     'use for ambiguous hits'
@@ -164,6 +165,11 @@ if __name__ == '__main__':
 	parser.add_argument(
 		'files', metavar='FILE', nargs='*', type=open,
 		help='input file(s); if absent, read from <STDIN>'
+	)
+	parser.add_argument(
+		'-d', '--dictionaries', metavar='DICT', type=open, nargs="+",
+		help='one or more dictionary tables with one key (1st col.), weight/count (2nd col.), '
+		     'qualifier name (3nd col.) and name/symbol string (4th col.) per row'
 	)
 	parser.add_argument('--version', action='version', version=__version__)
 	parser.add_argument(
@@ -176,7 +182,7 @@ if __name__ == '__main__':
 	)
 	parser.add_argument(
 		'-s', '--separator', default="\t",
-		help='dictionary (and token input file) separator (default: tab)'
+		help='separator used in input files (default: tab)'
 	)
 	parser.add_argument(
 		'-n', '--normalize', action="store_const", const=NORMALIZED,
@@ -219,11 +225,11 @@ if __name__ == '__main__':
 		pos_tagger = GeniaTagger()
 		ner_tagger = NerSuite(args.model)
 		qualifier_list = [l.strip() for l in args.qranks]
-		raw_dict_data = dictionaryReader(args.dictionary, qualifier_list, args.separator)
+		raw_dict_data = [dictionaryReader(d, qualifier_list, args.separator) for d in args.dictionaries]
 		# a tokenizer that skips Unicode Categories Zs and Pd:
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
-		dictionary = Dictionary(raw_dict_data, tokenizer)
-		lst = [dictionary, tokenizer, pos_tagger, ner_tagger]
+		dictionaries = [Dictionary(stream, tokenizer) for stream in raw_dict_data]
+		lst = [dictionaries, tokenizer, pos_tagger, ner_tagger]
 		kwds = dict(sep=args.separator,
 		            tag_all_nouns=args.nouns,
 		            expand_greek_letters=args.ungreek)
