@@ -16,77 +16,22 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import logging
-from unicodedata import category
-from unidecode import unidecode
-from fnl.nlp.token import Token
-from fnl.text.strtok import WordTokenizer
-from fnl.text.dictionary import Dictionary
+from fnl.nlp.analysis import TextAnalytics
 from fnl.nlp.genia.nersuite import NerSuite
 from fnl.nlp.genia.tagger import GeniaTagger
+from fnl.text.dictionary import Dictionary
+from fnl.text.strtok import WordTokenizer
 
 __author__ = 'Florian Leitner'
 __version__ = '1.0'
 
-GREEK = {
-    "alpha": "α",
-    "beta": "β",
-    "gamma": "γ",
-    "delta": "δ",
-    "epsilon": "ε",
-    "zeta": "ζ",
-    "eta": "η",
-    "theta": "θ",
-    "iota": "ι",
-    "kappa": "κ",
-    "lambda": "λ",
-    "mu": "μ",
-    "nu": "ν",
-    "xi": "ξ",
-    "omicron": "ο",
-    "pi": "π",
-    "rho": "ρ",
-    "sigma": "σ",
-    "tau": "τ",
-    "upsilon": "υ",
-    "ypsilon": "υ",
-    "phi": "φ",
-    "chi": "χ",
-    "psi": "ψ",
-    "omega": "ω",
-    "Alpha": "Α",
-    "Beta": "Β",
-    "Gamma": "Γ",
-    "Delta": "Δ",
-    "Epsilon": "Ε",
-    "Zeta": "Ζ",
-    "Eta": "Η",
-    "Theta": "Θ",
-    "Iota": "Ι",
-    "Kappa": "Κ",
-    "Lambda": "Λ",
-    "Mu": "Μ",
-    "Nu": "Ν",
-    "Xi": "Ξ",
-    "Omicron": "Ο",
-    "Pi": "Π",
-    "Rho": "Ρ",
-    "Sigma": "Σ",
-    "Tau": "Τ",
-    "Upsilon": "Υ",
-    "Ypsilon": "Υ",
-    "Phi": "Φ",
-    "Chi": "Χ",
-    "Psi": "Ψ",
-    "Omega": "Ω",
-}
 
-LATIN = {v: k for k, v in GREEK.items()}
-
-
-def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
-          sep="", tag_all_nouns=False, expand_greek_letters=False):
-	"""Align the output of the dictionary tags below the tokens."""
+def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="", **flags):
+	"""Print the aligned dictionary tags below the tokens."""
 	uid = []
+	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
+	worker.addNerTagger(ner_tagger)
+	worker.addDictionary(dictionary)
 
 	for input in input_streams:
 		for text in input:
@@ -94,107 +39,76 @@ def align(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
 				*uid, text = text.strip().split(sep)
 
 			logging.debug('aligning %s "%s"', sep.join(uid), text)
-			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, _ = prepare(
-					dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
-					tag_all_nouns, expand_greek_letters
-				)
+				tokens, _, dict_tags = worker.analyze(text)
 			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
-			lens = [max(len(tok), len(tag)) for tok, tag in zip(tokens, tags)]
+			lens = [max(len(tok), max(len(t) for t in tags)) for tok, *tags in zip(tokens, *dict_tags)]
 
 			if sep and uid:
 				print(sep.join(uid))
 
-			assert len(tokens) == len(tags), "alignemnt failed %i != %i; details: %s" % (
-				len(tokens), len(tags), repr(list(zip(tokens, tags)))
-			)
+			print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, tokens)))
 
-			for src in (tokens, tags):
-				print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, src)))
+			for tags in dict_tags:
+				print(" ".join(("{:<%i}" % l).format(t) for l, t in zip(lens, tags)))
 
 			print("--")
 
 
-def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
-            sep="\t", tag_all_nouns=False, expand_greek_letters=False):
-	"""Print columnar output of [text UID,] token data and tags; one token per line."""
+def tagging(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
+	"""Print columnar output of [text UID,] token data and entity tags; one token per line."""
+	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
+	worker.addNerTagger(ner_tagger)
+	worker.addDictionary(dictionary)
+
 	for input in input_streams:
 		for line in input:
 			*uid, text = line.strip().split(sep)
 			logging.debug('tagging %s: "%s"', '-'.join(uid), text)
-			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, ner_tokens = prepare(dictionary, ner_tagger, pos_tagger, text, tokens,
-				                           tokenizer, tag_all_nouns, expand_greek_letters)
+				_, ner_tokens, dict_tags = worker.analyze(text)
 			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
-			for tag, tok in zip(tags, ner_tokens):
-				print("{}{}{}{}{}".format(sep.join(uid), sep if uid else "", sep.join(tok), sep, tag))
+			for idx in range(len(ner_tokens[0])):
+				token = ner_tokens[0][idx]
+				tags = [t[idx].entity for t in ner_tokens[1:]]
+				tags.extend(d[idx] for d in dict_tags)
+				print("{}{}{}{}{}".format(sep.join(uid), sep if uid else "", sep.join(token),
+				                          sep if tags else "", sep.join(tags)))
 
 			print("")
 
 
-def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams,
-              sep="\t", tag_all_nouns=False, expand_greek_letters=False):
+def normalize(dictionary, tokenizer, pos_tagger, ner_tagger, input_streams, sep="\t", **flags):
 	"""Print only [text UIDs and] dictionary tags."""
+	worker = TextAnalytics(tokenizer, pos_tagger, **flags)
+	worker.addNerTagger(ner_tagger)
+	worker.addDictionary(dictionary)
+
 	for input in input_streams:
 		for line in input:
 			*uid, text = line.strip().split(sep)
 			logging.debug('normalizing %s: "%s"', '-'.join(uid), text)
-			tokens = list(tokenizer.split(text))
 
 			try:
-				tags, _ = prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
-				                  tag_all_nouns, expand_greek_letters)
+				_, _, dict_tags = worker.analyze(text)
 			except RuntimeError:
 				logging.exception('at UID %s', sep.join(uid))
 				continue
 
-			for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
-				print("{}{}{}".format(sep.join(uid), sep if uid else "", tag))
+			for tags in dict_tags:
+				for tag in {tag[2:] for tag in tags if tag != Dictionary.O}:
+					print("{}{}{}".format(sep.join(uid), sep if uid else "", tag))
 
 
-def ungreek(token):
-	if token in LATIN:
-		return LATIN[token]
-	else:
-		return token
-
-
-def prepare(dictionary, ner_tagger, pos_tagger, text, tokens, tokenizer,
-            tag_all_nouns, expand_greek_letters):
-	if expand_greek_letters:
-		normalizations = list(dictionary.walk([ungreek(t) for t in tokens]))
-	else:
-		normalizations = list(dictionary.walk(tokens))
-
-	pos_tagger.send(text)
-	tags = list(pos_tagger)
-	ner_tagger.send(tags)
-	tags = list(ner_tagger)
-
-	if len(tags) != len(tokens):
-		tags = alignTokens(tags, tokens, tokenizer)
-
-	assert len(normalizations) == len(tags), "alignment error: %i != %i; details: %s" % (
-		len(normalizations), len(tags), repr(list(zip([t.word for t in tags], normalizations)))
-	)
-	normalizations = list(matchNerAndDictionary(normalizations, tags, tag_all_nouns))
-	assert len(normalizations) == len(tags), "matching error: %i != %i; details: %s" % (
-		len(normalizations), len(tags), repr(list(zip([t.word for t in tags], normalizations)))
-	)
-	return normalizations, tags
-
-
-def load(instream, qualifier_list, sep='\t') -> iter:
+def dictionaryReader(instream, qualifier_list, sep='\t') -> iter:
 	"""
 	Create an iterator over a dictionary input file.
 
@@ -214,134 +128,6 @@ def load(instream, qualifier_list, sep='\t') -> iter:
 				cite_count *= 2
 
 			yield key, name, 0 - int(cite_count), qualifier_list.index(qualifier)
-
-
-def alignTokens(tags, tokens, tokenizer):
-	"Return the aligned NER tokens (to the PoS tags and text tokens)."
-	# TODO: make this method's code actually understandable...
-	aligned_tags = []
-	t_iter = iter(tokens)
-	index = 0
-
-	while index < len(tags):
-		word = next(t_iter)
-		ascii = unidecode(word)
-		tag = tags[index]
-
-		while all(category(c) == "Pd" for c in tag.word) and index < len(tags):
-			logging.debug("dropping punctuation dash tag '%s' [%s]", tag.word, tag[-1])
-			index += 1
-			tag = tags[index]
-
-		if ascii == tag.word:
-			if tag.word == word:
-				aligned_tags.append(tag)
-			else:
-				aligned_tags.append(Token(word, *tag[1:]))
-		elif word == '"' and tag.word in ("``", "''"):
-			# " is a special case (gets converted to `` or '' by GENIA)
-			aligned_tags.append(Token('"', *tag[1:]))
-		elif len(word) > len(tag.word):
-			logging.debug('word %s exceeds tag word %s', repr(word), repr(tag.word))
-			tag_words = [tag.word]
-			matches = lambda: ascii == ''.join(tag_words)
-
-			while not matches() and sum(map(len, tag_words)) < len(word):
-				index += 1
-				tag_words.append(tags[index].word)
-
-			if matches():
-				logging.debug("dropping tags '%s' and adding %s [%s]",
-				              ' '.join(tag_words), repr(word), tag[-1])
-				aligned_tags.append(Token(word, ascii, *tag[2:]))
-			else:
-				logging.error('alignment of tokens %s to word "%s" at %i failed in "%s" vs "%s"',
-				              repr(tag_words), word, repr(tokens), index,
-				              repr([t.word for t in tags]))
-				raise RuntimeError("alignment failed")
-		elif len(word) < len(tag.word):
-			logging.debug('tag word %s exceeds word %s', repr(tag.word), repr(word))
-			tmp = list(tag)
-			words = [word]
-			asciis = [ascii]
-			tag_word = ''.join(tokenizer.split(tag.word))
-			matches = lambda: ''.join(asciis) == tag_word
-
-			while not matches() and sum(map(len, words)) < len(tag_word):
-				words.append(next(t_iter))
-				asciis.append(unidecode(words[-1]))
-
-			if matches():
-				logging.debug("dropping tag %s [%s] for words '%s'",
-				              repr(tag.word), tag[-1], ' '.join(words))
-				for w, a in zip(words, asciis):
-					tmp[0] = w
-					tmp[1] = a
-					logging.debug("adding tag %s [%s]", repr(w), tmp[-1])
-					aligned_tags.append(Token(*tmp))
-
-					for p in (3, 4):
-						if tmp[p].startswith('B-'):
-							tmp[p] = 'I' + tmp[p][1:]
-			else:
-				logging.error('alignment of words %s to token "%s" as "%s" at %i failed in "%s" vs "%s"',
-				              repr(words), tag.word, tag_word, index, repr(tokens),
-				              repr([t.word for t in tags]))
-				raise RuntimeError("alignment failed")
-		else:
-			logging.error('alignment of "%s" and %s failed', word, repr(tag))
-			raise RuntimeError('alignment failed')
-
-		index += 1
-
-	assert len(tokens) == len(aligned_tags) and \
-		tokens == [t.word for t in aligned_tags], "%i != %i; details: %s" % (
-			len(tokens), len(aligned_tags), repr([
-				(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t
-			])
-		)
-	return aligned_tags
-
-
-def matchNerAndDictionary(dict_tags, ner_tokens, tag_all_nouns=False):
-	assert len(dict_tags) == len(ner_tokens), "%i != %i; details: %s" % (
-		len(dict_tags), len(ner_tokens), repr(list(zip([t.word for t in ner_tokens], dict_tags)))
-	)
-	logging.debug('assigning dictionary tags [%s]', " ".join(dict_tags))
-	last_tag = None
-
-	for token, dic in zip(ner_tokens, dict_tags):
-		if dic != Dictionary.O:
-			tag = dic[2:]
-			state = dic[:2]
-
-			if token.entity != Dictionary.O:
-				# an entity assignment can be made
-				if tag == last_tag or state == Dictionary.B:
-					yield dic
-				else:
-					yield Dictionary.B % tag
-
-				last_tag = tag
-			elif tag_all_nouns and token.pos.startswith('NN') or (
-				token.pos.startswith('JJ') and token.chunk.endswith('-NP')
-				# alternatively, also allow CD in noun phrases, too:
-				# token.chunk.endswith('-NP') and token.pos[:2] in ('JJ', 'CD')
-			):
-				# a noun (phrase) assignment (to a noun or adjective) can be made
-				if tag == last_tag or state == Dictionary.B:
-					yield dic
-				else:
-					yield Dictionary.B % tag
-
-				last_tag = tag
-			else:
-				logging.debug('dropping normalization of "%s" with %s', token.word, dic)
-				yield Dictionary.O
-				last_tag = None
-		else:
-			yield Dictionary.O
-			last_tag = None
 
 
 if __name__ == '__main__':
@@ -433,7 +219,7 @@ if __name__ == '__main__':
 		pos_tagger = GeniaTagger()
 		ner_tagger = NerSuite(args.model)
 		qualifier_list = [l.strip() for l in args.qranks]
-		raw_dict_data = load(args.dictionary, qualifier_list, args.separator)
+		raw_dict_data = dictionaryReader(args.dictionary, qualifier_list, args.separator)
 		# a tokenizer that skips Unicode Categories Zs and Pd:
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
 		dictionary = Dictionary(raw_dict_data, tokenizer)
