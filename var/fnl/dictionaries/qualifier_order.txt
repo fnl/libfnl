@@ -1,0 +1,6 @@
+official_name
+official_symbol
+gene_name
+gene_symbol
+protein_name
+protein_symbol
