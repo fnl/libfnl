@@ -474,7 +474,7 @@ class Tokenizer:
     def __init__(self, skipTags=None, skipMorphs=None):
         """
         :param skipTags: a set of tags to skip (not emit)
-        :param skipMorphs: a set of morphologies to ignore (not emit)
+        :param skipMorphs: a set of morphological structures to skip (not emit)
         :return:
         """
         self.skipTags = skipTags
