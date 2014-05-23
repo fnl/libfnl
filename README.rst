@@ -7,14 +7,14 @@ Introduction
 
 **libfnl** is an API and CLI facilitating data mining of text by providing a collection of easy-to-use tools.
 The library is designed to play ball with Python 3.2+ and *only* targets Python 3k.
-It is a complementary piece to the gnamed_ gene name repository daemon and the medic_ PubMed mirroring tool collection.
+It is a complementary piece in the gnamed_ gene name repository daemon and the medic_ PubMed mirroring tool collection.
 
 The library contains the following packages:
 
 ``fnl.couch``
     provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this project was started, there was no Py3k CouchDB_ client around, so this project has its own);
 ``fnl.nlp``
-    tools to linguistically analyze text (PoS tagging, phrase chunking, entity detection) incl. a Python wrapper for the GENIA_ Tagger_, a Python wrapper for the `NER Suite`_ a handler for the GENIA_ corpus, and a module collecting all Penn tags
+    tools to linguistically analyze text (PoS tagging, phrase chunking, entity detection) including a Python wrapper for the GENIA_ Tagger_, a Python wrapper for the `NER Suite`_, and a handler for the GENIA_ corpus
 ``fnl.stat``
     a module to evaluate inter-rater Kappa scores and a module to develop text classifiers based on Scikit-Learn_
 ``fnl.text``
