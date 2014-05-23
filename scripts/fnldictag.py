@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""dictag tags tokens with keys mapped to strings in a dictionary"""
+"""dictag linguistically analyzes text and tags entities [and nouns] with dictionary keys"""
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
