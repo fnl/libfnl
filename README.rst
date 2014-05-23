@@ -7,18 +7,18 @@ Introduction
 
 **libfnl** is an API and CLI facilitating data mining of text by providing a collection of easy-to-use tools.
 The library is designed to play ball with Python 3.2+ and *only* targets Python 3k.
-It is another piece in the txtfnnl_ text mining library, the gnamed_ gene name repository daemon, and the medic_ PubMed mirroring tool collection, all by the same author.
+It is a complementary piece to the gnamed_ gene name repository daemon and the medic_ PubMed mirroring tool collection.
 
 The library contains the following packages:
 
 ``fnl.couch``
     provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this project was started, there was no Py3k CouchDB_ client around, so this project has its own);
 ``fnl.nlp``
-    currently, only contains a Python wrapper for the GENIA_ Tagger_, a handler for the GENIA_ corpus, and a module collecting all Penn tags
+    tools to linguistically analyze text (PoS tagging, phrase chunking, entity detection) incl. a Python wrapper for the GENIA_ Tagger_, a Python wrapper for the `NER Suite`_ a handler for the GENIA_ corpus, and a module collecting all Penn tags
 ``fnl.stat``
     a module to evaluate inter-rater Kappa scores and a module to develop text classifiers based on Scikit-Learn_
 ``fnl.text``
-    modules to extract, tokenize, segment sentences (based on NLTK_), and annotate text (strings)
+    modules to extract, tokenize, segment sentences (based on NLTK_), and map text (strings) to entries in dictionaries
 ``fnl.utils``
     additional utilities and tools (currently, just for handling JSON_)
 ``scripts``
@@ -28,37 +28,39 @@ The script directory provides the following command-line interfaces:
  
 - ``fnlclassi`` generate a classifier for [NER-tagged] text using Scikit-Learn_.
 - ``fnlcorpus`` store corpora in JSON format in a CouchDB.
-- ``fnldictag`` tag tokens from a dictionary in text.
+- ``fnldgrep`` "grep" for tokens using a dictionary.
+- ``fnldictag`` tag semantic tokens from a dictionary in linguistically annotated text.
 - ``fnlgpcounter`` count gene/protein symbols in MEDLINE.
 - ``fnlkappa`` calculate inter-rater agreement scores.
 - ``fnlsegment`` segment text into sentences using NLTK_ (3.0alpha).
 - ``fnlsegtrain`` train a NLTK_ PunktSentenceTokenizer.
+- ``fnltok`` a fast, pure-Python, Unicode-aware string tokenizer.
 
-.. warning:: This project is under "continuous" development (very alpha-ish).
+.. warning:: This project is under "continuous" development.
 
 .. _CouchDB: http://couchdb.apache.org/
 .. _JSON: http://www.json.org
 .. _GENIA: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/home/wiki.cgi
+.. _NER Suite: http://nersuite.nlplab.org/
 .. _NLTK: http://nltk.org/
 .. _Scikit-Learn: http://scikit-learn.org/stable/
 .. _SQLAlchemy: http://www.sqlalchemy.org/
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
 .. _gnamed: http://github.com/fnl/gnamed
 .. _medic: http://github.com/fnl/medic
-.. _txtfnnl: http://github.com/fnl/txtfnnl
 
 Requirements
 ============
 
-* Python 3.0+ (3.2 or newer recommended)
+* **Python 3.2+**
 * Numpy, SciPy, and Scikit-Learn 0.14+ (for ``fnlclassi``)
 * NLTK 3.0+ (for the sentence segmenting tools ``fnlseg*``)
-* CouchDB 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
 * DAWG (for ``fnlgpcounter``; see Installation below)
-* GENIA Tagger (optional, latest version)
 
 Optional projects that work together with this project:
 
+* GENIA Tagger (optional, latest version)
+* CouchDB 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
 * gnamed_ for creating gene/protein name repositories
 * medic_ for mirroring and handling PubMed citations
 * txtfnnl_ natural language processing tools based on Apache OpenNLP and UIMA
