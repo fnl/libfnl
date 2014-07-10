@@ -14,7 +14,8 @@ class TextAnalytics:
 	An instance needs to be configured by setting a "default" text tokenizer
 	(but all taggers can use their own tokenization technique),
 	a specific PoS/phrase tagger, and as many NER taggers and dictionaries as desired.
-	I.e., the tokenizer and PoS tagger must be set, while NER taggers and dictionaries may be omitted.
+	I.e., the tokenizer and PoS tagger must be set, while NER taggers and dictionaries may be
+	omitted.
 	"""
 
 	logger = logging.getLogger("TextAnalytics")
@@ -25,7 +26,8 @@ class TextAnalytics:
 
 		:param tokenizer: the tokenizer instance to use
 		:param pos_tagger: the PoS tagger instance to use
-		:param tag_all_nouns: all tokens in noun phrases (and not just named entity tokens) should be tagged
+		:param tag_all_nouns: all tokens in noun phrases (and not just named entity tokens) should
+		       be tagged
 		:param expand_greek_letters: expand/represent Greek letters to/as their Latin words
 		"""
 		self.tag_all_nouns = tag_all_nouns
@@ -63,10 +65,15 @@ class TextAnalytics:
 		        if no NER tagger was set, the PoS tagger's tags are returned.
 		"""
 		# TOKENIZATION
-		tokens = self.tokenizer.split(text)
-		tokens = [
-			LATIN[t] if t in LATIN else t for t in tokens
-		] if self.expand_greek_letters else list(tokens)
+		if self.expand_greek_letters:
+			replaceGreek = lambda token: ''.join(LATIN[c] if c in LATIN else c for c in token)
+			hasGreek = lambda cats: (Category.LG in cats or Category.Lg in cats)
+			tokens = [
+				(replaceGreek(text[start:end]) if hasGreek(cats) else text[start:end]) for
+				start, end, _, cats in self.tokenizer.tag(text)
+			]
+		else:
+			tokens = self.tokenizer.split(text)
 
 		# POS TAGGING
 		self.pos_tagger.send(text)
@@ -129,8 +136,8 @@ class TextAnalytics:
 
 			index += 1
 
-		assert len(tokens) == len(aligned_tags) and \
-			tokens == [t.word for t in aligned_tags], "tag2token alignment failed (%i != %i); details: %s" % (
+		assert len(tokens) == len(aligned_tags) and tokens == [t.word for t in aligned_tags], \
+			"tag2token alignment failed (%i != %i); details: %s" % (
 				len(tokens), len(aligned_tags), repr([
 					(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t
 				])
@@ -205,10 +212,13 @@ class TextAnalytics:
 		"""
 		self.logger.debug('assigning dictionary tags %s', mapping)
 		assert len(mapping) == len(ner_tokens[0]), "%i != %i; details: %s" % (
-			len(mapping), len(ner_tokens[0]), repr(list(zip([t.word for t in ner_tokens[0]], mapping)))
+			len(mapping), len(ner_tokens[0]),
+			repr(list(zip([t.word for t in ner_tokens[0]], mapping)))
 		)
-		last_tag = None  # the last tag seen; to determine if the yielded tag should be an open tag (B) or not (I)
-		correctTag = lambda tag: tag if tag[2:] == last_tag or tag[:2] == Dictionary.B else Dictionary.B % tag[2:]
+		last_tag = None  # the last tag seen:
+		# to determine if the yielded tag should be an open tag (B) or not (I)
+		correctTag = lambda tag: tag if (tag[2:] == last_tag or tag[:2] == Dictionary.B) else \
+			Dictionary.B % tag[2:]
 
 		for tag, *tokens in zip(mapping, *ner_tokens):
 			if tag != Dictionary.O:
