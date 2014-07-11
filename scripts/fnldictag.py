@@ -174,12 +174,14 @@ if __name__ == '__main__':
 	)
 	parser.add_argument('--version', action='version', version=__version__)
 	parser.add_argument(
-		'--nouns', action="store_true",
-		help='allow any noun to be tagged (default: only NER tagged tokens)'
+		'--nouns', action="count",
+		help='allow any noun to be tagged (default: only NER tagged tokens); '
+	         'has to be repeated once for each dictionary (in same order)'
 	)
 	parser.add_argument(
-		'--ungreek', action="store_true",
-		help='expand Greek letters to Latin names'
+		'--greek', action="store_true",
+		help='do not regularize Greek letters to Latin names; '
+	         'has to be repeated once for each dictionary (in same order)'
 	)
 	parser.add_argument(
 		'-s', '--separator', default="\t",
@@ -234,7 +236,7 @@ if __name__ == '__main__':
 		lst = [dictionaries, tokenizer, pos_tagger, ner_tagger]
 		kwds = dict(sep=args.separator,
 		            tag_all_nouns=args.nouns,
-		            expand_greek_letters=args.ungreek)
+		            use_greek_letters=args.greek)
 
 		if args.files:
 			lst.append(args.files)

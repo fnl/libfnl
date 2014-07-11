@@ -20,18 +20,20 @@ class TextAnalytics:
 
 	logger = logging.getLogger("TextAnalytics")
 
-	def __init__(self, tokenizer, pos_tagger, tag_all_nouns=True, expand_greek_letters=False):
+	def __init__(self, tokenizer, pos_tagger, tag_all_nouns=0, use_greek_letters=False):
 		"""
 		Create a new text analytics instance.
 
 		:param tokenizer: the tokenizer instance to use
 		:param pos_tagger: the PoS tagger instance to use
 		:param tag_all_nouns: all tokens in noun phrases (and not just named entity tokens) should
-		       be tagged
-		:param expand_greek_letters: expand/represent Greek letters to/as their Latin words
+		       be tagged (integer, indicating for up to which dictionary this should be done:
+		       e.g., if three dictionaries are added and this value is set to 1, only for the
+		       first dictionary nouns will be matched, too)
+		:param use_greek_letters: do not expand/regularize Greek letters to their Latin words
 		"""
 		self.tag_all_nouns = tag_all_nouns
-		self.expand_greek_letters = expand_greek_letters
+		self.use_greek_letters = use_greek_letters
 		self._ner_dictionaries = []
 		self._ner_taggers = []
 		self._pos_tagger = pos_tagger
@@ -65,7 +67,7 @@ class TextAnalytics:
 		        if no NER tagger was set, the PoS tagger's tags are returned.
 		"""
 		# TOKENIZATION
-		if self.expand_greek_letters:
+		if not self.use_greek_letters:
 			text = ''.join(LATIN[c] if c in LATIN else c for c in text)
 
 		tokens = list(self.tokenizer.split(text))
@@ -90,7 +92,9 @@ class TextAnalytics:
 		mappings = [list(d.walk(tokens)) for d in self._ner_dictionaries]
 
 		# ALIGN NER TAGS AND NORMALIZATIONS
-		normalizations = [list(self._matchMappingToNerTags(m, ner_tags)) for m in mappings]
+		normalizations = [
+			list(self._matchMappingToNerTags(m, ner_tags, i)) for i, m in enumerate(mappings)
+		]
 
 		return tokens, ner_tags, normalizations
 
@@ -200,7 +204,7 @@ class TextAnalytics:
 
 		return aligned_tags
 
-	def _matchMappingToNerTags(self, mapping, ner_tokens):
+	def _matchMappingToNerTags(self, mapping, ner_tokens, didx):
 		"""
 		Accept and yield dictionary tags if the mapping at the
 		token has any entity tag annotation [or is a noun (phrase)].
@@ -221,7 +225,7 @@ class TextAnalytics:
 					# an entity-based assignment should be made
 					yield correctTag(tag)
 					last_tag = tag[2:]
-				elif self.tag_all_nouns and tokens[0].pos.startswith('NN') or (
+				elif self.tag_all_nouns > didx and tokens[0].pos.startswith('NN') or (
 					tokens[0].pos.startswith('JJ') and tokens[0].chunk.endswith('-NP')
 					# another alternative would be to also allow tagging CDs in noun phrases, too:
 					# tokens[0].chunk.endswith('-NP') and tokens[0].pos[:2] in ('JJ', 'CD')
