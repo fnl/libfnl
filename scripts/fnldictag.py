@@ -229,6 +229,7 @@ if __name__ == '__main__':
 		# a tokenizer that skips Unicode Categories Zs and Pd:
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
 		dictionaries = [Dictionary(stream, tokenizer) for stream in raw_dict_data]
+		logging.info("initialized %s dictionaries", len(dictionaries))
 		lst = [dictionaries, tokenizer, pos_tagger, ner_tagger]
 		kwds = dict(sep=args.separator,
 		            tag_all_nouns=args.nouns,
