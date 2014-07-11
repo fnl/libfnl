@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""dictag linguistically analyzes text and tags entities [and nouns] with dictionary keys"""
+"""shallow parsing and dictionary linking of entities [and nouns]"""
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -140,11 +140,11 @@ if __name__ == '__main__':
 	import os
 	import sys
 
+	from argparse import ArgumentParser
+
 	ALIGNED = 1
 	NORMALIZED = 2
 	TABULAR = 3
-
-	from argparse import ArgumentParser
 
 	epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
 	parser = ArgumentParser(
@@ -167,9 +167,10 @@ if __name__ == '__main__':
 		help='input file(s); if absent, read from <STDIN>'
 	)
 	parser.add_argument(
-		'-d', '--dictionaries', metavar='DICT', type=open, nargs="+",
-		help='one or more dictionary tables with one key (1st col.), weight/count (2nd col.), '
-		     'qualifier name (3nd col.) and name/symbol string (4th col.) per row'
+		'-d', '--dictionary', metavar='DICT', type=open, action='append',
+		help='a dictionary table with a key (col 1), weight/count (2), '
+		     'qualifier name (3) and name/symbol string (4) per row; '
+	         'use repeatedly for each dictionary (entity type)'
 	)
 	parser.add_argument('--version', action='version', version=__version__)
 	parser.add_argument(
@@ -225,7 +226,7 @@ if __name__ == '__main__':
 		pos_tagger = GeniaTagger()
 		ner_tagger = NerSuite(args.model)
 		qualifier_list = [l.strip() for l in args.qranks]
-		raw_dict_data = [dictionaryReader(d, qualifier_list, args.separator) for d in args.dictionaries]
+		raw_dict_data = [dictionaryReader(d, qualifier_list, args.separator) for d in args.dictionary]
 		# a tokenizer that skips Unicode Categories Zs and Pd:
 		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
 		dictionaries = [Dictionary(stream, tokenizer) for stream in raw_dict_data]
