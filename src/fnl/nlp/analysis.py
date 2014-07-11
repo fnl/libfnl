@@ -66,21 +66,16 @@ class TextAnalytics:
 		"""
 		# TOKENIZATION
 		if self.expand_greek_letters:
-			replaceGreek = lambda token: ''.join(LATIN[c] if c in LATIN else c for c in token)
-			hasGreek = lambda cats: (Category.LG in cats or Category.Lg in cats)
-			tokens = [
-				(replaceGreek(text[start:end]) if hasGreek(cats) else text[start:end]) for
-				start, end, _, cats in self.tokenizer.tag(text)
-			]
-		else:
-			tokens = self.tokenizer.split(text)
+			text = ''.join(LATIN[c] if c in LATIN else c for c in text)
+
+		tokens = list(self.tokenizer.split(text))
 
 		# POS TAGGING
 		self.pos_tagger.send(text)
 		part_of_speech = list(self.pos_tagger)
 
 		# NER TAGGING
-		ner_tags = [] if self._ner_taggers else [part_of_speech,]
+		ner_tags = [] if self._ner_taggers else [part_of_speech, ]
 
 		for tagger in self._ner_taggers:
 			tagger.send(part_of_speech)
@@ -141,7 +136,7 @@ class TextAnalytics:
 				len(tokens), len(aligned_tags), repr([
 					(w, t) for w, t in zip(tokens, [t.word for t in aligned_tags]) if w != t
 				])
-			)
+		)
 		return aligned_tags
 
 	def _alignByJoiningTokens(self, tag, word, index, tags):
