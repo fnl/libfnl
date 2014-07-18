@@ -153,7 +153,7 @@ if __name__ == '__main__':
 	)
 
 	parser.set_defaults(loglevel=logging.WARNING)
-	parser.set_defaults(output=ALIGNED)
+	parser.set_defaults(output=TABULAR)
 	parser.add_argument(
 		'qranks', metavar='QRANKS', type=open,
 		help='ranking of dictionary qualifiers (3rd col.) to'
@@ -193,11 +193,11 @@ if __name__ == '__main__':
 	)
 	parser.add_argument(
 		'-t', '--tabular', action="store_const", const=TABULAR,
-		dest="output", help='output tabular, per-token IOB tagging results'
+		dest="output", help='output tabular, per-token IOB tagging results (default)'
 	)
 	parser.add_argument(
 		'-a', '--align', action="store_const", const=ALIGNED,
-		dest="output", help='output tokens and tags aligned to each other (default)'
+		dest="output", help='output tokens and tags aligned to each other'
 	)
 	parser.add_argument(
 		'-q', '--quiet', action='store_const', const=logging.CRITICAL,
