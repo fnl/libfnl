@@ -15,7 +15,7 @@ setup(
     install_requires=[
         'sqlalchemy >= 0.8',
         'psycopg2 >= 2.4',
-        'nltk >= 3.0',
+        'nltk >= 3.0.0b1',
         'scikit-learn >= 0.12',
         'unidecode',
         'fn >= 0.2.13',
