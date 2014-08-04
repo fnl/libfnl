@@ -18,6 +18,7 @@ setup(
         'nltk >= 3.0',
         'scikit-learn >= 0.12',
         'unidecode',
+        'fn >= 0.2.13',
     ],
     # cmdclass = {'build_ext': build_ext},
     # ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
