@@ -2,8 +2,9 @@
 import fileinput
 
 for line in fileinput.input():
-    printed = []
+    printed = set()
+
     for token in line.strip().split():
         if token not in printed:
             print(token)
-            printed.append(token)
+            printed.add(token)

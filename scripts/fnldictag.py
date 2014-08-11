@@ -19,8 +19,8 @@ import logging
 from fnl.nlp.analysis import TextAnalytics
 from fnl.nlp.genia.nersuite import NerSuite
 from fnl.nlp.genia.tagger import GeniaTagger
-from fnl.text.dictionary import Dictionary
-from fnl.text.strtok import WordTokenizer
+from fnl.nlp.dictionary import Dictionary
+from fnl.nlp.strtok import WordTokenizer
 
 __author__ = 'Florian Leitner'
 __version__ = '1.0'

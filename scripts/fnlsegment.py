@@ -27,7 +27,7 @@ import sys
 
 from argparse import ArgumentParser
 from nltk.tokenize.punkt import PunktSentenceTokenizer
-from fnl.text.segment import SplitText, SplitTextInColumn
+from fnl.nlp.split import SplitText, SplitTextInColumn
 
 __author__ = 'Florian Leitner'
 __version__ = '1.0.1'

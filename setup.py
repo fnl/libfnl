@@ -13,6 +13,7 @@ setup(
     install_requires=[
         'fn >= 0.2.13',
         'html5lib >= 0.999',
+        'ngram >= 3.3.0',
         'nltk >= 3.0.0b1',
         #'psycopg2 >= 2.4',
         'pytest >= 2.6.0',

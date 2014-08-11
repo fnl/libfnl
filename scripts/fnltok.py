@@ -20,7 +20,7 @@ import logging
 import os
 import sys
 
-from fnl.text.strtok import SpaceTokenizer, WordTokenizer, AlnumTokenizer
+from fnl.nlp.strtok import SpaceTokenizer, WordTokenizer, AlnumTokenizer
 
 __author__ = 'Florian Leitner'
 __version__ = '0.0.1'
