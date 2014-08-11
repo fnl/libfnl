@@ -2,7 +2,7 @@ from collections import OrderedDict
 from hashlib import md5
 from binascii import b2a_base64
 from fnl.text.text import Text
-from mock import patch
+from unittest.mock import patch
 from unittest import main, TestCase
 
 class TextTests(TestCase):
@@ -35,7 +35,7 @@ class TextTests(TestCase):
         tag3 = ('ns2', 'key2', (2, 3))
         tags = [tag1, tag2, tag3]
         text = Text('a\U0010ABCDb', [(tag1, {}), (tag2, {}), (tag3, {})])
-        self.assertListEqual(tags, list(text))
+        self.assertListEqual(tags, sorted(list(text)))
 
     def testInitializationWithInvalidTagAttributes(self):
         tag = ('ns', 'key', (1, 2))
@@ -144,7 +144,7 @@ class TextTests(TestCase):
         text.add([(tag1, attrs), (tag2, None)], 'ns1')
         self.assertListEqual([(tag1, attrs), (tag2, None)], list(text.get()))
         text.add([(tag1, attrs), (tag2, attrs), (tag3, attrs)])
-        self.assertListEqual(tags, list(text))
+        self.assertListEqual(tags, sorted(list(text)))
         self.assertListEqual([(tag1, attrs), (tag2, attrs)],
                              list(text.get('ns1')))
         self.assertListEqual([(tag3, attrs)], list(text.get('ns2')))
@@ -210,7 +210,7 @@ class TextTests(TestCase):
         tag2 = ('ns2', 'key2', (1, 2))
         tag3 = ('ns3', 'key1', (2, 3))
         text = Text('a\U0010ABCDb', [(tag1, None), (tag2, None), (tag3, None)])
-        self.assertListEqual(['ns1', 'ns2', 'ns3'], list(text.namespaces))
+        self.assertListEqual(['ns1', 'ns2', 'ns3'], sorted(list(text.namespaces)))
 
     def testRemove(self):
         tag1 = ('ns1', 'key1', (0, 3))
@@ -218,7 +218,7 @@ class TextTests(TestCase):
         tag3 = ('ns2', 'key2', (2, 3))
         text = Text('a\U0010ABCDb', [(tag1, None), (tag2, {1:2}),
                                      (tag3, None)])
-        self.assertListEqual([tag1, tag2, tag3], list(text))
+        self.assertListEqual([tag1, tag2, tag3], sorted(list(text)))
         text.remove([tag1, tag3])
         self.assertListEqual([tag2], list(text))
         self.assertDictEqual({'ns1': {tag2: {1:2}}}, text.attributes)
@@ -232,14 +232,14 @@ class TextTests(TestCase):
         tag3 = ('ns3', 'id', (0, 2))
         text = Text('a\U0010ABCDb', [(tag1, None), (tag2, None), (tag3, None)])
         self.assertListEqual([tag1, tag3, tag2], text.tags())
-        self.assertListEqual([tag1, tag2, tag3], text.tags(Text.REVERSE_KEY))
+        self.assertListEqual([tag1, tag2, tag3], text.tags(Text.ReverseKey))
 
     def testTagsMultispan(self):
         mstag = ('ns', 'key', (0, 1, 2, 3))
         tag = ('ns', 'key', (0, 3))
         text = Text('a\U0010ABCDb', [(mstag, None), (tag, None)])
         self.assertListEqual([mstag, tag], list(text.tags()))
-        self.assertListEqual([mstag, tag], list(text.tags(Text.REVERSE_KEY)))
+        self.assertListEqual([mstag, tag], list(text.tags(Text.ReverseKey)))
 
     def testTagsAsDict(self):
         text = Text('abcd', [

@@ -35,8 +35,9 @@ class ExtractHtmlTests(TestCase):
         self.assertEqual({tag: {'key': 'value'}}, self.ex.tags)
 
     def testIncompleteHtml(self):
-        self.ex.feed("<tag")
-        self.assertRaises(HTMLParseError, self.ex.close)
+        self.ex.feed("broken <tag <p>")
+        self.ex.close()
+        self.assertRaises(HTMLParseError, lambda: self.ex.string)
         self.ex.reset()
         self.ex.feed("<p>hiho")
         self.ex.close()

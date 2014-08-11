@@ -2,7 +2,7 @@
 from fnl.text.text_new import text
 from fnl.text.segment import segment
 from fnl.text.token_new import token
-from mock import patch, sentinel
+from unittest.mock import patch, sentinel
 
 
 class TestNewText:

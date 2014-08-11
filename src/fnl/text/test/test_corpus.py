@@ -5,10 +5,11 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+import os
 import pytest
 
-from tempfile import TemporaryFile
-from mock import patch, mock_open, MagicMock
+from tempfile import TemporaryFile, NamedTemporaryFile
+from unittest.mock import patch, mock_open
 from fnl.text.corpus import *
 
 
@@ -239,7 +240,7 @@ def test_serialize():
 
 def test_deserialize():
     temp = TemporaryFile()
-    temp.write(b"<html><head><meta charset=UTF-8></head>" \
+    temp.write(b"<html><head><meta charset=UTF-8></head>"
                b"<body><article><div>text</div></article></body></html>")
     temp.seek(0)
     root2 = Deserialize(temp)
@@ -280,15 +281,16 @@ EXAMPLE = """
 """
 
 def test_read_corpus():
-    mock = mock_open(read_data=EXAMPLE.encode('UTF-8'))
+    temp = NamedTemporaryFile(delete=False)
+    temp.write(EXAMPLE.encode('UTF-8'))
+    temp.close()
+    c = ReadCorpus(temp.name)
+    os.remove(temp.name)
+    assert "example" == GetMeta(c, "type").get_or("sentinel")
 
-    with patch('builtins.open', mock, create=True):
-        c = ReadCorpus('fnl/text/test/example.html')
-        assert "example" == GetMeta(c, "type").get_or("sentinel")
-
-        for a in IterArticles(c):
-            assert a.get('id') == "first"
-            assert len(a.find('.//ul')) == 4
+    for a in IterArticles(c):
+        assert a.get('id') == "first"
+        assert len(a.find('.//ul')) == 4
 
 
 def test_write_corpus():
