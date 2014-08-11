@@ -66,7 +66,7 @@ def Extract(filename: str, encoding: str=None, mime_type: str=None) -> Text:
                 filename, err, html.lineno
             ))
         text = Text(html.string)
-        tags = [(t, html.tags[t]) for t in sorted(html.tags, key=Text.KEY)]
+        tags = [(t, html.tags[t]) for t in sorted(html.tags, key=Text.Key)]
         text.add(tags, html.namespace)
     elif mime_type == 'text/plain':
         encoding = encoding or 'utf-8'
