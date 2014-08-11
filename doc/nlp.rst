@@ -120,11 +120,57 @@ strtok -- String Tokenization
 
 .. automodule:: libfnl.nlp.strtok
 
-The tokenizers' `tag()` methods tag :class:`.Text` instances created from some string. The tokenization of Unicode text is based on the Unicode grouping (categories) of characters into a tag. A token is either the longest sequence of characters in the input string belonging to the same :py:class:`.Category` group (for letters, digits, numerals, and separators - but depending on the chosen tokenizer), or a single character (for all other groups). For the standard :class:`.WordTokenizer`, tokens are entire strings of characters belonging to the same category in cases where the characters are all one of letters, digits, numerals, and separators (whitespaces incl. tabs, and breaks incl. newlines and paragraph separators); Characters belonging to other categories always result in single code-point tokens. For alphanumeric tokenization (:class:`.AlnumTokenizer`), the letters, digits, and numerals are joined to a single token. Finally, a simple :class:`.Separator` tokenizer is provided to split text between characters in separator categories and all other classes.
+The tokenizers' `tokenize()` methods offset-tag :class:`.Text` instances created from some string. The tokenization of Unicode text is based on the Unicode grouping (categories) of characters into a tag. A token is either the longest sequence of characters in the input string belonging to the same :py:class:`.Category` group (for letters, digits, numerals, and separators - but depending on the chosen tokenizer), or a single character (for all other groups). For the standard :class:`.WordTokenizer`, tokens are entire strings of characters belonging to the same category in cases where the characters are all one of letters, digits, numerals, and separators (whitespaces incl. tabs, and breaks incl. newlines and paragraph separators); Characters belonging to other categories always result in single code-point tokens. For alphanumeric tokenization (:class:`.AlnumTokenizer`), the letters, digits, and numerals are joined to a single token. Finally, a simple :class:`.Separator` tokenizer is provided to split text between characters in separator categories and all other classes.
 
 In addition to the default Unicode categories, a category :attr:`.Category.Ts` is provided, for "terminal separator", where "Stop characters" such as fullstop, exclamation mark, or question mark are separated from the default `Po` (punctuation other) category. Another "added category" are the greek characters, that have been separated out of the `Ll` and `Lu` group (lowercase and uppercase characters, respectively) into their own `Lg`, `LG` categories. This is of interest due to the fact that in many scientific texts the use of greek letters gives tokens containing them a very special meaning. A few control characters have been moved (linebreaks, tabs, privates), and a few symbols and punctuation marks have been reassigned to their "correct" categories. In addition, a number of characters have been remapped to other categories where the Unicode standard seems wrong, yet in fact are simply unchanged assignments because of backwards compatibility. For example, the Linefeed character is in the control character (`Cc`) group, instead of the line separator (`Zl`) category. Such inconsistencies have been fixed here, at least for the Basic Multilingual Plane (``U+0000`` - ``U+FFFF``).
 
 While tokenizing, the tokenizer adds tags to the :class:`.Text`. Each tag is made with the namespace provided during instantiation of the tokenizer (using :data:`.strtok.NAMESPACE` as default value), the start and end offsets of the token, and a `str` attribute that encodes the categories of that token tag. Therefore, this attribute can be understood as encoding the **morphology** of the token.
+
+As can be understood from this description, the tokenizers tag the entire string, they do not mysteriously manipulate the underlying string, drop characters such as whitespaces, or any other "black magick".
+
+Here is a straight-forward usage example:
+
+>>> from libfnl.nlp.text import Text
+>>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
+>>> text = Text("A simple example sentence.")
+>>> tok = WordTokenizer()
+>>> tok.tokenize(text)
+>>> for tag, attrs in text.get(NAMESPACE):
+...     print(tag[2], tag[1], attrs['morphology'])
+...
+(0, 1) letter A
+(1, 2) space M
+(2, 8) letter DDDDDD
+(8, 9) space M
+(9, 16) letter DDDDDDD
+(16, 17) space M
+(17, 25) letter DDDDDDDD
+(25, 26) glyph o
+
+
+
+As can be understood from this description, the tokenizers tag the entire string, they do not mysteriously manipulate the underlying string, drop characters such as whitespaces, or any other "black magick".
+
+Here is a straight-forward usage example:
+
+>>> from libfnl.nlp.text import Text
+>>> from libfnl.nlp.strtok import WordTokenizer, NAMESPACE
+>>> text = Text("A simple example sentence.")
+>>> tok = WordTokenizer()
+>>> tok.tokenize(text)
+>>> for tag, attrs in text.get(NAMESPACE):
+...     print(tag[2], tag[1], attrs['morphology'])
+...
+(0, 1) letter A
+(1, 2) space M
+(2, 8) letter DDDDDD
+(8, 9) space M
+(9, 16) letter DDDDDDD
+(16, 17) space M
+(17, 25) letter DDDDDDDD
+(25, 26) glyph o
+
+
 
 As can be understood from this description, the tokenizers tag the entire string, they do not mysteriously manipulate the underlying string, drop characters such as whitespaces, or any other "black magick".
 

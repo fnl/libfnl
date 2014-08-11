@@ -6,22 +6,22 @@ Introduction
 ============
 
 **libfnl** is an API and CLI facilitating data and text mining by providing a collection of easy-to-use tools.
-The library is designed to play ball with Python 3.2+ and *only* targets Python 3k.
+The library is designed to work with Python 3 (*only*).
 It is specifically tuned towards mining biomedical/scientific texts, but can be used in other contexts if need be, too.
 It is a complementary piece in the gnamed_ gene name repository daemon and the medic_ PubMed mirroring tool collection.
+In addtion, an (orphan) couchpy_ repository could provide a document storage facility.
 
 The library contains the following packages:
 
-``fnl.couch``
-    provides a Py3k Apache CouchDB_ client for managing JSON_ data (when this project was started, there was no Py3k CouchDB_ client around, so this project has its own);
 ``fnl.nlp``
-    tools to linguistically analyze text (PoS tagging, phrase chunking, entity detection);
+    tools to linguistically analyze text (tokenization, PoS tagging, phrase chunking, entity detection);
+    modules to segment sentences (based on NLTK_), and map text (strings) to entries in dictionaries
     this includes a Python wrapper for the GENIA_ Tagger_, a Python wrapper for the `NER Suite`_, and a handler for the GENIA_ corpus;
     furthermore, via NLTK_ 's wrapper for MegaM_, a Maximum Entropy classifier is available, too;
 ``fnl.stat``
     a module to evaluate inter-rater Kappa scores and a module to develop text classifiers based on Scikit-Learn_
 ``fnl.text``
-    modules to extract, tokenize, segment sentences (based on NLTK_), and map text (strings) to entries in dictionaries
+    wrappers to work with text data (strings, tokens, segments, annotations, etc.)
 ``fnl.utils``
     additional utilities and tools (currently, just for handling JSON_)
 ``scripts``
@@ -39,7 +39,7 @@ The script directory provides the following command-line interfaces:
 - ``fnlsegtrain`` train a `nltk.punkt.PunktSentenceTokenizer`.
 - ``fnltok`` a fast, pure-Python, Unicode-aware string tokenizer.
 
-.. warning:: This project is under "continuous" development.
+.. warning:: This project is under "continuous development", better take your own snapshot.
 
 .. _CouchDB: http://couchdb.apache.org/
 .. _JSON: http://www.json.org
@@ -52,6 +52,7 @@ The script directory provides the following command-line interfaces:
 .. _Tagger: http://www-tsujii.is.s.u-tokyo.ac.jp/GENIA/tagger/
 .. _gnamed: http://github.com/fnl/gnamed
 .. _medic: http://github.com/fnl/medic
+.. _couchpy: http://github.com/fnl/couchpy
 
 Requirements
 ============
@@ -64,7 +65,7 @@ Requirements
 Optional projects that work together with this project:
 
 * GENIA_ Tagger_ (optional, latest version)
-* CouchDB_ 1.0+ (1.3 or newer recommended, for ``fnlcorpus``)
+* `NER Suite`_ (optional, latest version)
 * MegaM_ - a MaxEnt classifier for NLTK_ with a (fast) L-BFGS optimizer
 * gnamed_ for creating gene/protein name repositories
 * medic_ for mirroring and handling PubMed citations
@@ -90,11 +91,12 @@ Into a **Python 3** virtual environment::
     # and/or prefer to use setup.py instead of pip:
     # python setup.py install
     pip install sqlalchemy
-    pip install psycopg2
-    pip install nose
-    pip install mock
     pip install sklearn
-    # pip install nltk # NB: 3.0alpha has to be installed manually
+    pip install nltk --pre # to get 3.0
+
+    # if you want to install the test environment:
+    pip install pytest
+    pip install mock
 
     # special steps to install DAWG
     git clone git@github.com:fnl/DAWG.git

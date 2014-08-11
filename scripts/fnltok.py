@@ -28,7 +28,7 @@ __version__ = '0.0.1'
 
 def map(text_iterator, tokenizer):
     for text in text_iterator:
-        for token in tokenizer.tag(text):
+        for token in tokenizer.tokenize(text):
             print(*token, sep='\t')
 
 

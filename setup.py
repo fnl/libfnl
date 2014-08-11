@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 from distutils.core import setup
-# from Cython.Distutils import build_ext
-# from distutils.extension import Extension
 
 setup(
     name='libfnl',
@@ -13,20 +11,17 @@ setup(
     description='command-line tools for text mining',
     long_description=open('README.rst').read(),
     install_requires=[
-        'sqlalchemy >= 0.8',
-        'psycopg2 >= 2.4',
-        'nltk >= 3.0.0b1',
-        'scikit-learn >= 0.12',
-        'unidecode',
         'fn >= 0.2.13',
+        'html5lib >= 0.999',
+        'nltk >= 3.0.0b1',
+        #'psycopg2 >= 2.4',
+        'pytest >= 2.6.0',
+        'scikit-learn >= 0.12',
+        'sqlalchemy >= 0.8',
+        'Unidecode >= 0.04.16',
     ],
-    # cmdclass = {'build_ext': build_ext},
-    # ext_modules = [Extension("libfnl.nlp._text", ["libfnl/nlp/_text.pyx"])],
     packages=[
         'fnl',
-        'fnl.gnamed',
-        'fnl.gnamed.parsers',
-        'fnl.medline',
         'fnl.nlp',
         'fnl.nlp.genia',
         'fnl.stat',
@@ -34,19 +29,24 @@ setup(
         'fnl.utils',
     ],
     data_files=[
+        ('var/fnl/dictionaries', ['mammalian_genes.csv', 'qualifier_order.txt']),
         ('var/fnl/models', ['medline_abstract_pst.bin']),
+        ('var/nersuite/models', ['bc2gm.iob2.no_dic.m.xz', 'nlpba04.iob2.no_dic.m.xz']),
     ],
-    package_dir={'': 'src'},
     scripts=[
-        'scripts/fnlclass.py',
         'scripts/fnlclassi.py',
         'scripts/fnlcorpus.py',
+        'scripts/fnlcsvsimjoin.py',
+        'scripts/fnldgrep.py',
         'scripts/fnldictag.py',
         'scripts/fnlgpcounter.py',
         'scripts/fnlkappa.py',
-        'scripts/fnlsegment.py',
+        'scripts/fnlrelex.py',
         'scripts/fnlsegment.py',
         'scripts/fnlsegtrain.py',
+        'scripts/fnltok.py',
+        'scripts/genia_ner.sh',
+        'scripts/unique_tokens_on_line.py',
     ],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
