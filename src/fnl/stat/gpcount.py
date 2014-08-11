@@ -10,7 +10,7 @@ from dawg import DAWG
 from collections import defaultdict
 from fnl.gnamed.orm import Session as GnamedSession, GeneString, Gene, ProteinString, Gene2PubMed, Protein2PubMed, Protein
 from fnl.medline.orm import Session as MedlineSession, Section
-from fnl.text.strtok import TokenOffsets
+from fnl.nlp.strtok import TokenOffsets
 from sqlalchemy.exc import DatabaseError
 
 
