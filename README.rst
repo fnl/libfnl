@@ -96,7 +96,6 @@ Into a **Python 3** virtual environment::
 
     # if you want to install the test environment:
     pip install pytest
-    pip install mock
 
     # special steps to install DAWG
     git clone git@github.com:fnl/DAWG.git
