@@ -12,13 +12,14 @@ from itertools import product
 import numpy
 from matplotlib import pyplot
 from sklearn.cross_validation import StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_score, recall_score, f1_score, roc_curve, auc, \
     precision_recall_curve, average_precision_score
 from sklearn.naive_bayes import BernoulliNB
 from sklearn.pipeline import Pipeline
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 
 from fnl.text.sentence import SentenceParser
 
@@ -249,7 +250,11 @@ def CrossEvaluation(data, n_folds=5):
     for i, (train, test) in enumerate(cross_evaluation):
         logging.info('running cross-evaulation round %s', i + 1)
         classifier.fit(data.features[train], data.labels[train])
-        probs = classifier.predict_proba(data.features[test])[:, 1]
+
+        if hasattr(classifier, 'decision_function'):
+            probs = classifier.decision_function(data.features[test])
+        else:
+            probs = classifier.predict_proba(data.features[test])[:, 1]
 
         # for ROC curve
         fpr, tpr, thresholds = roc_curve(data.labels[test], probs)
@@ -275,7 +280,14 @@ def CrossEvaluation(data, n_folds=5):
             results[i] = fun(labels, predictions)
 
         # feature lists
-        best = numpy.argsort(classifier.coef_[0])[-10:]
+        feature_list = (classifier.feature_importances_
+                        if hasattr(classifier, 'feature_importances_') else
+                        classifier.coef_)
+
+        if feature_list.shape[0] == 1:
+            feature_list = feature_list[0]
+
+        best = numpy.argsort(feature_list)[-10:]
         logging.info('10 best features: "{0}"'.format(
             '", "'.join(data.feature_names[best]),
         ))
@@ -367,8 +379,9 @@ parser.add_argument(
     help='ground truth: per (doc_id, s_idx) relationships; '
          'only required for model training and/or classifier evaluation'
 )
+DENSE = ['svm', 'rf']
 parser.add_argument(
-    '-c', '--classifier', choices=['maxent', 'svm', 'naivebayes'],
+    '-c', '--classifier', choices=['maxent', 'svm', 'naivebayes', 'rf'],
     help='the classifier to use (only required for training and/or evaluation); '
          'requires a ground truth file and a feature function'
 )
@@ -416,7 +429,7 @@ try:
 
     if args.feature_function:
         fg = FeatureGenerator(sentences, args.feature_function.read(), entities)
-        data = Data(fg, ground_truth, sparse=not (args.classifier and args.classifier == 'svm'))
+        data = Data(fg, ground_truth, sparse=not (args.classifier and args.classifier in DENSE))
         logging.info('data transformed to %s features', data.n_features)
 
         if args.truth:
@@ -427,6 +440,7 @@ try:
         parser.error('model file path, but no feature function given')
 
     if args.classifier:
+        # TODO: classifier configuration options?
         if not args.feature_function:
             parser.error('classifier chosen, but no feature function given')
         elif args.classifier == 'maxent':
@@ -434,7 +448,9 @@ try:
         elif args.classifier == 'naivebayes':
             classifier = BernoulliNB()
         elif args.classifier == 'svm':
-            classifier = SVC(probability=True)
+            classifier = LinearSVC(verbose=(args.loglevel == logging.DEBUG))
+        elif args.classifier == 'rf':
+            classifier = RandomForestClassifier(100, n_jobs=-1)
         else:
             raise RuntimeError('unknown classifier %s' % args.classifier)
 
