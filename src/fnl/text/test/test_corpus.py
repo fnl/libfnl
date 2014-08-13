@@ -25,6 +25,7 @@ def teardown_module():
 
 root = None
 
+
 def setup():
     global root
     root = Root()
@@ -73,7 +74,7 @@ def test_remove_meta():
     AddMeta(root, "sentinel.name", "sentinel.content")
     assert GetMeta(root, "sentinel.name").get_or(None) == "sentinel.content"
     RemoveMeta(root, "sentinel.name")
-    assert GetMeta(root, "sentinel.name").get_or(None) == None
+    assert GetMeta(root, "sentinel.name").get_or(None) is None
 
 
 def test_duplicate_meta():
@@ -84,7 +85,7 @@ def test_duplicate_meta():
     assert GetMeta(root, "sentinel.missing").get_or("other") == "other"
 
 
-#  META DICT
+# META DICT
 
 def test_meta_dict():
     d = {}
@@ -238,6 +239,7 @@ def test_serialize():
                 b"<body><article><div>text</div></article></body></html>"
     assert "missing" == GetEncoding(root).get_or("missing")
 
+
 def test_deserialize():
     temp = TemporaryFile()
     temp.write(b"<html><head><meta charset=UTF-8></head>"
@@ -279,6 +281,7 @@ EXAMPLE = """
 </body>
 </html>
 """
+
 
 def test_read_corpus():
     temp = NamedTemporaryFile(delete=False)
