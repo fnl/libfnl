@@ -3,11 +3,23 @@
 """extract per-sentence combinations between two or more dictag entity types"""
 import inspect
 import logging
-from itertools import product, chain
-from random import shuffle
-from nltk.classify import maxent
-from nltk.metrics import precision, recall, f_measure
-from numpy import std
+import os
+import pickle
+import sys
+from argparse import ArgumentParser
+from itertools import product
+
+import numpy
+from matplotlib import pyplot
+from sklearn.cross_validation import StratifiedKFold
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_curve, auc, \
+    precision_recall_curve, average_precision_score
+from sklearn.naive_bayes import BernoulliNB
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVC
+
 from fnl.text.sentence import SentenceParser
 
 
@@ -15,7 +27,133 @@ __author__ = 'Florian Leitner'
 __version__ = '1.0'
 
 
-def CoOccurrenceRelations(input_stream):
+class Data:
+
+    def __init__(self, feature_generator, ground_truth=None, sparse=True):
+        self.feature_names = None
+        self.labels = None
+        self.extractor = DictVectorizer(sparse=sparse)
+        self._feature_generator = feature_generator
+        self._features = None
+        self._raw_features = None
+        self._relations = None
+        self._uids = None
+
+        if ground_truth is not None:
+            for uid in self.uids:
+                if uid in ground_truth:
+                    logging.info('example truth for %s: %s', uid, ground_truth[uid])
+                    break
+
+            logging.info('ground truth contains %s true annotations',
+                         sum(len(v) for v in ground_truth.values()))
+            self.labels = numpy.zeros(self.n_instances, numpy.bool)
+
+            for idx, (uid, rel) in enumerate(zip(self.uids, self.relations)):
+                if uid in ground_truth and rel in ground_truth[uid]:
+                    self.labels[idx] = True
+
+    @property
+    def uids(self):
+        if self._uids is None:
+            # noinspection PyCallingNonCallable
+            for uid, _, _ in self.__generate():
+                yield uid
+        else:
+            # noinspection PyTypeChecker
+            for uid in self._uids:
+                yield uid
+
+    @property
+    def relations(self):
+        if self._relations is None:
+            # noinspection PyCallingNonCallable
+            for _, relation, _ in self.__generate():
+                yield relation
+        else:
+            # noinspection PyTypeChecker
+            for relation in self._relations:
+                yield relation
+
+    @property
+    def raw_features(self):
+        if self._raw_features is None:
+            # noinspection PyCallingNonCallable
+            for _, _, raw_feature in self.__generate():
+                yield raw_feature
+        else:
+            # noinspection PyTypeChecker
+            for raw_feature in self._raw_features:
+                yield raw_feature
+
+    @property
+    def features(self):
+        if self._features is None:
+            if hasattr(self.extractor, 'feature_names_'):
+                self.transform()
+            else:
+                self.fit_transform()
+
+        return self._features
+
+    @property
+    def n_features(self):
+        '''The number of features.'''
+        return self.features.shape[1]
+
+    @property
+    def n_instances(self):
+        '''The (total) number of instances.'''
+        return self.features.shape[0]
+
+    @property
+    def n_labels(self):
+        '''The (total) number of instances.'''
+        if self.labels is not None:
+            return self.labels.shape[0]
+        else:
+            return -1
+
+    @property
+    def n_positive(self):
+        '''Number of positives instances.'''
+        if self.labels is not None:
+            return self.labels.sum()
+        else:
+            return -1
+
+    def __generate(self):
+        uids = []
+        raw_features = []
+        relations = []
+
+        for uid, relation, raw_feature in self._feature_generator:
+            uids.append(uid)
+            relations.append(relation)
+            raw_features.append(raw_feature)
+            yield uid, relation, raw_feature
+
+        self._uids = uids
+        self._raw_features = raw_features
+        self._relations = relations
+        logging.info('loaded %s relations (instances)', len(uids))
+        self.__generate = None  # safeguard: generate once and only once
+
+    def fit_transform(self, features=None):
+        if features is None:
+            self._features = self.extractor.fit_transform(self.raw_features)
+            self.feature_names = numpy.asarray(self.extractor.get_feature_names())
+        else:
+            return self.extractor.fit_transform(features)
+
+    def transform(self, features=None):
+        if features is None:
+            self._features = self.extractor.transform(self.raw_features)
+        else:
+            return self.extractor.transform(features)
+
+
+def CoOccurrenceRelations(input_stream, masks):
     """
     If neither a model or ground truth file is provided, just extract all co-occurrences of
     the input entities.
@@ -25,27 +163,29 @@ def CoOccurrenceRelations(input_stream):
              a B label in the sentence.
     """
     for uid, sentence in input_stream:
-        for annotations in YieldRelations(sentence):
+        for annotations in YieldRelations(sentence, masks):
             yield uid, tuple(a.value for a in annotations)
 
 
-def YieldRelations(sentence):
+def YieldRelations(sentence, masks):
     if len(sentence.annotations) > 1:
         done = set()
 
-        for annotations in product(*sentence.annotations.values()):
-            if annotations not in done:
-                yield annotations
-                done.add(annotations)
+        ordered_annotations = [sentence.annotations[m] for m in masks]
+
+        for ann in product(*ordered_annotations):
+            if ann not in done:
+                yield ann
+                done.add(ann)
 
 
-def FeatureGenerator(input_stream, feature_generation_code):
+def FeatureGenerator(input_stream, feature_generation_code, masks):
     variables = {}
 
     try:
         exec(feature_generation_code, None, variables)
     except Exception as e:
-        logging.exception("feature generation code could not be parsed")
+        logging.exception('feature generation code could not be parsed')
         return
 
     for name, obj in variables.items():
@@ -59,290 +199,282 @@ def FeatureGenerator(input_stream, feature_generation_code):
         raise RuntimeError('no feature extraction function found')
 
     for uid, sentence in input_stream:
-        for annotations in YieldRelations(sentence):
+        for annotations in YieldRelations(sentence, masks):
             yield uid, tuple(a.value for a in annotations), \
                 FeatureBuilder(sentence, *annotations)
 
 
-def DetectRelations(input_stream, classifier, feature_generation_code):
-    """
-    Given a "dic-tagged" input stream and a trained model, extract predicted relations per
-    sentence.
+def DetectRelations(data, classifier):
+    for uid, relation, features in zip(data.uids, data.relations, data.raw_features):
+        prediction = classifier.predict([features])
 
-    :param input_stream: a `fnl.nlp.sentence.SentenceParser` generator object
-    :param classifier:
-    :return:
-    """
-    for uid, relation, features in FeatureGenerator(input_stream, feature_generation_code):
-        if classifier.classify(features):
+        if prediction[0]:
             yield uid, relation
 
 
-class ModelTrainer:
-
-    def __init__(self, truth, feature_generation_code, algorithm='IIS', **kwargs):
-        self.ground_truth = truth
-        self.feature_code = feature_generation_code
-        self.algorithm = algorithm
-        self._kwd_args = {
-            'count_cutoff': 0,
-            'encoding': None,
-            'labels': None,
-            'trace': 3 if logging.getLogger().getEffectiveLevel() > logging.WARNING else 0,
-            # megam only:
-            'gaussian_prior_sigma': 1.0,
-            # 'bernoulli': True,
-            # 'explicit': False,
-        }
-        self._kwd_args.update(kwargs)
-
-    def useMegam(self, path):
-        from nltk.classify import config_megam
-
-        config_megam(path)
-        self.algorithm = 'megam'
-
-    def minObservations(self, count):
-        "The minimum `count` of observations before a feature is used."
-        assert int(count) >= 0, "negative count"
-        self._kwd_args['count_cutoff'] = int(count)
-
-    def setLabels(self, labels):
-        "Set the list of `labels`."
-        labels = list(labels)
-        assert len(labels) > 0, "non-empty label list"
-        assert self._kwd_args['encoding'] is None, "illegal setup: encoding already defined"
-        self._kwd_args['labels'] = labels
-
-    def defineEncoding(self, encoding):
-        "Set the feature encoding mechanism."
-        assert self._kwd_args['labels'] is None, "illegal setup: labels already defined"
-        self._kwd_args['encoding'] = encoding
-
-    def setGaussianPrior(self, sigma):
-        "For MegaM only: `lambda = 1.0/sigma**2`."
-        self._kwd_args['gaussian_prior_sigma'] = float(sigma)
-
-    def setTrace(self, level):
-        "Set the trace output level."
-        level = int(level)
-        assert level >= 0, "negative trace"
-        self._kwd_args['trace'] = level
-
-    def buildFeatureSets(self, instream) -> iter([(tuple, tuple, dict, bool)]):
-        return self._wrapLabel(FeatureGenerator(instream, self.feature_code))
-
-    def train(self, feature_sets):
-        if self._kwd_args['encoding'] is None:
-            feature_sets = list(feature_sets)
-
-        return maxent.MaxentClassifier.train([(f, l) for u, r, f, l in feature_sets],
-                                             self.algorithm, **self._kwd_args)
-
-    def _wrapLabel(self, feature_generator):
-        for uid, relation, features in feature_generator:
-            if uid in self.ground_truth:
-                yield uid, relation, features, relation in self.ground_truth[uid]
-            else:
-                yield uid, relation, features, False
-
-
-def GroundTruthParser(input_stream, column=2):
+def GroundTruthParser(input_stream, id_columns=2):
     for line in input_stream:
         line = line.strip()
 
         if line:
             items = tuple(line.split('\t'))
-            yield items[:column], items[column:]
+            yield items[:id_columns], items[id_columns:]
 
 
-def CrossValidationSets(data_set, num_evaluations):
-    num_instances = len(data_set)
-    logging.info("%s %s instances", num_instances, data_set[0][-1])
-    logging.info(data_set[0])
-    logging.info(data_set[-1])
-    sizes = num_instances // num_evaluations
+def CrossEvaluation(data, n_folds=5):
+    # Do k-fold, stratified CV on the given data and report the results
+    cross_evaluation = StratifiedKFold(data.labels, n_folds, shuffle=True)
 
-    for i in range(num_evaluations):
-        start = i * sizes
-        end = (i + 1) * sizes if i != num_evaluations - 1 else num_instances
-        yield chain(data_set[0:start], data_set[end:num_instances]), data_set[start:end]
+    # F-score setup
+    zeros = lambda: numpy.zeros(n_folds, numpy.float)
+    scores = [
+        ('Precision', precision_score, zeros()),
+        ('Recall   ', recall_score, zeros()),
+        ('F1-Score ', f1_score, zeros()),
+    ]
+
+    # ROC plot setup
+    ax1 = pyplot.figure(1).add_subplot(111)
+    LayoutPlot()
+    mean_tpr = 0.0
+    mean_fpr = numpy.linspace(0, 1, 100)
+
+    # PR plot setup
+    ax2 = pyplot.figure(2).add_subplot(111)
+    LayoutPlot()
+    all_labels = numpy.zeros(data.n_instances)
+    all_probs = numpy.zeros(data.n_instances)
+    idx = 0
+
+    for i, (train, test) in enumerate(cross_evaluation):
+        logging.info('running cross-evaulation round %s', i + 1)
+        classifier.fit(data.features[train], data.labels[train])
+        probs = classifier.predict_proba(data.features[test])[:, 1]
+
+        # for ROC curve
+        fpr, tpr, thresholds = roc_curve(data.labels[test], probs)
+        mean_tpr += numpy.interp(mean_fpr, fpr, tpr)
+        mean_tpr[0] = 0.0
+        roc_auc = auc(fpr, tpr)
+        ax1.plot(fpr, tpr, lw=1, label='ROC fold %d (area = %0.2f)' % (i + 1, roc_auc))
+
+        # for PR curve
+        next_idx = idx + len(probs)
+        all_labels[idx:next_idx] = data.labels[test]
+        all_probs[idx:next_idx] = probs
+        idx = next_idx
+        precision, recall, _ = precision_recall_curve(data.labels[test], probs)
+        avrg_p = average_precision_score(data.labels[test], probs)
+        ax2.plot(recall, precision, label='PR curve %d (area = %0.2f)' % (i + 1, avrg_p))
+
+        # for F-score
+        predictions = classifier.predict(data.features[test])
+        labels = data.labels[test]
+
+        for _, fun, results in scores:
+            results[i] = fun(labels, predictions)
+
+        # feature lists
+        best = numpy.argsort(classifier.coef_[0])[-10:]
+        logging.info('10 best features: "{0}"'.format(
+            '", "'.join(data.feature_names[best]),
+        ))
+
+    # show F-score
+    for name, _, results in scores:
+        print(name, '{:>2.1f} +/- {:.2f}'.format(results.mean() * 100, results.std() * 200))
+
+    # ROC curve plot
+    mean_tpr /= len(cross_evaluation)
+    mean_tpr[-1] = 1.0
+    mean_auc = auc(mean_fpr, mean_tpr)
+    ax1.plot(mean_fpr, mean_tpr, 'k--', label='Mean ROC fold (area = %0.2f)' % mean_auc, lw=2)
+    pyplot.figure(1)
+    ROCPlot()
+
+    # PR curve plot
+    precision, recall, _ = precision_recall_curve(all_labels, all_probs)
+    avrg_p = average_precision_score(all_labels, all_probs, average="micro")
+    ax2.plot(recall, precision, 'k--', label='Micro PR curve (area = %0.2f)' % avrg_p, lw=2)
+    pyplot.figure(2)
+    pyplot.xlabel('Recall')
+    pyplot.ylabel('Precision')
+    pyplot.title('Precision Recall Curve')
+    pyplot.legend(loc='lower left')
+    pyplot.show()
+
+def Evaluate(data, predictions, probabilities):
+    logging.info('evaluating the predictions')
+    scores = []
+    scores.append(('Precision', precision_score(data.labels, predictions)))
+    scores.append(('Recall   ', recall_score(data.labels, predictions)))
+    scores.append(('F1-Score ', f1_score(data.labels, predictions)))
+    pyplot.figure()
+    LayoutPlot()
+
+    # show F-score
+    for name, value in scores:
+        print('{} {:>2.1f}'.format(name, value * 100))
+
+    fpr, tpr, thresholds = roc_curve(data.labels, probabilities)
+    roc_auc = auc(fpr, tpr)
+    pyplot.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
+    ROCPlot()
+    pyplot.show()
+
+def ROCPlot():
+    pyplot.plot([0, 1], [0, 1], 'k--', color=(0.6, 0.6, 0.6), label='Random')
+    pyplot.xlabel('False Positive Rate')
+    pyplot.ylabel('True Positive Rate')
+    pyplot.title('Receiver Operating Characteristic')
+    pyplot.legend(loc='lower right')
 
 
-if __name__ == '__main__':
-    import os
-    import sys
-    import pickle
+def LayoutPlot():
+    pyplot.xlim([-.05, 1.])
+    pyplot.ylim([0., 1.05])
 
-    from argparse import ArgumentParser
 
-    epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
-    parser = ArgumentParser(
-        description=__doc__, epilog=epilog,
-        prog=os.path.basename(sys.argv[0])
-    )
+epilog = 'system (default) encoding: {}'.format(sys.getdefaultencoding())
+parser = ArgumentParser(
+    description=__doc__, epilog=epilog,
+    prog=os.path.basename(sys.argv[0])
+)
 
-    parser.set_defaults(loglevel=logging.WARNING)
-    parser.add_argument(
-        'file', metavar='FILE', nargs='?', type=open,
-        help='input file (dictag output); if absent, read from <STDIN>'
-    )
-    parser.add_argument(
-        '-f', '--feature-function', metavar='FILE', type=open,
-        help='a function to generate a MaxEnt feature dictionary: The function should take a '
-             'Sentence and as many Annotation instances as are required to form a '
-             'relationship and return a feature dictionary; required for model training, '
-             'evaluation, or classification; without a feature function definition, all '
-             'co-ocurrence relationships are extracted'
-    )
-    parser.add_argument(
-        '-m', '--model', metavar='FILE',
-        help='path to the pickled model file; without a ground truth, implies classification '
-             'on the input file; with a ground truth, implies model training and '
-             'defines the location where the trained model file will be stored'
-    )
-    parser.add_argument(
-        '-t', '--truth', metavar='FILE', type=open,
-        help='ground truth: per (doc_id, s_idx) relationships; '
-             'only required for model training and/or classifier evaluation'
-    )
-    parser.add_argument(
-        '-e', '--evaluate', action="store_true",
-        help='evaluate (only used in conjunction with a [ground] truth file and a model file)'
-    )
-    parser.add_argument(
-        '-c', '--cross-evaluations', metavar='N', action="store", type=int, default=1,
-        help='do N-fold cross-evaluation (only in conjunction with a [ground] truth file)'
-    )
-    parser.add_argument(
-        '--megam', metavar='PATH', action="store",
-        help='use MegaM at PATH (instead of IIS) for training the MaxEnt classifier; on Mac '
-             'using Homebrew, MegaM will be at /usr/local/Cellar/megam/0.9.2/bin/megam'
-    )
-    parser.add_argument(
-        '-q', '--quiet', action='store_const', const=logging.CRITICAL,
-        dest='loglevel', help='critical log level only (default: warn)'
-    )
-    parser.add_argument(
-        '-v', '--verbose', action='store_const', const=logging.INFO,
-        dest='loglevel', help='info log level (default: warn)'
-    )
+parser.set_defaults(loglevel=logging.WARNING)
+parser.add_argument(
+    'file', metavar='FILE', nargs='?', type=open,
+    help='input file (dictag output); if absent, read from <STDIN>'
+)
+parser.add_argument(
+    '-f', '--feature-function', metavar='FILE', type=open,
+    help='a function to generate a feature dictionary: '
+         '``def ffun(s:Sentence, *a:Annotation) -> dict`` The function takes a '
+         'Sentence and as many Annotation instances as are required to form a '
+         'relationship and return a feature dictionary of key:str, value:float pairs; '
+         'required for working with models; without a feature function definition, '
+         'co-ocurrence relationships are extracted (and no classifier is used)'
+)
+parser.add_argument(
+    '-m', '--model', metavar='FILE',
+    help='path to/for the pickled model file; without a ground truth, implies '
+         'running classification on the input; with a ground truth, implies model '
+         'training and defines the location where the trained model will be stored; '
+         'requires a feature function'
+)
+parser.add_argument(
+    '-t', '--truth', metavar='FILE', type=open,
+    help='ground truth: per (doc_id, s_idx) relationships; '
+         'only required for model training and/or classifier evaluation'
+)
+parser.add_argument(
+    '-c', '--classifier', choices=['maxent', 'svm', 'naivebayes'],
+    help='the classifier to use (only required for training and/or evaluation); '
+         'requires a ground truth file and a feature function'
+)
+parser.add_argument(
+    '-e', '--evaluate', action='store_true',
+    help='evaluate (only in conjunction a truth file and a trained model)'
+)
+parser.add_argument(
+    '-x', '--cross-evaluations', metavar='N', action='store', type=int, default=1,
+    help='do N-fold cross-evaluation (only in conjunction with a classifier)'
+)
+parser.add_argument(
+    '-q', '--quiet', action='store_const', const=logging.CRITICAL,
+    dest='loglevel', help='critical log level only (default: warn)'
+)
+parser.add_argument(
+    '-v', '--verbose', action='store_const', const=logging.INFO,
+    dest='loglevel', help='info log level (default: warn)'
+)
+args = parser.parse_args()
 
-    args = parser.parse_args()
-    logging.basicConfig(format='%(asctime)s %(levelname)s %(name)s.%(funcName)s: %(message)s',
+try:
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                         level=args.loglevel)
-    sentences = SentenceParser(args.file if args.file else sys.stdin, ('MASK_A', 'MASK_B'))
-    truth = None
-    feature_function_code = None
+    input = args.file if args.file else sys.stdin
+    logging.info('reading data from %s', input.name)
+    # TODO: add a commandline argument to define the relationship entities
+    entities = ('FACTOR', 'TARGET')
+    sentences = SentenceParser(input, entities)
+    ground_truth = None
+    classifier = None
+    data = None
     model = None
-    model_path = None
 
     if args.truth:
-        truth = {}
+        ground_truth = {}
 
         for key, value in GroundTruthParser(args.truth):
-            if key in truth:
-                truth[key].add(value)
+            if key in ground_truth:
+                ground_truth[key].add(value)
             else:
-                truth[key] = {value}
+                ground_truth[key] = {value}
+    elif args.classifier:
+        parser.error('classifier chosen, but no ground truth given')
 
     if args.feature_function:
-        feature_function_code = args.feature_function.read()
+        fg = FeatureGenerator(sentences, args.feature_function.read(), entities)
+        data = Data(fg, ground_truth, sparse=not (args.classifier and args.classifier == 'svm'))
+        logging.info('data transformed to %s features', data.n_features)
 
-    if args.model:
-        model_path = args.model
+        if args.truth:
+            true_annotations = sum(len(v) for v in ground_truth.values())
+            logging.info('data.labels has %s positive instances', data.n_positive)
+            assert true_annotations <= data.n_positive
+    elif args.model:
+        parser.error('model file path, but no feature function given')
 
-    if truth and feature_function_code and (model_path or args.cross_evaluations > 1):
-        trainer = ModelTrainer(truth, feature_function_code)
-
-        if args.megam:
-            trainer.useMegam(args.megam)
-
-        if args.evaluate and model_path:
-            with open(model_path, 'rb') as input_file:
-                model = pickle.load(input_file)
-
-            labeled_features = trainer.buildFeatureSets(sentences)
-
-        # TODO
+    if args.classifier:
+        if not args.feature_function:
+            parser.error('classifier chosen, but no feature function given')
+        elif args.classifier == 'maxent':
+            classifier = LogisticRegression()
+        elif args.classifier == 'naivebayes':
+            classifier = BernoulliNB()
+        elif args.classifier == 'svm':
+            classifier = SVC(probability=True)
         else:
-            if args.cross_evaluations > 1:
-                sentences = list(sentences)
-                shuffle(sentences)
-                sentence_dict = dict(sentences)
-                labeled_features = list(trainer.buildFeatureSets(sentences))
-                pos = [i for i in labeled_features if i[-1]]
-                neg = [i for i in labeled_features if not i[-1]]
-                pos_sets_iter = CrossValidationSets(pos, args.cross_evaluations)
-                neg_sets_iter = CrossValidationSets(neg, args.cross_evaluations)
-                cv_size = len(labeled_features) / args.cross_evaluations
-                results = {
-                    'precision': [],
-                    'recall': [],
-                    'f_measure': []
-                }
+            raise RuntimeError('unknown classifier %s' % args.classifier)
 
-                for split in range(args.cross_evaluations):
-                    pos_train, pos_eval = next(pos_sets_iter)
-                    neg_train, neg_eval = next(neg_sets_iter)
-                    model = trainer.train(chain(pos_train, neg_train))
-                    print("Evaluation Round", split + 1)
-                    predicted = set()
-                    pos_eval = list(pos_eval)
-                    pos_cases = len(pos_eval)
-                    assert pos_cases, "no TRUE annotations"
-                    annotated = set(range(pos_cases))
-                    show_fp, show_fn = True, True
+        if args.cross_evaluations > 1:
+            CrossEvaluation(data, args.cross_evaluations)
 
-                    for i, (uid, rel, feats, label) in enumerate(chain(pos_eval, neg_eval)):
-                        if model.classify(feats):
-                            predicted.add(i)
+        if args.model:
+            # Fit a model to the given data and store it
+            logging.info('fitting model to all data')
+            classifier.fit(data.features, data.labels)
+            pipeline = Pipeline([('extractor', data.extractor), ('classifier', classifier)])
+            logging.info('saving model to %s', args.model)
 
-                            if show_fp and i >= pos_cases:
-                                print("FALSE POSITIVE", "<->".join(rel))
-                                print(' '.join(t.word for t in sentence_dict[uid].tokens))
-                                model.explain(feats)
-                                show_fp = False
+            with open(args.model, 'wb') as output_file:
+                # noinspection PyArgumentList
+                pickle.dump(pipeline, output_file)
+    elif args.model and args.feature_function:
+        logging.info('loading model for %s', args.model)
+        # Do predictions on the given data using the model and feature function
+        with open(args.model, 'rb') as input_file:
+            # noinspection PyArgumentList
+            pipeline = pickle.load(input_file)
+            data.extractor = pipeline.named_steps['extractor']
+            classifier = pipeline.named_steps['classifier']
 
-                        elif show_fn and i < pos_cases:
-                            print("FALSE NEGATIVE", "<->".join(rel))
-                            print(' '.join(t.word for t in sentence_dict[uid].tokens))
-                            model.explain(feats)
-                            show_fn = False
+        logging.info('making predictions using the loaded model')
 
-                    print("       TP  %5d" % len(predicted & annotated))
-                    print("       FP  %5d" % len(predicted - annotated))
-                    print("       FN  %5d" % len(annotated - predicted))
-                    print("    total  %5d" % cv_size)
+        if args.evaluate and ground_truth:
+            predictions = classifier.predict(data.features)
+            probabilities = classifier.predict_proba(data.features)[:, 1]
+            Evaluate(data, predictions, probabilities)
 
-                    for measure in (precision, recall, f_measure):
-                        result = measure(predicted, annotated)
-                        print("% 9s %5.01f%%" % (measure.__name__, result * 100))
-                        results[measure.__name__].append(result)
-
-                    print("\n")
-
-                print("%d-fold Cross-Evaluation Results" % args.cross_evaluations)
-                model.show_most_informative_features()
-
-                for measure in ("precision", "recall", "f_measure"):
-                    mean = sum(results[measure]) / args.cross_evaluations
-                    sd = std(results[measure])
-                    print("% 9s %5.01f%% +/- %4.01f" % (measure, mean * 100, sd * 100))
-
-                print("\n")
-
-            if model_path:
-                with open(args.model, 'wb') as output_file:
-                    model = trainer.train(trainer.buildFeatureSets(sentences))
-                    pickle.dump(model, output_file)
-                    model.show_most_informative_features()
-    elif model_path and feature_function_code:
-        with open(model_path, 'rb') as input_file:
-            model = pickle.load(input_file)
-
-        for sid, rel in DetectRelations(sentences, model, feature_function_code):
-            print('%s\t%s' % ('\t'.join(sid), '\t'.join(rel)))
+        for uid, relation in DetectRelations(data, pipeline):
+            print('%s\t%s' % ('\t'.join(uid), '\t'.join(relation)))
     else:
-        for sid, rel in CoOccurrenceRelations(sentences):
+        # Extract all co-occurrences of annotations in the given sentences
+        logging.info('extracting co-occurrences only')
+        for sid, rel in CoOccurrenceRelations(sentences, entities):
             print('%s\t%s' % ('\t'.join(sid), '\t'.join(rel)))
+finally:
+    for file in [args.file, args.feature_function, args.truth]:
+        if file:
+            file.close()
