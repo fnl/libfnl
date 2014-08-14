@@ -222,7 +222,22 @@ def GroundTruthParser(input_stream, id_columns=2):
             yield items[:id_columns], items[id_columns:]
 
 
-def CrossEvaluation(data, n_folds=5):
+def LogBestFeatures(classifier, data):
+    # feature lists
+    feature_list = (classifier.feature_importances_
+                    if hasattr(classifier, 'feature_importances_') else
+                    classifier.coef_)
+    if feature_list.shape[0] == 1:
+        feature_list = feature_list[0]
+    best = numpy.argsort(feature_list)[-10:]
+    logging.info('10 best features: "{0}"'.format(
+        '", "'.join(data.feature_names[best]),
+    ))
+
+
+def CrossEvaluation(data, n_folds=5, plot=True):
+    roc_plot, pr_plot = None, None
+
     # Do k-fold, stratified CV on the given data and report the results
     cross_evaluation = StratifiedKFold(data.labels, n_folds, shuffle=True)
 
@@ -234,15 +249,17 @@ def CrossEvaluation(data, n_folds=5):
         ('F1-Score ', f1_score, zeros()),
     ]
 
-    # ROC plot setup
-    ax1 = pyplot.figure(1).add_subplot(111)
-    LayoutPlot()
+    if plot:
+        roc_plot = pyplot.figure(1).add_subplot(111)
+        LayoutPlot()
+        pr_plot = pyplot.figure(2).add_subplot(111)
+        LayoutPlot()
+
+    # ROC setup
     mean_tpr = 0.0
     mean_fpr = numpy.linspace(0, 1, 100)
 
-    # PR plot setup
-    ax2 = pyplot.figure(2).add_subplot(111)
-    LayoutPlot()
+    # PR setup
     all_labels = numpy.zeros(data.n_instances)
     all_probs = numpy.zeros(data.n_instances)
     idx = 0
@@ -261,7 +278,8 @@ def CrossEvaluation(data, n_folds=5):
         mean_tpr += numpy.interp(mean_fpr, fpr, tpr)
         mean_tpr[0] = 0.0
         roc_auc = auc(fpr, tpr)
-        ax1.plot(fpr, tpr, lw=1, label='ROC fold %d (area = %0.2f)' % (i + 1, roc_auc))
+        roc_msg = 'ROC fold %d (area = %0.2f)' % (i + 1, roc_auc)
+        logging.info(roc_msg)
 
         # for PR curve
         next_idx = idx + len(probs)
@@ -270,7 +288,12 @@ def CrossEvaluation(data, n_folds=5):
         idx = next_idx
         precision, recall, _ = precision_recall_curve(data.labels[test], probs)
         avrg_p = average_precision_score(data.labels[test], probs)
-        ax2.plot(recall, precision, label='PR curve %d (area = %0.2f)' % (i + 1, avrg_p))
+        pr_msg = 'PR curve %d (area = %0.2f)' % (i + 1, avrg_p)
+        logging.info(pr_msg)
+
+        if plot:
+            roc_plot.plot(fpr, tpr, lw=1, label=roc_msg)
+            pr_plot.plot(recall, precision, label=pr_msg)
 
         # for F-score
         predictions = classifier.predict(data.features[test])
@@ -279,60 +302,56 @@ def CrossEvaluation(data, n_folds=5):
         for _, fun, results in scores:
             results[i] = fun(labels, predictions)
 
-        # feature lists
-        feature_list = (classifier.feature_importances_
-                        if hasattr(classifier, 'feature_importances_') else
-                        classifier.coef_)
-
-        if feature_list.shape[0] == 1:
-            feature_list = feature_list[0]
-
-        best = numpy.argsort(feature_list)[-10:]
-        logging.info('10 best features: "{0}"'.format(
-            '", "'.join(data.feature_names[best]),
-        ))
-
-    # show F-score
-    for name, _, results in scores:
-        print(name, '{:>2.1f} +/- {:.2f}'.format(results.mean() * 100, results.std() * 200))
+        LogBestFeatures(classifier, data)
 
     # ROC curve plot
     mean_tpr /= len(cross_evaluation)
     mean_tpr[-1] = 1.0
     mean_auc = auc(mean_fpr, mean_tpr)
-    ax1.plot(mean_fpr, mean_tpr, 'k--', label='Mean ROC fold (area = %0.2f)' % mean_auc, lw=2)
-    pyplot.figure(1)
-    ROCPlot()
+    roc_msg = 'Mean ROC fold (area = %0.2f)' % mean_auc
+    logging.info(roc_msg)
 
     # PR curve plot
     precision, recall, _ = precision_recall_curve(all_labels, all_probs)
     avrg_p = average_precision_score(all_labels, all_probs, average="micro")
-    ax2.plot(recall, precision, 'k--', label='Micro PR curve (area = %0.2f)' % avrg_p, lw=2)
-    pyplot.figure(2)
-    pyplot.xlabel('Recall')
-    pyplot.ylabel('Precision')
-    pyplot.title('Precision Recall Curve')
-    pyplot.legend(loc='lower left')
-    pyplot.show()
+    pr_msg = 'Micro PR curve (area = %0.2f)' % avrg_p
+    logging.info(pr_msg)
 
-def Evaluate(data, predictions, probabilities):
+    # show F-score
+    for name, _, results in scores:
+        print(name, '{:>2.1f} +/- {:.2f}'.format(results.mean() * 100, results.std() * 200))
+
+    if plot:
+        roc_plot.plot(mean_fpr, mean_tpr, 'k--', label=roc_msg, lw=2)
+        pyplot.figure(1)
+        ROCPlot()
+        pr_plot.plot(recall, precision, 'k--', label=pr_msg, lw=2)
+        pyplot.figure(2)
+        pyplot.xlabel('Recall')
+        pyplot.ylabel('Precision')
+        pyplot.title('Precision Recall Curve')
+        pyplot.legend(loc='lower left')
+        pyplot.show()
+
+def Evaluate(data, predictions, probabilities, plot=True):
     logging.info('evaluating the predictions')
     scores = []
     scores.append(('Precision', precision_score(data.labels, predictions)))
     scores.append(('Recall   ', recall_score(data.labels, predictions)))
     scores.append(('F1-Score ', f1_score(data.labels, predictions)))
-    pyplot.figure()
-    LayoutPlot()
 
     # show F-score
     for name, value in scores:
         print('{} {:>2.1f}'.format(name, value * 100))
 
-    fpr, tpr, thresholds = roc_curve(data.labels, probabilities)
-    roc_auc = auc(fpr, tpr)
-    pyplot.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
-    ROCPlot()
-    pyplot.show()
+    if plot:
+        pyplot.figure()
+        LayoutPlot()
+        fpr, tpr, thresholds = roc_curve(data.labels, probabilities)
+        roc_auc = auc(fpr, tpr)
+        pyplot.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
+        ROCPlot()
+        pyplot.show()
 
 def ROCPlot():
     pyplot.plot([0, 1], [0, 1], 'k--', color=(0.6, 0.6, 0.6), label='Random')
@@ -384,6 +403,10 @@ parser.add_argument(
     '-c', '--classifier', choices=['maxent', 'svm', 'naivebayes', 'rf'],
     help='the classifier to use (only required for training and/or evaluation); '
          'requires a ground truth file and a feature function'
+)
+parser.add_argument(
+    '-p', '--plot', action='store_true',
+    help='create evaluation plots'
 )
 parser.add_argument(
     '-e', '--evaluate', action='store_true',
@@ -440,27 +463,33 @@ try:
         parser.error('model file path, but no feature function given')
 
     if args.classifier:
-        # TODO: classifier configuration options?
         if not args.feature_function:
             parser.error('classifier chosen, but no feature function given')
-        elif args.classifier == 'maxent':
-            classifier = LogisticRegression()
         elif args.classifier == 'naivebayes':
-            classifier = BernoulliNB()
-        elif args.classifier == 'svm':
-            classifier = LinearSVC(verbose=(args.loglevel == logging.DEBUG))
+            classifier = BernoulliNB(fit_prior=False, class_prior=(0.01, 0.09))
         elif args.classifier == 'rf':
-            classifier = RandomForestClassifier(100, n_jobs=-1)
+            classifier = RandomForestClassifier(bootstrap=False, n_jobs=-1,
+                                                verbose=(args.loglevel == logging.DEBUG))
+        elif args.classifier == 'maxent':
+            # params = dict(fit_intercept=False)  # high-recall
+            params = dict(C=10.)  # high-precision
+            classifier = LogisticRegression(class_weight='auto', **params)
+        elif args.classifier == 'svm':
+            params = dict(C=.1, loss='l1')  # high-recall
+            # params = dict()  # high-precision
+            classifier = LinearSVC(verbose=(args.loglevel == logging.DEBUG),
+                                   class_weight='auto', **params)
         else:
             raise RuntimeError('unknown classifier %s' % args.classifier)
 
         if args.cross_evaluations > 1:
-            CrossEvaluation(data, args.cross_evaluations)
+            CrossEvaluation(data, args.cross_evaluations, plot=args.plot)
 
         if args.model:
             # Fit a model to the given data and store it
             logging.info('fitting model to all data')
             classifier.fit(data.features, data.labels)
+            LogBestFeatures(classifier, data)
             pipeline = Pipeline([('extractor', data.extractor), ('classifier', classifier)])
             logging.info('saving model to %s', args.model)
 
@@ -481,7 +510,7 @@ try:
         if args.evaluate and ground_truth:
             predictions = classifier.predict(data.features)
             probabilities = classifier.predict_proba(data.features)[:, 1]
-            Evaluate(data, predictions, probabilities)
+            Evaluate(data, predictions, probabilities, plot=args.plot)
 
         for uid, relation in DetectRelations(data, pipeline):
             print('%s\t%s' % ('\t'.join(uid), '\t'.join(relation)))
