@@ -300,7 +300,7 @@ class Annotation:
     def __repr__(self):
         return '<fnl.nlp.sentence.Annotation %X:%d:%d>' % (id(self.sentence), self.start, self.end)
 
-    def _startEndIndices(self, other):
+    def _startEndIndicesBetween(self, other):
         if self.sentence != other.sentence:
             raise ValueError("annotations on different sentences")
 
@@ -391,7 +391,7 @@ class Annotation:
             while idx < end and self.sentence._mask[idx] is None:
                 idx += 1
 
-            return self.sentence.maskedWords(start, idx)
+            return self.sentence.maskedStems(start, idx)
         else:
             return iter(())
 
@@ -409,7 +409,7 @@ class Annotation:
             while idx > start and self.sentence._mask[idx - 1] is None:
                 idx -= 1
 
-            return self.sentence.maskedWords(idx, end)
+            return self.sentence.maskedStems(idx, end)
         else:
             return iter(())
 
@@ -459,7 +459,7 @@ class Annotation:
         :return: The distance in number of phrases or -1 if equal annotations.
         :raises ValueError: If the annotations are on different sentences.
         """
-        start, end = self._startEndIndices(other)
+        start, end = self._startEndIndicesBetween(other)
         return sum(1 for _ in self.sentence.phraseTags(start, end)) - (self == other)
 
     def phraseNumbersBetween(self, other):
@@ -475,7 +475,7 @@ class Annotation:
         :raises ValueError: If the annotations are on different sentences.
         """
         s = self.sentence
-        start, end = self._startEndIndices(other)
+        start, end = self._startEndIndicesBetween(other)
         first, last = 0, 0
 
         while first == 0 and end > start:
@@ -503,11 +503,11 @@ class Annotation:
         :return: All phrase tags found between the two annotations.
         :raises ValueError: If the annotations are on different sentences.
         """
-        start, end = self._startEndIndices(other)
+        start, end = self._startEndIndicesBetween(other)
         return self.sentence.phraseTags(start, end)
 
     def posTagsBetween(self, other):
-        start, end = self._startEndIndices(other)
+        start, end = self._startEndIndicesBetween(other)
         return self.sentence.posTags(start, end)
 
     def tokenDistanceTo(self, other):
@@ -521,7 +521,7 @@ class Annotation:
         :return: The distance in number of tokens or the negative count of overlapping tokens.
         :raises ValueError: If the annotations are on different sentences.
         """
-        start, end = self._startEndIndices(other)
+        start, end = self._startEndIndicesBetween(other)
         return end - start
 
     def verbPhraseBetween(self, other):
