@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """extract per-sentence combinations between two or more dictag entity types"""
+from collections import defaultdict
 import inspect
 import logging
 import os
@@ -53,6 +54,7 @@ class Data:
             for idx, (uid, rel) in enumerate(zip(self.uids, self.relations)):
                 if uid in ground_truth and rel in ground_truth[uid]:
                     self.labels[idx] = True
+
 
     @property
     def uids(self):
@@ -205,7 +207,41 @@ def FeatureGenerator(input_stream, feature_generation_code, masks):
                 FeatureBuilder(sentence, *annotations)
 
 
+def DeduplicationIndex(uids, relations, probabilities):
+    """
+    Return a Boolean array for all elements in the given arrays,
+    indicating the position of the entry for one uid and relation
+    with the max. probability score.
+    """
+    assert len(uids) == len(probabilities)
+    current_uid = None
+    groups = defaultdict(list)
+    keep = numpy.zeros(probabilities.shape, numpy.bool)
+
+    for idx, (uid, relation) in enumerate(zip(map(tuple, uids), map(tuple, relations))):
+        if uid == current_uid:
+            groups[relation].append(idx)
+        else:
+            for rel, grp in groups.items():
+                max_p = max(probabilities[grp])
+
+                for i in grp:
+                    if probabilities[i] == max_p:
+                        keep[i] = True
+                        break
+                else:
+                    raise RuntimeError('max_p of %s for %s not found' % (rel, uid))
+
+            groups = defaultdict(list)
+            current_uid = uid
+
+    num_items = len(keep)
+    logging.info("removing %s duplicates out of %s results", num_items - sum(keep), num_items)
+    return keep
+
+
 def DetectRelations(data, classifier):
+    # TODO: should duplicate (uid, relation) pairs be removed from this stream, too?
     for uid, relation, features in zip(data.uids, data.relations, data.raw_features):
         prediction = classifier.predict([features])
 
@@ -243,6 +279,8 @@ def CrossEvaluation(data, n_folds=5, plot=True):
 
     # F-score setup
     zeros = lambda: numpy.zeros(n_folds, numpy.float)
+    uids = numpy.array(list(data.uids), numpy.object)
+    relations = numpy.array(list(data.relations), numpy.object)
     scores = [
         ('Precision', precision_score, zeros()),
         ('Recall   ', recall_score, zeros()),
@@ -260,21 +298,29 @@ def CrossEvaluation(data, n_folds=5, plot=True):
     mean_fpr = numpy.linspace(0, 1, 100)
 
     # PR setup
-    all_labels = numpy.zeros(data.n_instances)
-    all_probs = numpy.zeros(data.n_instances)
+    all_labels = numpy.zeros([])
+    all_probs = numpy.zeros([])
     idx = 0
 
     for i, (train, test) in enumerate(cross_evaluation):
         logging.info('running cross-evaulation round %s', i + 1)
         classifier.fit(data.features[train], data.labels[train])
+        predictions = classifier.predict(data.features[test])
 
         if hasattr(classifier, 'decision_function'):
             probs = classifier.decision_function(data.features[test])
         else:
             probs = classifier.predict_proba(data.features[test])[:, 1]
 
+        # remove duplicate results for the same relation,
+        # keeping the most probable prediction only
+        keep = DeduplicationIndex(uids[test], relations[test], probs)
+        labels = data.labels[test][keep]
+        probs = probs[keep]
+        predictions = predictions[keep]
+
         # for ROC curve
-        fpr, tpr, thresholds = roc_curve(data.labels[test], probs)
+        fpr, tpr, thresholds = roc_curve(labels, probs)
         mean_tpr += numpy.interp(mean_fpr, fpr, tpr)
         mean_tpr[0] = 0.0
         roc_auc = auc(fpr, tpr)
@@ -283,11 +329,11 @@ def CrossEvaluation(data, n_folds=5, plot=True):
 
         # for PR curve
         next_idx = idx + len(probs)
-        all_labels[idx:next_idx] = data.labels[test]
-        all_probs[idx:next_idx] = probs
+        all_labels = numpy.append(all_labels, labels)
+        all_probs = numpy.append(all_probs, probs)
         idx = next_idx
-        precision, recall, _ = precision_recall_curve(data.labels[test], probs)
-        avrg_p = average_precision_score(data.labels[test], probs)
+        precision, recall, _ = precision_recall_curve(labels, probs)
+        avrg_p = average_precision_score(labels, probs)
         pr_msg = 'PR curve %d (area = %0.2f)' % (i + 1, avrg_p)
         logging.info(pr_msg)
 
@@ -296,9 +342,6 @@ def CrossEvaluation(data, n_folds=5, plot=True):
             pr_plot.plot(recall, precision, label=pr_msg)
 
         # for F-score
-        predictions = classifier.predict(data.features[test])
-        labels = data.labels[test]
-
         for _, fun, results in scores:
             results[i] = fun(labels, predictions)
 
@@ -335,10 +378,15 @@ def CrossEvaluation(data, n_folds=5, plot=True):
 
 def Evaluate(data, predictions, probabilities, plot=True):
     logging.info('evaluating the predictions')
+    # Remove duplicate results for the same (UID, relation) pair,
+    # keeping the entry with the max. probability only
+    ddidx = DeduplicationIndex(data.uids, data.relations, probabilities)
     scores = []
-    scores.append(('Precision', precision_score(data.labels, predictions)))
-    scores.append(('Recall   ', recall_score(data.labels, predictions)))
-    scores.append(('F1-Score ', f1_score(data.labels, predictions)))
+    labels = data.labels[ddidx]
+    predictions = predictions[ddidx]
+    scores.append(('Precision', precision_score(labels, predictions)))
+    scores.append(('Recall   ', recall_score(labels, predictions)))
+    scores.append(('F1-Score ', f1_score(labels, predictions)))
 
     # show F-score
     for name, value in scores:
