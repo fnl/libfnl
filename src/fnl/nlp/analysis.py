@@ -106,7 +106,7 @@ class TextAnalytics:
 		aligned_tags = []
 		t_iter = iter(tokens)
 		index = 0  # of the tag currently being aligned
-		skipDashes = chr(Category.Pd) in self.tokenizer.skipMorphs
+		skipDashes = chr(Category.Pd) in self.tokenizer.skipOrthos
 
 		while index < len(tags):
 			word = next(t_iter)

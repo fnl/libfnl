@@ -26,7 +26,7 @@ class NodeTests(unittest.TestCase):
 
 
 class DictionaryTests(unittest.TestCase):
-	tokenizer = WordTokenizer(skipTags={'space'}, skipOrths={'e'})
+	tokenizer = WordTokenizer(skipTags={'space'}, skipOrthos={'e'})
 
 	def testCreateDictionary(self):
 		d = Dictionary([('key', 'The Term', 42, 21)], DictionaryTests.tokenizer)

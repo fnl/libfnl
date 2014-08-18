@@ -230,7 +230,7 @@ if __name__ == '__main__':
 		qualifier_list = [l.strip() for l in args.qranks]
 		raw_dict_data = [dictionaryReader(d, qualifier_list, args.separator) for d in args.dictionary]
 		# a tokenizer that skips Unicode Categories Zs and Pd:
-		tokenizer = WordTokenizer(skipTags={'space'}, skipMorphs={'e'})
+		tokenizer = WordTokenizer(skipTags={'space'}, skipOrthos={'e'})
 		dictionaries = [Dictionary(stream, tokenizer) for stream in raw_dict_data]
 		logging.info("initialized %s dictionaries", len(dictionaries))
 		lst = [dictionaries, tokenizer, pos_tagger, ner_tagger]

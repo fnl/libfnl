@@ -471,14 +471,14 @@ class Tokenizer:
     Abstract tokenizer implementing the actual procedure.
     """
 
-    def __init__(self, skipTags=None, skipOrths=None):
+    def __init__(self, skipTags=None, skipOrthos=None):
         """
         :param skipTags: a set of tags to skip (not emit)
-        :param skipOrths: a set of orthological structures to skip (not emit)
+        :param skipOrthos: a set of orthological structures to skip (not emit)
         :return:
         """
         self.skipTags = skipTags
-        self.skipOrths = skipOrths
+        self.skipOrthos = skipOrthos
 
     def split(self, text: str) -> iter:
         """
@@ -517,7 +517,7 @@ class Tokenizer:
                     if not self.skipTags or State.__name__ not in self.skipTags:
                         orth = cats.getvalue() if cats else orth
 
-                        if not self.skipOrths or orth not in self.skipOrths:
+                        if not self.skipOrthos or orth not in self.skipOrthos:
                             yield start, end, State.__name__, orth
 
                 cats = None
@@ -529,7 +529,7 @@ class Tokenizer:
             if not self.skipTags or State.__name__ not in self.skipTags:
                 orth = cats.getvalue() if cats else orth
 
-                if not self.skipOrths or orth not in self.skipOrths:
+                if not self.skipOrthos or orth not in self.skipOrthos:
                     yield start, len(text), State.__name__, orth
 
     @staticmethod

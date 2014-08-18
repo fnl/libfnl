@@ -83,7 +83,7 @@ class TokenizerTests(TestCase):
             (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.WordTokenizer(skipTags={'space'},
-                                    skipOrths={chr(S.Category.Pd)})
+                                    skipOrthos={chr(S.Category.Pd)})
         self.assertResult(tokenizer, offsets)
         self.assertSplit(tokenizer, TokenizerTests.EXAMPLE, offsets)
 
@@ -106,7 +106,7 @@ class TokenizerTests(TestCase):
             (36, 37), (37, 38), (40, 41), (41, 42), (42, 43),
         ]
         tokenizer = S.AlnumTokenizer(skipTags={'space', 'breaker'},
-                                     skipOrths={chr(S.Category.Sk), chr(S.Category.Pe)})
+                                     skipOrthos={chr(S.Category.Sk), chr(S.Category.Pe)})
         self.assertResult(tokenizer, offsets)
         self.assertSplit(tokenizer, TokenizerTests.EXAMPLE, offsets)
 
