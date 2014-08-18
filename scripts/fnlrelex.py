@@ -240,13 +240,36 @@ def DeduplicationIndex(uids, relations, probabilities):
     return keep
 
 
-def DetectRelations(data, classifier):
-    # TODO: should duplicate (uid, relation) pairs be removed from this stream, too?
-    for uid, relation, features in zip(data.uids, data.relations, data.raw_features):
-        prediction = classifier.predict([features])
+def GetProbaFunction(classifier):
+    if hasattr(classifier, 'decision_function'):
+        # must be before the 'predict_proba' test!
+        logging.info('using decistion function to estimate "probabilities"')
+        return classifier.decision_function
+    elif hasattr(classifier, 'predict_proba'):
+        return lambda feats: classifier.predict_proba(feats)[:, 1]
+    else:
+        raise RuntimeError('no known method to calculate probabilities for this classifier')
 
-        if prediction[0]:
-            yield uid, relation
+
+def DetectRelations(data, classifier):
+    last_uid = None
+    feature_lists = defaultdict(list)
+    predict_proba = GetProbaFunction(classifier)
+
+    for uid, relation, features in zip(data.uids, data.relations, data.raw_features):
+        if uid == last_uid:
+            feature_lists[relation].append(features)
+        else:
+            for rel, feats in feature_lists.items():
+                probs = predict_proba(feats)
+                labels = classifier.predict(feats)
+                maxi = numpy.argmax(probs)
+
+                if labels[maxi]:
+                    yield last_uid, rel, probs[maxi]
+
+            last_uid = uid
+            feature_lists = defaultdict(list)
 
 
 def GroundTruthParser(input_stream, id_columns=2):
@@ -302,15 +325,13 @@ def CrossEvaluation(data, n_folds=5, plot=True):
     all_probs = numpy.zeros([])
     idx = 0
 
+    predict_proba = GetProbaFunction(classifier)
+
     for i, (train, test) in enumerate(cross_evaluation):
         logging.info('running cross-evaulation round %s', i + 1)
         classifier.fit(data.features[train], data.labels[train])
         predictions = classifier.predict(data.features[test])
-
-        if hasattr(classifier, 'decision_function'):
-            probs = classifier.decision_function(data.features[test])
-        else:
-            probs = classifier.predict_proba(data.features[test])[:, 1]
+        probs = predict_proba(data.features[test])
 
         # remove duplicate results for the same relation,
         # keeping the most probable prediction only
@@ -507,7 +528,6 @@ try:
         if args.truth:
             true_annotations = sum(len(v) for v in ground_truth.values())
             logging.info('data.labels has %s positive instances', data.n_positive)
-            assert true_annotations <= data.n_positive
     elif args.model:
         parser.error('model file path, but no feature function given')
 
@@ -558,11 +578,12 @@ try:
 
         if args.evaluate and ground_truth:
             predictions = classifier.predict(data.features)
-            probabilities = classifier.predict_proba(data.features)[:, 1]
+            predict_proba = GetProbaFunction(classifier)
+            probabilities = predict_proba(data.features)
             Evaluate(data, predictions, probabilities, plot=args.plot)
 
-        for uid, relation in DetectRelations(data, pipeline):
-            print('%s\t%s' % ('\t'.join(uid), '\t'.join(relation)))
+        for uid, relation, confidence in DetectRelations(data, pipeline):
+            print('%s\t%s\t%f' % ('\t'.join(uid), '\t'.join(relation), confidence))
     else:
         # Extract all co-occurrences of annotations in the given sentences
         logging.info('extracting co-occurrences only')
