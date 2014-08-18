@@ -213,30 +213,30 @@ def DeduplicationIndex(uids, relations, probabilities):
     indicating the position of the entry for one uid and relation
     with the max. probability score.
     """
-    assert len(uids) == len(probabilities)
+    len_probs = len(probabilities)
+    assert len(uids) == len_probs
     current_uid = None
     groups = defaultdict(list)
-    keep = numpy.zeros(probabilities.shape, numpy.bool)
+    keep = []
 
     for idx, (uid, relation) in enumerate(zip(map(tuple, uids), map(tuple, relations))):
         if uid == current_uid:
             groups[relation].append(idx)
         else:
             for rel, grp in groups.items():
-                max_p = max(probabilities[grp])
-
-                for i in grp:
-                    if probabilities[i] == max_p:
-                        keep[i] = True
-                        break
+                if len(grp) > 1:
+                    maxi = numpy.argmax(probabilities[grp])
+                    keep.append(grp[maxi])
                 else:
-                    raise RuntimeError('max_p of %s for %s not found' % (rel, uid))
+                    keep.append(grp[0])
 
             groups = defaultdict(list)
             current_uid = uid
 
-    num_items = len(keep)
-    logging.info("removing %s duplicates out of %s results", num_items - sum(keep), num_items)
+    keep = numpy.array(keep, numpy.int)
+    keep.sort()
+    len_keep = len(keep)
+    logging.info("removing %s duplicates out of %s results", len_probs - len_keep, len_probs)
     return keep
 
 
@@ -318,6 +318,7 @@ def CrossEvaluation(data, n_folds=5, plot=True):
         labels = data.labels[test][keep]
         probs = probs[keep]
         predictions = predictions[keep]
+        assert len(keep) == len(labels)
 
         # for ROC curve
         fpr, tpr, thresholds = roc_curve(labels, probs)
