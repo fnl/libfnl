@@ -6,6 +6,7 @@
 .. moduleauthor:: Florian Leitner <florian.leitner@gmail.com>
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
+import logging
 from fnl.text.token import Token
 
 
@@ -544,9 +545,14 @@ class Annotation:
             return None
 
 
-def SentenceParser(lines, entity_masks, id_columns=2, sep='\t'):
-    entity_col = id_columns + 5
-    num_columns = id_columns + len(entity_masks) + 5  # token items
+def SentenceParser(lines, entity_masks, id_columns=None, sep='\t'):
+    if id_columns is not None:
+        entity_col = id_columns + 5
+        num_columns = id_columns + len(entity_masks) + 5  # token items
+    else:
+        entity_col = -1
+        num_columns = -1
+
     tokens = []
     entities = []
     sent_id = None
@@ -565,9 +571,16 @@ def SentenceParser(lines, entity_masks, id_columns=2, sep='\t'):
             sent_id = None
         else:
             items = l.split(sep)
-            assert len(items) >= num_columns, "lower number of columns (%d) than expected (%d)" % (
-                len(items), num_columns
-            )
+
+            if id_columns is None:
+                num_columns = len(items)
+                id_columns = num_columns - len(entity_masks) - 5  # token items
+                logging.info("guessed number of ID columns: %s", id_columns)
+                assert id_columns > 0, "no sentence ID columns"
+                entity_col = id_columns + 5
+
+            assert len(items) >= num_columns, \
+                "lower number of columns (%d) than expected (%d)" % (len(items), num_columns)
 
             if id_columns:
                 if sent_id is None:

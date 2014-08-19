@@ -67,11 +67,11 @@ class TestSentence(TestCase):
 
 	def testGetMaskedWords(self):
 		s = Sentence(TEST_TOKENS)
-		s.addAnnotation('type1', 2, 4)
+		s.addAnnotation('type1', 2, 4)  # should only fetch one masked token ("type1")
 		s.addAnnotation('type2', 6)
 		s.addAnnotation('type2', 8, 9)
 		self.assertListEqual(list(s.maskedWords()), [
-			'word0', 'word1', 'type1', 'type1', 'word4',
+			'word0', 'word1', 'type1', 'word4',
 			'word5', 'type2', 'word7', 'type2', 'word9'
 		])
 		self.assertListEqual(list(s.maskedWords(7)), [
@@ -430,8 +430,8 @@ class TestAnnotation(TestCase):
 class TestSentenceParser(TestCase):
 
 	LINES = """
-1406630	0	Selection	Selection	NN	B-NP	O	O	O	#  commentary stuff
-1406630	0	of	of	IN	B-PP	O	O	O
+1406630	0	Selection	Selection	NN	B-NP	O	O	O
+1406630	0	of	of	IN	B-PP	O	O	O	#  comment: NB: not in first line to guess ID col!
 1406630	0	optimal	optimal	JJ	B-NP	O	O	O
 1406630	0	kappa	kappa	NN	I-NP	O	O	O
 1406630	0	B	B	NN	I-NP	O	O	O
