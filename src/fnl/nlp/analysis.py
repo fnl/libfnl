@@ -186,7 +186,7 @@ class TextAnalytics:
         max_len = len(tag_word)
         aligned_tags = []
 
-        while not aligned() and sum(map(len, words)) < max_len:
+        while not aligned() and sum(map(len, asciis)) < max_len:
             words.append(next(t_iter))
             asciis.append(unidecode(words[-1]).replace('-', ''))
 
