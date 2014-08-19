@@ -144,7 +144,6 @@ if __name__ == '__main__':
 
     from argparse import ArgumentParser
 
-
     ALIGNED = 1
     NORMALIZED = 2
     TABULAR = 3
@@ -177,7 +176,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument(
-        '--nouns', action="count",
+        '--nouns', action="count", default=0,
         help='allow any noun to be tagged (default: only NER tagged tokens); '
              'has to be repeated once for each dictionary (in same order)'
     )
@@ -208,6 +207,10 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '-v', '--verbose', action='store_const', const=logging.INFO,
+        dest='loglevel', help='info log level (default: warn)'
+    )
+    parser.add_argument(
+        '--debug', action='store_const', const=logging.DEBUG,
         dest='loglevel', help='debug log level (default: warn)'
     )
 

@@ -8,6 +8,7 @@
 
 from operator import itemgetter
 
+
 # noinspection PyPropertyAccess
 class Token(tuple):
 	"""
