@@ -90,7 +90,7 @@ class GeniaTagger(object):
         line = self._proc.stdout.readline()
         self.L.debug('fetched token')
         # noinspection PyUnresolvedReferences
-        line = line.decode().strip()
+        line = line.decode().strip('\n\r')
 
         if not line:
             raise StopIteration
