@@ -180,7 +180,7 @@ class TextAnalytics:
         self.logger.debug('tag %s exceeds word %s', repr(tag.word), repr(word))
         tmp = list(tag)
         words = [word]
-        asciis = [unidecode(word)]
+        asciis = [unidecode(word).replace('-', '')]
         tag_word = ''.join(self.tokenizer.split(tag.word))
         aligned = lambda: ''.join(asciis) == tag_word
         max_len = len(tag_word)
@@ -188,7 +188,7 @@ class TextAnalytics:
 
         while not aligned() and sum(map(len, words)) < max_len:
             words.append(next(t_iter))
-            asciis.append(unidecode(words[-1]))
+            asciis.append(unidecode(words[-1]).replace('-', ''))
 
         if aligned():
             self.logger.debug('dropping tag %s [%s] for words "%s"',
