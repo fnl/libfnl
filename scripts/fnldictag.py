@@ -207,7 +207,7 @@ if __name__ == '__main__':
         dest='loglevel', help='critical log level only (default: warn)'
     )
     parser.add_argument(
-        '-v', '--verbose', action='store_const', const=logging.DEBUG,
+        '-v', '--verbose', action='store_const', const=logging.INFO,
         dest='loglevel', help='debug log level (default: warn)'
     )
 
