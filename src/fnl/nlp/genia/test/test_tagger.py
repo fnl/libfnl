@@ -14,6 +14,9 @@ assert os.path.exists(GENIATAGGER_DIR) and \
 
 class GeniaTaggerTests(TestCase):
 
+    # TODO: test "empty" word/stem handling works on geniatagger return lines of the form:
+    # \t\t<pos>\t<phrase>\t<entity>
+
     def setUp(self):
         self.tagger = GeniaTagger()
         self.sentence = "Inhibition of NF-kappa beta activation reversed " \
