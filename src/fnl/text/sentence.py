@@ -75,12 +75,14 @@ class Sentence:
     def _getMaskedTokenAttributes(self, attr, start=0, end=None):
         end = len(self.tokens) if end is None else end
         last_mask = None
+        normalize = lambda s: s.lower() if attr == 'stem' else lambda s: s
 
         for i in range(start, end):
             if self._mask[i] is None:
-                yield getattr(self.tokens[i], attr)
+                yield normalize(getattr(self.tokens[i], attr))
                 last_mask = None
             else:
+                # only report a masked token once
                 if last_mask != self._mask[i]:
                     yield self._mask[i]
 
@@ -116,6 +118,9 @@ class Sentence:
                 self._mask[i] = mask
 
         return ann
+
+    def countEntity(self, entity):
+        return sum(1 for t in self.tokens if t.entity == entity)
 
     def getAnnotations(self, mask):
         "Return the (possibly empty) set of all annotations for a `mask` key."
@@ -307,6 +312,12 @@ class Annotation:
 
         return min(self.end, other.end), max(self.start, other.start)
 
+    def _incrementStartIfDT(self, start, end):
+        if start + 1 < end and self.sentence.tokens[start].pos == 'DT':
+            start += 1
+
+        return start
+
     def getPhraseNumber_(self):
         """
         Return the phrase number of this annotation if it is inside a phrase.
@@ -351,7 +362,7 @@ class Annotation:
         the annotation is not part of a phrase).
         """
         start, end = self.getPhraseOffset()
-        return self.sentence.maskedStems(start, end)
+        return self.sentence.maskedStems(self._incrementStartIfDT(start, end), end)
 
     def getPhraseTag_(self):
         """
@@ -392,7 +403,7 @@ class Annotation:
             while idx < end and self.sentence._mask[idx] is None:
                 idx += 1
 
-            return self.sentence.maskedStems(start, idx)
+            return self.sentence.maskedStems(self._incrementStartIfDT(start, end), idx)
         else:
             return iter(())
 
@@ -429,7 +440,7 @@ class Annotation:
 
         if num > 2 and s.phraseTagFor(num - 1) == 'PP' and s.phraseTagFor(num - 2) == 'NP':
             start, end = s.phraseOffsetFor(num - 2)
-            return s.maskedStems(start, end)
+            return s.maskedStems(self._incrementStartIfDT(start, end), end)
         else:
             return None
 
