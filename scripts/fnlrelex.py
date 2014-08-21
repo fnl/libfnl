@@ -544,10 +544,11 @@ try:
             classifier = RandomForestClassifier(25, bootstrap=False, n_jobs=-1,
                                                 verbose=(args.loglevel == logging.DEBUG))
         elif args.classifier == 'maxent':
-            # params = dict(fit_intercept=False)  # high-recall
-            params = dict(C=10.)  # high-precision
+            # params = dict(class_weight='auto')  # high-recall
+            params = dict(C=2.)  # high-precision; class_weight={True: 1, False: 100}
             # manually setting a high class imbalance weight works better than using 'auto'
-            classifier = LogisticRegression(class_weight={True: 1, False: 100}, **params)
+            # to achieve high precision. Using balanced weights gets the best performance, though
+            classifier = LogisticRegression(**params)
         elif args.classifier == 'svm':
             params = dict(C=.1, loss='l1')  # high-recall
             # params = dict(C=10.)  # high-precision
