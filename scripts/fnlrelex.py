@@ -243,7 +243,7 @@ def DeduplicationIndex(uids, relations, probabilities):
 def GetProbaFunction(classifier):
     if hasattr(classifier, 'decision_function'):
         # must be before the 'predict_proba' test!
-        logging.info('using decistion function to estimate "probabilities"')
+        logging.info('using the decision function to estimate "probabilities"')
         return classifier.decision_function
     elif hasattr(classifier, 'predict_proba'):
         return lambda feats: classifier.predict_proba(feats)[:, 1]
@@ -288,9 +288,13 @@ def LogBestFeatures(classifier, data):
                     classifier.coef_)
     if feature_list.shape[0] == 1:
         feature_list = feature_list[0]
-    best = numpy.argsort(feature_list)[-10:]
-    logging.info('10 best features: "{0}"'.format(
-        '", "'.join(data.feature_names[best]),
+
+    feature_list = numpy.argsort(feature_list)
+    logging.info('top positive features: "{0}"'.format(
+        '", "'.join(reversed(data.feature_names[feature_list[-20:]])),
+    ))
+    logging.info('top negative features: "{0}"'.format(
+        '", "'.join(data.feature_names[feature_list[:20]]),
     ))
 
 
@@ -535,19 +539,21 @@ try:
         if not args.feature_function:
             parser.error('classifier chosen, but no feature function given')
         elif args.classifier == 'naivebayes':
-            classifier = BernoulliNB(fit_prior=False, class_prior=(0.01, 0.09))
+            classifier = BernoulliNB(fit_prior=False, class_prior=(0.01, 0.99))
         elif args.classifier == 'rf':
-            classifier = RandomForestClassifier(bootstrap=False, n_jobs=-1,
+            classifier = RandomForestClassifier(25, bootstrap=False, n_jobs=-1,
                                                 verbose=(args.loglevel == logging.DEBUG))
         elif args.classifier == 'maxent':
             # params = dict(fit_intercept=False)  # high-recall
             params = dict(C=10.)  # high-precision
-            classifier = LogisticRegression(class_weight='auto', **params)
+            # manually setting a high class imbalance weight works better than using 'auto'
+            classifier = LogisticRegression(class_weight={True: 1, False: 100}, **params)
         elif args.classifier == 'svm':
             params = dict(C=.1, loss='l1')  # high-recall
-            # params = dict()  # high-precision
+            # params = dict(C=10.)  # high-precision
+            # manually setting a high class imbalance weight works better than using 'auto'
             classifier = LinearSVC(verbose=(args.loglevel == logging.DEBUG),
-                                   class_weight='auto', **params)
+                                   class_weight={True: 1, False: 100}, **params)
         else:
             raise RuntimeError('unknown classifier %s' % args.classifier)
 
