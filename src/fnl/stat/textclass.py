@@ -13,7 +13,9 @@ from functools import partial
 import numpy as np
 
 from sklearn import metrics
+from sklearn.externals import joblib
 from sklearn.cross_validation import StratifiedKFold
+from sklearn.externals.joblib import delayed
 from sklearn.grid_search import GridSearchCV
 
 # Note: the minority label (always first, i.e., at index 0)
@@ -189,12 +191,16 @@ Report = namedtuple('Report',
                     'parameters top worst fn fp classification folds')
 
 
+def subAll(patterns, mask, lines):
+    return [patterns.sub(mask, line) for line in lines]
+
+
 class Data:
     """
     The data object is a container for all data relevant to the classifiers.
     """
 
-    def __init__(self, *files, column=None, decap=False):
+    def __init__(self, *files, column=None, decap=False, patterns=None, mask=None):
         """
         Create a new data object with the following attributes:
 
@@ -207,10 +213,30 @@ class Data:
         using some Vectorizer.
 
         Use `decap=True` to lower-case the first letter of each sentence.
+
+        Use a list of regex `patterns` and a repacement string `mask` to
+        "mask" pattern-matched words in regular (non-`column`) input.
         """
         try:
             if column is None:
-                self.instances = [f.readlines() for f in files]
+                inputs = [f.readlines() for f in files]
+
+                if patterns and mask:
+                    self.instances = []
+                    splits = joblib.cpu_count()
+
+                    for group in inputs:
+                        group = tuple(group[i::splits] for i in range(splits))
+                        group = joblib.Parallel(n_jobs=splits)(
+                            delayed(subAll)(patterns, mask, lines) for lines in group
+                        )
+                        self.instances.append(list(chain(*group)))
+                else:
+                    self.instances = inputs
+
+                # with Pool() as pool:
+                #     self.instances = pool.map(transform, input)
+
                 self.raw = self.instances
             else:
                 read = TokenReader(word_col=column)
@@ -462,7 +488,13 @@ def Classify(data, classifier, report):
     results = {}
     scores = {n: np.zeros(report.folds) for n, f in METRICS}
     results[classifier.__class__.__name__] = scores
-    cross_val = StratifiedKFold(data.labels, n_folds=report.folds)
+    cross_val = StratifiedKFold(data.labels, n_folds=report.folds, shuffle=True)
+    test = None
+    predictions = None
+    targets = None
+
+    if report.classification:
+        print()
 
     for step, (train, test) in enumerate(cross_val):
         classifier.fit(data.features[train], data.labels[train])
@@ -475,19 +507,18 @@ def Classify(data, classifier, report):
             else:
                 scores[measure][step] = scoring_function(targets, predictions)
 
-        if report.fn or report.fp:
-            PrintErrors(test, predictions, targets, data, report)
-
         if report.classification:
             print(metrics.classification_report(targets, predictions))
 
+    if report.fn or report.fp:
+        print()
+        PrintErrors(test, predictions, targets, data, report)
+
     if (report.top or report.worst):
+        print()
         PrintFeatures(classifier, data, report)
 
-    if report.top or report.worst or report.classification or \
-       report.fn or report.fp or report.parameters:
-        print()
-
+    print()
     EvaluationReport(results)
 
 
@@ -524,7 +555,7 @@ def EvaluationReport(results):
     """Evaluation result table for all classifiers."""
     classifiers = list(sorted(results.keys()))
     heading = '{:<10s}'
-    cell = "{:>2.1f}+/-{:.2f}"
+    cell = "{:5.1f} ± {:5.2f}"
     print('MEASURE   \t{}'.format('\t'.join(
         heading.format(c) for c in classifiers
     )))

@@ -17,12 +17,13 @@
 
 import argparse
 import os.path
+import re
 import warnings
 
 from sklearn.externals import joblib
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.linear_model import RidgeClassifier
+from sklearn.linear_model import RidgeClassifier, LogisticRegression
 from sklearn.naive_bayes import BernoulliNB
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
@@ -33,7 +34,8 @@ from sklearn.feature_selection import f_classif
 
 from fnl.stat.textclass import \
     Classify, Data, GridSearch, Predict, \
-    PrintParams, Report, STOP_WORDS
+    PrintParams, Report, STOP_WORDS, PrintFeatures
+
 
 __author__ = "Florian Leitner <florian.leitner@gmail.com>"
 __verison__ = "1.0"
@@ -47,7 +49,7 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument("classifier", metavar='CLASS',
-                    help="choices: ridge, svm, multinomial, bernoulli, "
+                    help="choices: ridge, svm, maxent, multinomial, bernoulli, "
                     "or load a saved model FILE")
 parser.add_argument("groups", metavar='GROUP', nargs='+', type=open,
                     help="file containing all the instances "
@@ -70,8 +72,12 @@ parser.add_argument("--save", metavar='FILE', type=str,
                     help="store the fitted classifier pipeline on disk")
 
 feats = parser.add_argument_group('feature extraction/selection options')
-feats.add_argument("--all-words", action='store_true',
-                   help="extract symbol tokens, too")
+feats.add_argument("--token-pattern", default=r"(?u)\b\w\w+\b",
+                   help="define a RegEx pattern for tokenization [\\b\\w\\w+\\b]")
+feats.add_argument("--patterns", metavar='FILE', type=open,
+                   help="a file containing regular expressions to mask the text with")
+feats.add_argument("--mask", default='M_A_S_K',
+                   help="the mask value for matched expression patterns")
 feats.add_argument("--anova", action='store_true',
                    help="use ANOVA F-values for feature weighting; "
                    "default: chi^2")
@@ -79,7 +85,7 @@ feats.add_argument("--cutoff", default=3, type=int,
                    help="min. doc. frequency required "
                    "to use a token as a feature; "
                    "value must be a positive integer; "
-                   "defaults to 3 (use almost all tokens)")
+                   "defaults to 3 (only use tokens seen at least 3x)")
 feats.add_argument("--real-case", action='store_true',
                    help="do not lower-case all letters")
 feats.add_argument("--max-fpr", metavar='FPR', default=1.0, type=float,
@@ -87,9 +93,9 @@ feats.add_argument("--max-fpr", metavar='FPR', default=1.0, type=float,
                    "default 1.0 - use all features")
 feats.add_argument("--num-features", metavar='NUM', default=0, type=int,
                    help="select a number of features to use")
-feats.add_argument("--n-grams", metavar='N', default=3, type=int,
+feats.add_argument("--n-grams", metavar='N', default=2, type=int,
                    help="use token n-grams of size N; "
-                   "default: 3 - trigrams")
+                   "default: 2 - bigrams")
 feats.add_argument("--stop-words", action='store_true',
                    help="filter (English) stop-words")
 feats.add_argument("--tfidf", action='store_true',
@@ -133,7 +139,14 @@ if 1 > args.n_grams:
 if not (0.0 < args.max_fpr <= 1.0):
     parser.error("max. FPR must be in (0,1] range")
 
-data = Data(*args.groups, column=args.column, decap=args.decapitalize)
+patterns = None
+
+if args.patterns:
+    patterns = re.compile('|'.join(l.strip('\n\r') for l in args.patterns))
+    args.patterns.close()
+
+data = Data(*args.groups, column=args.column, decap=args.decapitalize,
+            patterns=patterns, mask=args.mask)
 classifier = None
 pipeline = []
 parameters = {}
@@ -143,30 +156,44 @@ grid_search = args.feature_grid_search or args.classifier_grid_search
 # ================
 
 if args.classifier == 'ridge':
-    classifier = RidgeClassifier(alpha=0.1, tol=0.01, solver='sparse_cg')
+    classifier = RidgeClassifier()
 
     if args.classifier_grid_search:
-        parameters['classifier__alpha'] = [1.0, 1e-1, 1e-2, 1e-3]
-        parameters['classifier__solver'] = ['lsqr', 'sparse_cg']
-        parameters['classifier__tol'] = [1e-1, 1e-2, 1e-3, 1e-4]
+        parameters['classifier__alpha'] = [10., 1., 0., .1, .01]
+        parameters['classifier__normalize'] = [True, False]
+        parameters['classifier__solver'] = ['svd', 'cholesky', 'lsqr', 'sparse_cg']
+        parameters['classifier__tol'] = [.1, .01, 1e-3, 1e-6]
 elif args.classifier == 'svm':
-    classifier = LinearSVC(loss='l2', penalty='l2', dual=True,
-                           C=0.05, tol=0.01)
+    classifier = LinearSVC(loss='l1')  # prefer Hinge loss (slower, but "better")
 
     if args.classifier_grid_search:
-        parameters['classifier__C'] = [1.0, 0.5, 1e-1, 5e-2, 1e-2]
-        parameters['classifier__tol'] = [1.0, 0.5, 1e-1, 5e-2, 1e-2]
+        parameters['classifier__C'] = [100., 10., 1., .1, .01]
+        parameters['classifier__class_weight'] = ['auto', None]
+        parameters['classifier__intercept_scaling'] = [10., 5., 1., .5]
+        parameters['classifier__penalty'] = ['l1', 'l2']
+        parameters['classifier__tol'] = [.1, .01, 1e-4, 1e-8]
+elif args.classifier == 'maxent':
+    classifier = LogisticRegression()
+
+    if args.classifier_grid_search:
+        parameters['classifier__C'] = [100., 10., 1., .1, .01]
+        parameters['classifier__class_weight'] = ['auto', None]
+        parameters['classifier__intercept_scaling'] = [10., 5., 1., .5]
+        parameters['classifier__penalty'] = ['l1', 'l2']
+        parameters['classifier__tol'] = [.1, .01, 1e-4, 1e-8]
 elif args.classifier == 'multinomial':
-    classifier = MultinomialNB(alpha=.01)
+    classifier = MultinomialNB()
 
     if args.classifier_grid_search:
-        parameters['classifier__alpha'] = [1.0, 1e-1, 1e-2, 1e-3]
+        parameters['classifier__alpha'] = [10., 1., 0., .1, .01]
+        parameters['classifier__fit_prior'] = [True, False]
 elif args.classifier == 'bernoulli':
-    classifier = BernoulliNB(alpha=.01, binarize=False)
+    classifier = BernoulliNB()
 
     if args.classifier_grid_search:
-        parameters['classifier__alpha'] = [0.1, 0.05, 0.01, 0.05, 0.001]
+        parameters['classifier__alpha'] = [10., 1., 0., .1, .01]
         parameters['classifier__binarize'] = [True, False]
+        parameters['classifier__fit_prior'] = [True, False]
 elif os.path.isfile(args.classifier):
     Predict(data, joblib.load(args.classifier))
     import sys
@@ -181,23 +208,24 @@ report = Report(args.parameters, args.top, args.worst,
 # Feature Extraction
 # ==================
 
-token_pattern = r'\b\w[\w-]+\b' if not args.all_words else r'\S+'
+# token_pattern = r'\b\w[\w-]+\b' if not args.token_pattern else r'\S+'
 stop_words = STOP_WORDS if args.stop_words else None
-vec = CountVectorizer(ngram_range=(1, args.n_grams),
-                      token_pattern=token_pattern,
+vec = CountVectorizer(binary=False,
+                      lowercase=not args.real_case,
+                      min_df=args.cutoff,
+                      ngram_range=(1, args.n_grams),
                       stop_words=stop_words,
                       strip_accents='unicode',
-                      lowercase=not args.real_case,
-                      min_df=args.cutoff)
+                      token_pattern=args.token_pattern)
 
 pipeline.append(('extract', vec))
 
 if args.feature_grid_search:
+    parameters['extract__binary'] = [True, False]
     parameters['extract__lowercase'] = [True, False]
     parameters['extract__min_df'] = [1, 2, 3, 5]
     parameters['extract__ngram_range'] = [(1, 1), (1, 2), (1, 3)]
     parameters['extract__stop_words'] = [None, STOP_WORDS]
-    parameters['extract__token_pattern'] = [r'[^ ]+', r'\b\w[\w-]+\b']
 
 if report.parameters:
     PrintParams(vec, report)
@@ -242,7 +270,6 @@ if args.max_fpr != 1.0:
     if report.parameters:
         print()
         PrintParams(fprs, report)
-        print()
 
     if not grid_search:
         with warnings.catch_warnings():
@@ -251,7 +278,7 @@ if args.max_fpr != 1.0:
             data.transform(fprs)
 
         if args.features:
-            print('pruned {}/{} features'.format(
+            print('\npruned {}/{} features'.format(
                 num_feats - data.n_features, num_feats
             ))
     elif args.feature_grid_search:
@@ -265,7 +292,6 @@ elif args.num_features != 0:
     if report.parameters:
         print()
         PrintParams(kbest, report)
-        print()
 
     if not grid_search:
         with warnings.catch_warnings():
@@ -275,12 +301,9 @@ elif args.num_features != 0:
     elif args.feature_grid_search:
         parameters['select__k'] = [1e2, 1e3, 1e4, 1e5]
 
-elif report.parameters:
-    print()
-
 if not grid_search and args.features:
-    print('group sizes:', ', '.join(map(str, data.sizes)))
-    print('extracted {} features from {} instances\n'.format(
+    print('\ngroup sizes:', ', '.join(map(str, data.sizes)))
+    print('extracted {} features from {} instances'.format(
         data.n_features, data.n_instances
     ))
 
@@ -303,4 +326,11 @@ else:
     Classify(data, classifier, report)
 
 if args.save:
+    if (report.top or report.worst):
+        print()
+        PrintFeatures(classifier, data, report)
+
     joblib.dump(pipeline, args.save)
+
+for fh in args.groups:
+    fh.close()
