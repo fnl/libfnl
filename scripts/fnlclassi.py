@@ -81,6 +81,8 @@ pt_feats.add_argument("--real-case", action='store_true',
                       help="do not lower-case all letters")
 pt_feats.add_argument("--stop-words", action='store_true',
                       help="filter (English) stop-words")
+pt_feats.add_argument("--tfidf", action='store_true',
+                      help="re-rank token counts using a regularized TF-IDF score")
 
 bio_feats = parser.add_argument_group('feature generation from BIO-NER files')
 
@@ -96,8 +98,6 @@ selects.add_argument("--max-fpr", metavar='FPR', default=1.0, type=float,
                      "default 1.0 - use all features")
 selects.add_argument("--num-features", metavar='NUM', default=0, type=int,
                      help="limit to a number NUM of best features only; default: all")
-selects.add_argument("--tfidf", action='store_true',
-                     help="re-rank token counts using a regularized TF-IDF score")
 selects.add_argument("--anova", action='store_true',
                      help="use ANOVA F-values for feature weighting; default: chi^2")
 
