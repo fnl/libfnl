@@ -6,22 +6,28 @@
 .. License: GNU Affero GPL v3 (http://www.gnu.org/licenses/agpl.html)
 """
 
-from collections import namedtuple
-from itertools import chain
+from collections import defaultdict, namedtuple, Counter
+from itertools import chain, count
 from functools import partial
+import numbers
 
 import numpy as np
 
 from sklearn import metrics
-from sklearn.externals import joblib
+from sklearn.externals import joblib, six
 from sklearn.cross_validation import StratifiedKFold
 from sklearn.externals.joblib import delayed
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.feature_extraction.text import _document_frequency, _make_int_array
 from sklearn.grid_search import GridSearchCV
 
 # Note: the minority label (always first, i.e., at index 0)
 # should be used as the positive label to ensure
 # precision and recall produce meaningful results
 # and that the F-score is robust.
+from fnl.text.sentence import SentenceParser, Sentence
+
+
 METRICS = [
     ('Accuracy', metrics.accuracy_score),
     ('Precision', partial(metrics.precision_score, pos_label=0)),
@@ -195,12 +201,33 @@ def subAll(patterns, mask, lines):
     return [patterns.sub(mask, line) for line in lines]
 
 
+def asDict(sentence: Sentence, ngrams=2):
+    """Convert a :class:`fnl.text.sentence.Sentence` into a feature dictionary."""
+    d = {'gene-count': sentence.countEntity('B-gene')}
+    stems = list(sentence.maskedStems())
+    pos = sentence.posTags()
+    tokens = Counter('{}/{}'.format(s, t) for s, t in zip(stems, pos))
+    d.update(tokens)
+
+    if "TARGET/NN" in d and "FACTOR/NN" in d:
+        d['has-all-entities'] = 1
+
+    gram = list(stems)
+
+    while ngrams > 1:
+        ngrams =- 1
+        tokens = Counter('{} {}'.format(s, g) for s, g in zip(stems, gram[1:]))
+        d.update(tokens)
+
+    return d
+
+
 class Data:
     """
     The data object is a container for all data relevant to the classifiers.
     """
 
-    def __init__(self, *files, column=None, decap=False, patterns=None, mask=None):
+    def __init__(self, *files, columns=None, ngrams=2, decap=False, patterns=None, mask=None):
         """
         Create a new data object with the following attributes:
 
@@ -212,13 +239,19 @@ class Data:
         Both features and names are undefined until extracted
         using some Vectorizer.
 
-        Use `decap=True` to lower-case the first letter of each sentence.
+        Exclusive options for either BIO-NER vs. plain-text input:
 
-        Use a list of regex `patterns` and a repacement string `mask` to
-        "mask" pattern-matched words in regular (non-`column`) input.
+        1. **BIO-NER** paramters: Define a `columns` integer to define the number of disregarded
+           columns and thereby declare that the input will be in BIO-NER format. In addtion, the
+           `ngram` option can be set to define the ngram size of the tokens to generate.
+           All other keyword parameter will be ignored.
+
+        2. **plain-text** keyword parameters: Set `decap=True` to lower-case the first letter of
+           each plain-text line. Use a list of regex `patterns` and a repacement string `mask` to
+           "mask" pattern-matched words in regular (non-`column`) input.
         """
         try:
-            if column is None:
+            if columns is None:
                 inputs = [f.readlines() for f in files]
 
                 if patterns and mask:
@@ -230,39 +263,42 @@ class Data:
                         group = joblib.Parallel(n_jobs=splits)(
                             delayed(subAll)(patterns, mask, lines) for lines in group
                         )
-                        self.instances.append(list(chain(*group)))
+                        self.instances.append(list(enumerate(chain(*group))))
                 else:
-                    self.instances = inputs
+                    self.instances = [((num,), i) for num, i in enumerate(inputs, start=1)]
 
-                # with Pool() as pool:
-                #     self.instances = pool.map(transform, input)
-
-                self.raw = self.instances
+                if decap:
+                    for group in self.instances:
+                        for i in range(len(group)):
+                            s = group[i]
+                            group[i] = "{}{}".format(s[0].lower(), s[1:])
             else:
-                read = TokenReader(word_col=column)
-                self.raw, self.instances = zip(*[read(f) for f in files])
+                self.instances = []
+
+                for f in files:
+                    # FIXME: instead of two hardcoded entity masks,
+                    # FIXME: this has to be dynamic or generic...
+                    sentences = SentenceParser(f, ('FACTOR', 'TARGET'), id_columns=columns)
+
+                    if not columns:
+                        sentences = map(lambda n, s: ((n,), s), enumerate(sentences, start=1))
+
+                    data = list((sid, asDict(s, ngrams)) for sid, s in sentences)
+                    self.instances.append(data)
         except UnicodeDecodeError as e:
             import sys
             print('decoding error:', e.reason, 'in input file')
             sys.exit(1)
 
-        if decap:
-            for group in self.instances:
-                for i in range(len(group)):
-                    s = group[i]
-                    group[i] = "{}{}".format(s[0].lower(), s[1:])
-
-        # ensure the minority label(s) come first (evaluation!)
+        # ensure the minority label(s) come first (important for the evaluation, too!)
         self.instances = sorted(self.instances, key=len)
 
         self.classes = len(self.instances)
-        self.raw = sorted(self.raw, key=len)
         self.labels = np.concatenate([
             (np.zeros(len(data), dtype=np.uint8) + i)
             for i, data in enumerate(self.instances)
         ])
-        self.instances = list(chain.from_iterable(self.instances))
-        self.raw = list(chain.from_iterable(self.raw))
+        self.ids, self.instances = zip(*list(chain.from_iterable(self.instances)))
         self.features = None
         self.names = None
 
@@ -300,146 +336,33 @@ class Data:
         return [counter[l] for l in sorted(counter.keys())]
 
 
-class Line:
+class MinFreqDictVectorizer(DictVectorizer):
     """
-    A line being "constructed" by the `TokenReader`.
-    """
-
-    def __init__(self):
-        self.buffer = []
-        self.raw = []
-        self.entities = {}
-        self._entity = []
-        self._entity_type = None
-        self._filter_fig = False
-
-    def hasContent(self):
-        return len(self.buffer) > 0
-
-    def parsingEntity(self):
-        return self._entity_type is not None
-
-    def openEntity(self, name, token):
-        if not self._entity_type == name:
-            self.closeEntity()
-            self.raw.append('<{}>'.format(name))
-            self._entity_type = name
-
-            if name not in self.entities:
-                self.entities[name] = set()
-
-        self._entity.append(token)
-
-    def closeEntity(self):
-        if self._entity_type:
-            name = self._entity_type
-            self.raw.append('</{}>'.format(name))
-            self.entities[name].add(' '.join(self._entity))
-            self._entity = []
-            self._entity_type = None
-            self.stopFilteringFigure()
-
-    def filteringFigure(self):
-        return self._filter_fig
-
-    def startFilteringFigure(self):
-        self._filter_fig = True
-
-    def stopFilteringFigure(self):
-        self._filter_fig = False
-
-    def append(self, token, raw=None):
-        self.buffer.append(token)
-
-        if raw:
-            self.raw.append(raw)
-        else:
-            self.raw.append(token)
-
-
-class TokenReader:
-    """
-    A functor to read IOB entity token files,
-    masking tagged tokens with their tags.
-
-    **Special Case**: For word tokens of the value "Fig"
-    that have been tagged with an I tag,
-    the entire (IB+) tag is ignored.
+    Add `text.CountVectorizer` min. document frequency filtering ability to the `DictVectorizer`.
     """
 
-    def __init__(self, word_col=2, tag_col=-1):
-        """
-        Set the actual token to column `word_col`, 3rd by default.
-        Set the IOB-tag to column `tag_col`, last by default.
-        """
-        self.word_col = word_col
-        self.tag_col = tag_col
-        self._lines = None
-        self._raw = None
+    def __init__(self, min_freq=1, **kwargs):
+        super(MinFreqDictVectorizer, self).__init__(**kwargs)
+        self.min_freq = min_freq
 
-    def __call__(self, stream):
-        """
-        Parse in input stream of tagged tokens.
+    def fit(self, X, y=None):
+        features = defaultdict(int)
 
-        Return two lists:
-        one with the raw (content) lines using only the "word" tokens and
-        one where all tagged tokens have been replaced with their (I/B-) tags.
-        """
-        data = Line()
-        self._lines = []
-        self._raw = []
+        for x in X:
+            for f, v in six.iteritems(x):
+                if isinstance(v, six.string_types):
+                    f = "%s%s%s" % (f, self.separator, v)
+                features[f] += 1
 
-        for line in stream:
-            content = line.strip()
+        if self.min_freq > 1:
+            for name, count in list(features.items()):
+                if count < self.min_freq:
+                    del features[name]
 
-            if not content:
-                if data.hasContent():
-                    data = self._composeLine(data)
-            else:
-                items = content.split('\t')
-                TokenReader._parseTokenTag(data, items[self.word_col],
-                                           items[self.tag_col])
-
-        return self._raw, self._lines
-
-    @staticmethod
-    def _parseTokenTag(data, token, tag):
-        if tag == 'O':
-            data.closeEntity()
-            data.append(token)
-        elif tag.startswith('B-') or \
-                tag.startswith('I-'):
-            if token in UNMASK:
-                data.closeEntity()
-
-                if token == 'Fig':
-                    data.startFilteringFigure()
-                else:
-                    data.stopFilteringFigure()
-
-                data.append(token)
-            elif data.filteringFigure():
-                data.append(token)
-            elif token in ('.', '-'):
-                if not data.parsingEntity():
-                    data.buffer.append(token)
-
-                data.append(token)
-            else:
-                data.openEntity(tag[2:], token)
-                data.append(tag, raw=token)
-        else:
-            raise ValueError('unknown IOB tag "%s" for "%s"' % (tag, token))
-
-    def _composeLine(self, data):
-        data.closeEntity()
-        entity_counts = ' '.join(
-            '{}-{}'.format(e_type, len(data.entities[e_type]))
-            for e_type in data.entities
-        )
-        self._lines.append('{} {}'.format(' '.join(data.buffer), entity_counts))
-        self._raw.append(' '.join(data.raw))
-        return Line()
+        feature_names = sorted(features.keys())
+        self.vocabulary_ = dict((f, i) for i, f in enumerate(feature_names))
+        self.feature_names_ = feature_names
+        return self
 
 
 def GridSearch(data, pipeline, parameters, report):
@@ -477,7 +400,7 @@ def Predict(data, pipeline, sep='\t'):
     for i, (l, s) in enumerate(zip(labels, scores)):
         # for multi-label problems, get the score of the final label
         s = s[l] if isinstance(s, np.ndarray) else s
-        print(data.raw[i].strip(), l, s, sep=sep)
+        print(sep.join(data.ids[i]), l, s, sep=sep)
 
 
 def Classify(data, classifier, report):
@@ -527,21 +450,22 @@ def PrintErrors(test, predictions, targets, data, report):
     for i in range(predictions.shape[0]):
         if predictions[i] != targets[i]:
             if targets[i] == 0 and report.fn:
-                print("FN:", data.raw[test[i]])
+                print("FN:", "\t".join(data.ids[test[i]]))
             elif targets[i] != 0 and report.fp:
-                print("FP:", data.raw[test[i]])
+                print("FP:", "\t".join(data.ids[test[i]]))
 
 
 def PrintFeatures(classifier, data, report):
     """Reporting of most/least significant features."""
     for i in range(classifier.coef_.shape[0]):
         if report.top:
-            topN = np.argsort(classifier.coef_[i])[-report.top:]
+            topN = np.argsort(classifier.coef_[i])[:report.top]
         else:
             topN = []
 
         if report.worst:
-            worstN = np.argsort(classifier.coef_[i])[:report.worst]
+            worstN = np.argsort(classifier.coef_[i])[-report.worst:]
+            worstN = worstN[::-1]
         else:
             worstN = []
 

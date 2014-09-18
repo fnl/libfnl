@@ -19,8 +19,10 @@ import argparse
 import os.path
 import re
 import warnings
+import numpy
 
 from sklearn.externals import joblib
+from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.linear_model import RidgeClassifier, LogisticRegression
@@ -34,7 +36,7 @@ from sklearn.feature_selection import f_classif
 
 from fnl.stat.textclass import \
     Classify, Data, GridSearch, Predict, \
-    PrintParams, Report, STOP_WORDS, PrintFeatures
+    PrintParams, Report, STOP_WORDS, PrintFeatures, MinFreqDictVectorizer
 
 
 __author__ = "Florian Leitner <florian.leitner@gmail.com>"
@@ -51,56 +53,55 @@ parser = argparse.ArgumentParser(
 parser.add_argument("classifier", metavar='CLASS',
                     help="choices: ridge, svm, maxent, multinomial, bernoulli, "
                     "or load a saved model FILE")
-parser.add_argument("groups", metavar='GROUP', nargs='+', type=open,
+parser.add_argument("groups", metavar='GROUP', nargs='+', # using type=open a BadIdeaTM in 3.4...
                     help="file containing all the instances "
-                    "for one particular class")
+                    "for one particular class (in plain text or NER-BIO format)")
 
 parser.add_argument("--column", metavar='COL', type=int, default=None,
-                    help="input files are NER tagged in BIO-format "
-                    "with the (BIO-) tag in the last column and "
-                    "the real token in column COL (zero-based count); "
-                    "tagged tokens will be masked using its (BIO-) tag")
+                    help="input files are NER tagged tokens in BIO-format "
+                    "with the token in column COL (one-based count), "
+                    "the stem in COL + 1, the PoS tag in COL + 2, the phrase tag in COL + 3, "
+                    "and any (BIO-) entity tags in COL + 4 and beyond; "
+                    "entity tagged tokens will be masked using the first applicable BIO-tag")
 parser.add_argument("--decapitalize", action='store_true',
                     help="lowercase first letter of each instance")
 parser.add_argument("--feature-grid-search", action='store_true',
-                    help="run a grid search for the "
-                    "optimal feature parameters")
+                    help="run a grid search for the optimal feature parameters")
 parser.add_argument("--classifier-grid-search", action='store_true',
-                    help="run a grid search for the "
-                    "optimal classifier parameters")
+                    help="run a grid search for the optimal classifier parameters")
 parser.add_argument("--save", metavar='FILE', type=str,
                     help="store the fitted classifier pipeline on disk")
 
-feats = parser.add_argument_group('feature extraction/selection options')
-feats.add_argument("--token-pattern", default=r"(?u)\b\w\w+\b",
-                   help="define a RegEx pattern for tokenization [\\b\\w\\w+\\b]")
-feats.add_argument("--patterns", metavar='FILE', type=open,
-                   help="a file containing regular expressions to mask the text with")
-feats.add_argument("--mask", default='M_A_S_K',
-                   help="the mask value for matched expression patterns")
-feats.add_argument("--anova", action='store_true',
-                   help="use ANOVA F-values for feature weighting; "
-                   "default: chi^2")
-feats.add_argument("--cutoff", default=3, type=int,
-                   help="min. doc. frequency required "
-                   "to use a token as a feature; "
-                   "value must be a positive integer; "
-                   "defaults to 3 (only use tokens seen at least 3x)")
-feats.add_argument("--real-case", action='store_true',
-                   help="do not lower-case all letters")
-feats.add_argument("--max-fpr", metavar='FPR', default=1.0, type=float,
-                   help="select features having a min. FPR in (0,1]; "
-                   "default 1.0 - use all features")
-feats.add_argument("--num-features", metavar='NUM', default=0, type=int,
-                   help="select a number of features to use")
-feats.add_argument("--n-grams", metavar='N', default=2, type=int,
-                   help="use token n-grams of size N; "
-                   "default: 2 - bigrams")
-feats.add_argument("--stop-words", action='store_true',
-                   help="filter (English) stop-words")
-feats.add_argument("--tfidf", action='store_true',
-                   help="re-rank token counts using "
-                   "a regularized TF-IDF score")
+pt_feats = parser.add_argument_group('feature generation from plain-text files')
+pt_feats.add_argument("--token-pattern", default=r"(?u)\b\w\w+\b",
+                      help="define a RegEx pattern for tokenization [\\b\\w\\w+\\b]")
+pt_feats.add_argument("--patterns", metavar='FILE', type=open,
+                      help="a file containing regex patterns that will mask (raw input) text")
+pt_feats.add_argument("--mask", default='M_A_S_K',
+                      help='replacement string for matched regex patterns ["M_A_S_K"]')
+pt_feats.add_argument("--real-case", action='store_true',
+                      help="do not lower-case all letters")
+pt_feats.add_argument("--stop-words", action='store_true',
+                      help="filter (English) stop-words")
+
+bio_feats = parser.add_argument_group('feature generation from BIO-NER files')
+
+selects = parser.add_argument_group('feature selection options')
+selects.add_argument("--n-grams", metavar='N', default=2, type=int,
+                     help="use token n-grams of size N; default: 2 - bigrams")
+selects.add_argument("--cutoff", default=3, type=int,
+                     help="min. doc. frequency required to use a feature; "
+                     "value must be a positive integer; defaults to 3 "
+                     "(only use features seen at least in 3 documents)")
+selects.add_argument("--max-fpr", metavar='FPR', default=1.0, type=float,
+                     help="select features having a min. FPR in (0,1]; "
+                     "default 1.0 - use all features")
+selects.add_argument("--num-features", metavar='NUM', default=0, type=int,
+                     help="limit to a number NUM of best features only; default: all")
+selects.add_argument("--tfidf", action='store_true',
+                     help="re-rank token counts using a regularized TF-IDF score")
+selects.add_argument("--anova", action='store_true',
+                     help="use ANOVA F-values for feature weighting; default: chi^2")
 
 evrep = parser.add_argument_group('evaluation and report')
 evrep.add_argument("--parameters", action='store_true',
@@ -118,9 +119,8 @@ evrep.add_argument("--false-positives", action='store_true',
 evrep.add_argument("--classification-reports", action='store_true',
                    help="print per-fold classification reports")
 evrep.add_argument("--folds", metavar='N', default=5, type=int,
-                   help="use N-fold cross-validation for evaluation; "
-                   "n must be an integer > 1; "
-                   "defaults to 5")
+                   help="do N-fold cross-validation for internal evaluations; "
+                   "N must be an integer > 1; defaults to 5")
 
 # Argument Parsing
 # ================
@@ -139,14 +139,28 @@ if 1 > args.n_grams:
 if not (0.0 < args.max_fpr <= 1.0):
     parser.error("max. FPR must be in (0,1] range")
 
+
 patterns = None
 
 if args.patterns:
     patterns = re.compile('|'.join(l.strip('\n\r') for l in args.patterns))
     args.patterns.close()
 
-data = Data(*args.groups, column=args.column, decap=args.decapitalize,
-            patterns=patterns, mask=args.mask)
+filehandles = []
+
+for path in args.groups:
+    try:
+        filehandles.append(open(path))
+    except Exception as e:
+        parser.error('failed to open "{}": {}'.format(path, e))
+
+data = Data(*filehandles,
+            columns=args.column, ngrams=args.n_grams,  # BIO-NER input
+            decap=args.decapitalize, patterns=patterns, mask=args.mask)  # plain-text input
+
+for fh in filehandles:
+    fh.close()
+
 classifier = None
 pipeline = []
 parameters = {}
@@ -154,6 +168,8 @@ grid_search = args.feature_grid_search or args.classifier_grid_search
 
 # Classifier Setup
 # ================
+
+# TODO: defining all classifier parameters as opt-args for this script
 
 if args.classifier == 'ridge':
     classifier = RidgeClassifier()
@@ -173,7 +189,7 @@ elif args.classifier == 'svm':
         parameters['classifier__penalty'] = ['l1', 'l2']
         parameters['classifier__tol'] = [.1, .01, 1e-4, 1e-8]
 elif args.classifier == 'maxent':
-    classifier = LogisticRegression()
+    classifier = LogisticRegression(class_weight='auto')
 
     if args.classifier_grid_search:
         parameters['classifier__C'] = [100., 10., 1., .1, .01]
@@ -195,9 +211,13 @@ elif args.classifier == 'bernoulli':
         parameters['classifier__binarize'] = [True, False]
         parameters['classifier__fit_prior'] = [True, False]
 elif os.path.isfile(args.classifier):
+
+    # Prediction [with an existing pipeline]
+    # ==========
     Predict(data, joblib.load(args.classifier))
     import sys
     sys.exit(0)
+
 else:
     parser.error("unrecognized classifier '%s'" % args.classifier)
 
@@ -208,24 +228,31 @@ report = Report(args.parameters, args.top, args.worst,
 # Feature Extraction
 # ==================
 
-# token_pattern = r'\b\w[\w-]+\b' if not args.token_pattern else r'\S+'
-stop_words = STOP_WORDS if args.stop_words else None
-vec = CountVectorizer(binary=False,
-                      lowercase=not args.real_case,
-                      min_df=args.cutoff,
-                      ngram_range=(1, args.n_grams),
-                      stop_words=stop_words,
-                      strip_accents='unicode',
-                      token_pattern=args.token_pattern)
+if args.column is None:
+    # token_pattern = r'\b\w[\w-]+\b' if not args.token_pattern else r'\S+'
+    stop_words = STOP_WORDS if args.stop_words else None
+    vec = CountVectorizer(binary=False,
+                          lowercase=not args.real_case,
+                          min_df=args.cutoff,
+                          ngram_range=(1, args.n_grams),
+                          stop_words=stop_words,
+                          strip_accents='unicode',
+                          token_pattern=args.token_pattern)
+
+    if args.feature_grid_search:
+        parameters['extract__binary'] = [True, False]
+        parameters['extract__lowercase'] = [True, False]
+        parameters['extract__min_df'] = [1, 2, 3, 5]
+        parameters['extract__ngram_range'] = [(1, 1), (1, 2), (1, 3)]
+        parameters['extract__stop_words'] = [None, STOP_WORDS]
+else:
+    vec = MinFreqDictVectorizer(min_freq=args.cutoff)
+
+    if args.feature_grid_search:
+        parameters['extract__min_freq'] = [1, 2, 3, 5]
+
 
 pipeline.append(('extract', vec))
-
-if args.feature_grid_search:
-    parameters['extract__binary'] = [True, False]
-    parameters['extract__lowercase'] = [True, False]
-    parameters['extract__min_df'] = [1, 2, 3, 5]
-    parameters['extract__ngram_range'] = [(1, 1), (1, 2), (1, 3)]
-    parameters['extract__stop_words'] = [None, STOP_WORDS]
 
 if report.parameters:
     PrintParams(vec, report)
@@ -331,6 +358,3 @@ if args.save:
         PrintFeatures(classifier, data, report)
 
     joblib.dump(pipeline, args.save)
-
-for fh in args.groups:
-    fh.close()
