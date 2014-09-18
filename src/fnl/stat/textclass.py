@@ -7,9 +7,8 @@
 """
 
 from collections import defaultdict, namedtuple, Counter
-from itertools import chain, count
+from itertools import chain
 from functools import partial
-import numbers
 
 import numpy as np
 
@@ -18,7 +17,6 @@ from sklearn.externals import joblib, six
 from sklearn.cross_validation import StratifiedKFold
 from sklearn.externals.joblib import delayed
 from sklearn.feature_extraction import DictVectorizer
-from sklearn.feature_extraction.text import _document_frequency, _make_int_array
 from sklearn.grid_search import GridSearchCV
 
 # Note: the minority label (always first, i.e., at index 0)

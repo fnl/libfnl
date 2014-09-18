@@ -19,10 +19,8 @@ import argparse
 import os.path
 import re
 import warnings
-import numpy
 
 from sklearn.externals import joblib
-from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.linear_model import RidgeClassifier, LogisticRegression
