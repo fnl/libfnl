@@ -544,8 +544,8 @@ try:
             classifier = RandomForestClassifier(25, bootstrap=False, n_jobs=-1,
                                                 verbose=(args.loglevel == logging.DEBUG))
         elif args.classifier == 'maxent':
-            params = dict(class_weight='auto')  # high-recall
-            # params = dict(C=2.)  # high-precision; class_weight={True: 1, False: 100}
+            # params = dict(class_weight='auto')  # high-recall
+            params = dict(C=2.)  # high-precision; class_weight={True: 1, False: 100}
             # manually setting a high class imbalance weight works better than using 'auto'
             # to achieve high precision. Using balanced weights gets the best performance, though
             classifier = LogisticRegression(**params)
