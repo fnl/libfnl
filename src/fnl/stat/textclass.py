@@ -250,26 +250,26 @@ class Data:
         """
         try:
             if columns is None:
-                inputs = [f.readlines() for f in files]
+                inputs = [[l.strip() for l in f] for f in files]
+
+                if decap:
+                    for i in range(len(inputs)):
+                        inputs[i] = ["{}{}".format(l[0].lower(), l[1:])
+                                     for l in inputs[i] if len(l)]
 
                 if patterns and mask:
                     self.instances = []
                     splits = joblib.cpu_count()
 
-                    for group in inputs:
-                        group = tuple(group[i::splits] for i in range(splits))
-                        group = joblib.Parallel(n_jobs=splits)(
-                            delayed(subAll)(patterns, mask, lines) for lines in group
+                    for lines in inputs:
+                        jobs = tuple(lines[i::splits] for i in range(splits))
+                        jobs = joblib.Parallel(n_jobs=splits)(
+                            delayed(subAll)(patterns, mask, lines) for lines in jobs
                         )
-                        self.instances.append(list(enumerate(chain(*group))))
+                        self.instances.append(list(zip(lines, chain(*jobs))))
                 else:
-                    self.instances = [((num,), i) for num, i in enumerate(inputs, start=1)]
+                    self.instances = [list(zip(lines, lines)) for lines in inputs]
 
-                if decap:
-                    for group in self.instances:
-                        for i in range(len(group)):
-                            s = group[i]
-                            group[i] = "{}{}".format(s[0].lower(), s[1:])
             else:
                 self.instances = []
 
@@ -279,9 +279,9 @@ class Data:
                     sentences = SentenceParser(f, ('FACTOR', 'TARGET'), id_columns=columns)
 
                     if not columns:
-                        sentences = map(lambda n, s: ((n,), s), enumerate(sentences, start=1))
+                        sentences = list(enumerate(sentences, start=1))
 
-                    data = list((sid, asDict(s, ngrams)) for sid, s in sentences)
+                    data = [(sid, asDict(s, ngrams)) for sid, s in sentences]
                     self.instances.append(data)
         except UnicodeDecodeError as e:
             import sys
@@ -296,9 +296,15 @@ class Data:
             (np.zeros(len(data), dtype=np.uint8) + i)
             for i, data in enumerate(self.instances)
         ])
-        self.ids, self.instances = zip(*list(chain.from_iterable(self.instances)))
+        self.ids = None
+        self.raw = None
         self.features = None
         self.names = None
+
+        if columns is None:
+            self.raw, self.instances = zip(*list(chain.from_iterable(self.instances)))
+        else:
+            self.ids, self.instances = zip(*list(chain.from_iterable(self.instances)))
 
     def extract(self, vectorizer):
         """Extract the features from the instances using a Vectorizer."""
@@ -395,10 +401,18 @@ def Predict(data, pipeline, sep='\t'):
 
     scores = scorer(data.instances)
 
+    if data.ids is None:
+        get = lambda d, idx: d.raw[idx]
+    else:
+        if isinstance(data.ids[0], int):
+            get = lambda d, idx: d.ids[idx]
+        else:
+            get = lambda d, idx: sep.join(d.ids[idx])
+
     for i, (l, s) in enumerate(zip(labels, scores)):
         # for multi-label problems, get the score of the final label
         s = s[l] if isinstance(s, np.ndarray) else s
-        print(sep.join(data.ids[i]), l, s, sep=sep)
+        print(get(data, i), l, s, sep=sep)
 
 
 def Classify(data, classifier, report):
