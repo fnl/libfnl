@@ -18,7 +18,7 @@ The directory containing the ``geniatagger`` binary and ``morphdic`` directory,
 defaulting to ``/usr/local/share/geniatagger``, or as set in the environment.
 """
 
-GENIATAGGER = "geniatagger"
+GENIATAGGER = os.path.join(GENIATAGGER_DIR, "geniatagger")
 """
 The default path of the ``geniatagger``. If the GENIA Tagger is on the ``PATH``,
 the name of the binary will do.
