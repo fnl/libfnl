@@ -75,11 +75,12 @@ class Sentence:
     def _getMaskedTokenAttributes(self, attr, start=0, end=None):
         end = len(self.tokens) if end is None else end
         last_mask = None
-        normalize = lambda s: s.lower() if attr == 'stem' else lambda s: s
+        normalize = lambda s: s.lower() if attr == 'stem' else s
 
         for i in range(start, end):
             if self._mask[i] is None:
-                yield normalize(getattr(self.tokens[i], attr))
+                val = normalize(getattr(self.tokens[i], attr))
+                yield val
                 last_mask = None
             else:
                 # only report a masked token once
