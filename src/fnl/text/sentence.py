@@ -79,8 +79,7 @@ class Sentence:
 
         for i in range(start, end):
             if self._mask[i] is None:
-                val = normalize(getattr(self.tokens[i], attr))
-                yield val
+                yield normalize(getattr(self.tokens[i], attr))
                 last_mask = None
             else:
                 # only report a masked token once
