@@ -61,9 +61,16 @@ d        """
                 break
 
     def __del__(self):
-        if hasattr(self, "_proc"):
-            self.L.debug("ner tagger terminating")
-            self._proc.terminate()
+        if hasattr(self, '_proc'):
+            self.L.debug('nersuite is terminating')
+
+            try:
+                self._proc.terminate()
+            except TypeError:
+                # already dead...
+                pass
+            finally:
+                delattr(self, '_proc')
 
     def __iter__(self):
         return self
