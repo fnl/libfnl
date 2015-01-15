@@ -29,6 +29,7 @@ setup(
         'fnl.text',
         'fnl.utils',
     ],
+    package_dir={'fnl': 'src/fnl'},
     data_files=[
         ('var/fnl/dictionaries', ['mammalian_genes.csv', 'qualifier_order.txt']),
         ('var/fnl/models', ['medline_abstract_pst.bin']),
@@ -47,7 +48,7 @@ setup(
         'scripts/fnlsegtrain.py',
         'scripts/fnltok.py',
         'scripts/genia_ner.sh',
-        'scripts/unique_tokens_on_line.py',
+        'scripts/uniq_tokens_on_line.py',
     ],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',

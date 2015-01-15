@@ -85,9 +85,10 @@ Into a **Python 3** virtual environment::
     cd libfnl
     . bin/activate
     pip install argparse # for python3 < 3.2
-    pip install -e . # installs all dependencies
+    pip install numpy # because installing scipy fails if numpy isn't installed already
+    pip install -e . # installs all other dependencies
 
-    # if you prefer to install dependencies manually
+    # if you prefer to install all other dependencies manually
     # and/or prefer to use setup.py instead of pip:
     # python setup.py install
     pip install sqlalchemy

@@ -6,5 +6,6 @@
 /lib
 /man
 /src/libfnl.egg-info
+/libfnl.egg-info
 *__pycache__
 *.pyc
