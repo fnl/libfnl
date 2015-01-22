@@ -64,7 +64,7 @@ def SplitTextInColumn(stream, pst, column, sep='\t'):
     :param sep: (optional) column separator string to use
     """
     for text in stream:
-        items = text.strip().split(sep)
+        items = text.strip('\r\n').split(sep)
         prefix = sep.join(items[:column-1])
         suffix = sep.join(items[column:])
 

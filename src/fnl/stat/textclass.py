@@ -250,7 +250,7 @@ class Data:
         """
         try:
             if columns is None:
-                inputs = [[l.strip() for l in f] for f in files]
+                inputs = [[l.strip('\r\n') for l in f] for f in files]
 
                 if decap:
                     for i in range(len(inputs)):
@@ -412,7 +412,7 @@ def Predict(data, pipeline, sep='\t'):
     for i, (l, s) in enumerate(zip(labels, scores)):
         # for multi-label problems, get the score of the final label
         s = s[l] if isinstance(s, np.ndarray) else s
-        print(get(data, i), l, s, sep=sep)
+        print(get(data, i), s, l, sep=sep)
 
 
 def Classify(data, classifier, report):
