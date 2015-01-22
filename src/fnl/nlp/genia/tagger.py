@@ -74,8 +74,6 @@ class GeniaTagger(object):
 
     def __del__(self):
         if hasattr(self, '_proc'):
-            self.L.debug('geniatagger is terminating')
-
             try:
                 self._proc.terminate()
             except TypeError:

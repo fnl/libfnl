@@ -62,8 +62,6 @@ d        """
 
     def __del__(self):
         if hasattr(self, '_proc'):
-            self.L.debug('nersuite is terminating')
-
             try:
                 self._proc.terminate()
             except TypeError:
