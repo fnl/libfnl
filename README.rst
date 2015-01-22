@@ -65,7 +65,7 @@ Requirements
 Optional projects that work together with this project:
 
 * GENIA_ Tagger_ (optional, latest version)
-* `NER Suite`_ (optional, latest version)
+* `NER Suite`_ (optional, latest version, in turn requires CRF Suite)
 * MegaM_ - a MaxEnt classifier for NLTK_ with a (fast) L-BFGS optimizer
 * gnamed_ for creating gene/protein name repositories
 * medic_ for mirroring and handling PubMed citations
