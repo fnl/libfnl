@@ -136,7 +136,21 @@ class TextAnalytics:
             elif len(word) < len(tag.word):
                 aligned_tags.extend(self._alignBySplittingToken(tag, word, t_iter))
             else:
-                raise RuntimeError('no alignment of tag %s to word "%s" found' % (repr(tag), word))
+                try:
+                    next_word = next(t_iter)
+
+                    if tag.word == unidecode(next_word):
+                        rescue = Token(word, word, *tags[index-1][2:])
+                        self.logger.info(
+                            "word '%s' not recognized by tagger (probably due to NERSuite's "
+                            "shortcoming of only working with ASCII); assigning it the "
+                            "last token: %s", word, repr(rescue))
+                        aligned_tags.append(rescue)
+                        aligned_tags.append(tag)
+                    else:
+                        raise AssertionError('cannot rescue with next word "%s"' % next_word)
+                except:
+                    raise RuntimeError('no alignment of tag %s to word "%s" found' % (repr(tag), word))
 
             index += 1
 
