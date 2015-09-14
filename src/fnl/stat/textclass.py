@@ -224,6 +224,7 @@ class Data:
     """
     The data object is a container for all data relevant to the classifiers.
     """
+    # FIXME: this class is coder's hell...
 
     def __init__(self, *files, columns=None, ngrams=2, decap=False, patterns=None, mask=None):
         """
@@ -303,6 +304,11 @@ class Data:
 
         if columns is None:
             self.raw, self.instances = zip(*list(chain.from_iterable(self.instances)))
+
+            if len(self.raw) and '\t' in self.raw[0]:
+                self.ids = [l.split('\t', 1)[0] for l in self.raw]
+            else:
+                self.ids = self.raw
         else:
             self.ids, self.instances = zip(*list(chain.from_iterable(self.instances)))
 
@@ -462,9 +468,11 @@ def PrintErrors(test, predictions, targets, data, report):
     for i in range(predictions.shape[0]):
         if predictions[i] != targets[i]:
             if targets[i] == 0 and report.fn:
-                print("FN:", "\t".join(data.ids[test[i]]))
+                idx = test[i]
+                print("FN:", data.ids[idx])
             elif targets[i] != 0 and report.fp:
-                print("FP:", "\t".join(data.ids[test[i]]))
+                idx = test[i]
+                print("FP:", data.ids[idx])
 
 
 def PrintFeatures(classifier, data, report):

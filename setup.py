@@ -15,6 +15,7 @@ setup(
         'html5lib >= 0.999',
         'ngram >= 3.3.0',
         'nltk >= 3.0.0b1',
+        'matplotlib >= 1.4.0',
         #'psycopg2 >= 2.4',
         'pytest >= 2.6.0',
         'scikit-learn >= 0.12',

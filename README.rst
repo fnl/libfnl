@@ -93,6 +93,7 @@ Into a **Python 3** virtual environment::
     # python setup.py install
     pip install sqlalchemy
     pip install sklearn
+    pip install matplotlib
     pip install nltk --pre # to get 3.0
 
     # if you want to install the test environment:

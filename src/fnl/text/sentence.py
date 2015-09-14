@@ -548,6 +548,9 @@ class Annotation:
 
         if sum(1 for t in tags if t == 'VP') == 1:
             numbers = list(self.phraseNumbersBetween(other))
+            if len(numbers) != len(tags):
+                # TODO: weird fix????
+                numbers.pop()
             assert len(numbers) == len(tags), "%s != %s" % (repr(numbers), repr(tags))
             num = numbers[tags.index('VP')]
             start, end = self.sentence.phraseOffsetFor(num)

@@ -202,9 +202,14 @@ def FeatureGenerator(input_stream, feature_generation_code, masks):
         raise RuntimeError('no feature extraction function found')
 
     for uid, sentence in input_stream:
-        for annotations in YieldRelations(sentence, masks):
-            yield uid, tuple(a.value for a in annotations), \
-                FeatureBuilder(sentence, *annotations)
+        try:
+            for annotations in YieldRelations(sentence, masks):
+                yield uid, tuple(a.value for a in annotations), \
+                    FeatureBuilder(sentence, *annotations)
+        except AssertionError as e:
+            logging.exception('feature generation for %s: "%s" failed',
+                              uid, ' '.join(t.word for t in sentence.tokens))
+            raise
 
 
 def DeduplicationIndex(uids, relations, probabilities):
